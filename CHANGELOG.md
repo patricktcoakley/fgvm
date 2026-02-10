@@ -1,5 +1,13 @@
 # Changelog
 
+<a name="2.0.1"></a>
+## [2.0.1](https://github.com/patricktcoakley/fgvm/releases/tag/v2.0.1) (2026-02-10)
+
+### 🐛 Bug Fixes
+
+* Add explicit check for Windows elevated privileges. ([f9c4636](https://github.com/patricktcoakley/fgvm/commit/f9c4636332fd29578401e3f2f4b01f306dcc9012))
+* Add explicit checks for Windows Developer Mode and report warnings instead of hiding them. ([65d9250](https://github.com/patricktcoakley/fgvm/commit/65d92508be6baf18d5965469cb4cf8827f256071))
+
 <a name="2.0.0"></a>
 ## [2.0.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.0.0) (2025-11-20)
 
