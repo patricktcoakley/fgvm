@@ -51,7 +51,8 @@ public class DownloadClient(IGitHubClient gitHubClient, ITuxFamilyClient tuxFami
             logger.LogInformation("Found SHA512 for {Version} at GitHub", godotRelease.Version);
             return gitHubSuccess;
         }
-        else if (gitHubResult is Result<string, NetworkError>.Failure gitHubFailure)
+
+        if (gitHubResult is Result<string, NetworkError>.Failure gitHubFailure)
         {
             logger.LogError("GitHub SHA512 failed for {Version}", godotRelease.Version);
             errors.Add(gitHubFailure.Error);
@@ -64,7 +65,8 @@ public class DownloadClient(IGitHubClient gitHubClient, ITuxFamilyClient tuxFami
             logger.LogInformation("Found SHA512 for {Version} at TuxFamily", godotRelease.Version);
             return tuxFamilySuccess;
         }
-        else if (tuxFamilyResult is Result<string, NetworkError>.Failure tuxFamilyFailure)
+
+        if (tuxFamilyResult is Result<string, NetworkError>.Failure tuxFamilyFailure)
         {
             logger.LogError("TuxFamily SHA512 failed for {Version}", godotRelease.Version);
             errors.Add(tuxFamilyFailure.Error);

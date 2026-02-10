@@ -31,15 +31,15 @@ public class ReleasePropertyTests
 
     private static Arbitrary<Release> ReleaseGen =>
         (from version in VersionGen
-         from patch in PatchGen
-         from type in TypeGen
-         from runtime in RuntimeGen
-         select new Release(
-             version.Major,
-             version.Minor,
-             patch: patch,
-             type: type,
-             runtimeEnvironment: runtime)
+            from patch in PatchGen
+            from type in TypeGen
+            from runtime in RuntimeGen
+            select new Release(
+                version.Major,
+                version.Minor,
+                patch: patch,
+                type: type,
+                runtimeEnvironment: runtime)
         )
         .ToArbitrary();
 
