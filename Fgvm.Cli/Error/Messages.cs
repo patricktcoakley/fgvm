@@ -23,13 +23,13 @@ public static class Messages
     // Symlinks
     public static string NoCurrentVersionSet => "[red]No current Godot version set.[/]";
     public static string DeveloperModeRequiredForSymlink =>
-        "[yellow]Windows Developer Mode is required to create symlinks.[/]\n" +
+        "[yellow]Windows Developer Mode or elevated privileges are required to create symlinks.[/]\n" +
         "[dim]`fgvm godot` uses the symlink to launch Godot by default. You can also use `fgvm local` to create a `.fgvm-version` file.[/]\n" +
-        "[dim]Enable Developer Mode: https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development[/]";
+        "[dim]Enable Developer Mode or run as Administrator: https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development[/]";
 
     public static string DeveloperModeRequiredForGodot =>
         "[red]No default symlink is available and Windows Developer Mode appears to be disabled.[/]\n" +
-        "[dim]Run `fgvm local` to create a `.fgvm-version` file and run `fgvm godot` in the project folder, or enable Developer Mode:[/]\n" +
+        "[dim]Run `fgvm local` to create a `.fgvm-version` file and run `fgvm godot` in the project folder, or enable Developer Mode or run as Administrator:[/]\n" +
         "[dim]https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development[/]";
 
     public static string SymlinkPermissionDenied =>
