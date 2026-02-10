@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using System.IO.Enumeration;
 using System.Runtime.Versioning;
+using System.Security.Principal;
 
 namespace Fgvm.Environment;
 
@@ -60,7 +61,7 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
                 catch (UnauthorizedAccessException)
                 {
                     return new Result<Unit, SymlinkError>.Failure(new SymlinkError.PermissionDenied());
-                } 
+                }
 
                 break;
             case OS.Windows:
@@ -156,27 +157,30 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
 
         logger.LogInformation("{SymlinkPath} is currently set to: {LinkTarget}", pathService.SymlinkPath, file.LinkTarget);
 
+        if (SystemInfo.CurrentOS != OS.MacOS)
+        {
+            return new Result<SymlinkInfo, SymlinkError>.Success(
+                new SymlinkInfo(file.LinkTarget));
+        }
+
         // Only macOS has two symlinks
         string? macAppSymlinkPath = null;
-        if (SystemInfo.CurrentOS == OS.MacOS)
+        var appFile = new FileInfo(pathService.MacAppSymlinkPath);
+        if (appFile.LinkTarget is not null)
         {
-            var appFile = new FileInfo(pathService.MacAppSymlinkPath);
-            if (appFile.LinkTarget is not null)
+            if (IsSymbolicLinkValid(pathService.MacAppSymlinkPath))
             {
-                if (IsSymbolicLinkValid(pathService.MacAppSymlinkPath))
-                {
-                    logger.LogInformation("{MacAppSymlinkPath} is currently set to: {LinkTarget}", pathService.MacAppSymlinkPath, appFile.LinkTarget);
-                    macAppSymlinkPath = appFile.LinkTarget;
-                }
-                else
-                {
-                    logger.LogWarning("Mac App symlink {MacAppSymlinkPath} exists but is invalid", pathService.MacAppSymlinkPath);
-                }
+                logger.LogInformation("{MacAppSymlinkPath} is currently set to: {LinkTarget}", pathService.MacAppSymlinkPath, appFile.LinkTarget);
+                macAppSymlinkPath = appFile.LinkTarget;
             }
             else
             {
-                logger.LogWarning("Mac App symlink {MacAppSymlinkPath} is not set", pathService.MacAppSymlinkPath);
+                logger.LogWarning("Mac App symlink {MacAppSymlinkPath} exists but is invalid", pathService.MacAppSymlinkPath);
             }
+        }
+        else
+        {
+            logger.LogWarning("Mac App symlink {MacAppSymlinkPath} is not set", pathService.MacAppSymlinkPath);
         }
 
         return new Result<SymlinkInfo, SymlinkError>.Success(
@@ -206,33 +210,6 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
     }
 
 
-    // Stub Developer Mode check by existing early on non-Windows and only checking when necessary
-    private static bool IsWindowsDeveloperModeEnabled() =>
-        !OperatingSystem.IsWindows() || IsDeveloperModeEnabled();
-
-    /// <summary>
-    ///     Determines whether Windows Developer Mode is enabled by querying the system registry. This method assumes it is
-    ///     only called on Windows platforms that support registry access.
-    /// </summary>
-    /// <returns>
-    ///     True if Windows Developer Mode is enabled; otherwise, false. Defaults to false if the registry query fails.
-    /// </returns>
-    [SupportedOSPlatform("windows")]
-    private static bool IsDeveloperModeEnabled()
-    {
-        try
-        {
-            const string subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock";
-            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default);
-            using var key = baseKey.OpenSubKey(subKey);
-            return key?.GetValue("AllowDevelopmentWithoutDevLicense") is 1;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private static bool IsSymbolicLinkValid(string symlinkTargetPath)
     {
         var symlinkFileInfo = new FileInfo(symlinkTargetPath);
@@ -247,5 +224,49 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
 
         return linkTarget is not null &&
                (File.Exists(linkTarget.FullName) || Directory.Exists(linkTarget.FullName));
+    }
+
+    // Stub Developer Mode check by existing early on non-Windows and only checking when necessary
+    private bool IsWindowsDeveloperModeEnabled() =>
+        !OperatingSystem.IsWindows() || IsDeveloperModeEnabled() || IsWindowsElevated();
+
+    /// <summary>
+    ///     Determines whether Windows Developer Mode is enabled by querying the system registry. This method assumes it is
+    ///     only called on Windows platforms that support registry access.
+    /// </summary>
+    /// <returns>
+    ///     True if Windows Developer Mode is enabled; otherwise, false. Defaults to false if the registry query fails.
+    /// </returns>
+    [SupportedOSPlatform("windows")]
+    private bool IsDeveloperModeEnabled()
+    {
+        try
+        {
+            const string subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock";
+            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default);
+            using var key = baseKey.OpenSubKey(subKey);
+            return key?.GetValue("AllowDevelopmentWithoutDevLicense") is 1;
+        }
+        catch
+        {
+            logger.LogWarning("Windows Developer Mode not enabled.");
+            return false;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private bool IsWindowsElevated()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var principal = new WindowsPrincipal(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            logger.LogWarning("Command not run with elevated privileges on Windows.");
+            return false;
+        }
     }
 }
