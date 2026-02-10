@@ -26,7 +26,7 @@ public sealed class GodotCommand(
     /// <param name="attached">-a, Launches Godot in attached mode, keeping it connected to the terminal for output.</param>
     /// <param name="args">Arguments to pass to the Godot executable (e.g., --args="--version --verbose").</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    [ConsoleAppFramework.Command("godot|g")]
+    [Command("godot|g")]
     public async Task Launch(bool interactive = false, bool attached = false, string args = "", CancellationToken cancellationToken = default)
     {
         var error = new StringBuilder();

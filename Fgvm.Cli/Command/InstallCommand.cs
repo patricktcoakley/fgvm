@@ -1,6 +1,5 @@
 using ConsoleAppFramework;
 using Fgvm.Environment;
-using Fgvm.Error;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
@@ -119,7 +118,7 @@ public sealed class InstallCommand(
 
             switch (installationResult)
             {
-                case Result<InstallationOutcome, InstallationError>.Success(InstallationOutcome.NewInstallation(var release, var checksumStatus)):
+                case Result<InstallationOutcome, InstallationError>.Success(InstallationOutcome.NewInstallation(var release, var checksumStatus, var symlinkWarning)):
                     var successMessage = GetInstallationSuccessMessage(release, setAsDefault, wasAutoSetAsDefault);
                     console.MarkupLine(successMessage);
 
@@ -128,6 +127,26 @@ public sealed class InstallCommand(
                     {
                         console.MarkupLine(Messages.ChecksumVerificationFailed(release, networkError));
                     }
+
+                    if (symlinkWarning is not null)
+                    {
+                        switch (symlinkWarning)
+                        {
+                            case SymlinkError.DeveloperModeRequired:
+                                console.MarkupLine(Messages.DeveloperModeRequiredForSymlink);
+                                break;
+                            case SymlinkError.PermissionDenied:
+                                console.MarkupLine(Messages.SymlinkPermissionDenied);
+                                break;
+                            case SymlinkError.UnsupportedOS(var os):
+                                console.MarkupLine(Messages.SymlinkUnsupportedOS(os));
+                                break;
+                            case SymlinkError.InvalidSymlink(var path, _):
+                                console.MarkupLine(Messages.InvalidSymlinkWarn(path));
+                                break;
+                        }
+                    }
+
                     break;
 
                 case Result<InstallationOutcome, InstallationError>.Success(InstallationOutcome.AlreadyInstalled(var release)):
@@ -156,15 +175,6 @@ public sealed class InstallCommand(
             console.MarkupLine(Messages.UserCancelled("installation"));
             throw;
         }
-        catch (InvalidSymlinkException e)
-        {
-            logger.ZLogError($"Symlink created but appears invalid: {e.SymlinkPath}.");
-            console.MarkupLine(
-                $"[orange1] WARN: Symlink for {e.SymlinkPath} was created but appears to be invalid. Removing it. [/]");
-
-            hostSystem.RemoveSymbolicLinks();
-            throw;
-        }
         catch (Exception e)
         {
             logger.ZLogError(e, $"Error downloading and installing Godot.");
@@ -187,4 +197,5 @@ public sealed class InstallCommand(
 
         return setAsDefault ? $"{baseMessage}\n{Messages.SetAsDefaultVersionNote}" : baseMessage;
     }
+
 }

@@ -1,4 +1,5 @@
 using Fgvm.Environment;
+using Fgvm.Types;
 
 namespace Fgvm.Cli.Error;
 
@@ -9,8 +10,8 @@ public static class Messages
 {
     public const string DefaultInstallationMarkerMarkup = ":eight_pointed_star:";
     public const string DefaultInstallationMarkerGlyph = "✴";
-
     public const string NonDefaultInstallationIndent = "   ";
+
     // Prompts
     public static string TypeToSearch => "[aqua]Type to search...[/]";
     public static string SelectARuntime => "[green]Standard or Mono (.NET Support)?[/]\n[hotpink_1](Press CTRL+C to cancel)[/]";
@@ -20,8 +21,20 @@ public static class Messages
     public static string MoreChoicesText => "[grey](Move up and down to see more versions)[/]";
 
     // Symlinks
-    public static string NoVersionSet => "[yellow]No Godot version is currently set[/]";
     public static string NoCurrentVersionSet => "[red]No current Godot version set.[/]";
+    public static string DeveloperModeRequiredForSymlink =>
+        "[yellow]Windows Developer Mode is required to create symlinks.[/]\n" +
+        "[dim]`fgvm godot` uses the symlink to launch Godot by default. You can also use `fgvm local` to create a `.fgvm-version` file.[/]\n" +
+        "[dim]Enable Developer Mode: https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development[/]";
+
+    public static string DeveloperModeRequiredForGodot =>
+        "[red]No default symlink is available and Windows Developer Mode appears to be disabled.[/]\n" +
+        "[dim]Run `fgvm local` to create a `.fgvm-version` file and run `fgvm godot` in the project folder, or enable Developer Mode:[/]\n" +
+        "[dim]https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development[/]";
+
+    public static string SymlinkPermissionDenied =>
+        "[yellow]Unable to create symlinks due to insufficient permissions.[/]\n" +
+        "[dim]You can still use `fgvm local` to create a `.fgvm-version` file, or adjust permissions and try again.[/]";
     public static string NoInstallationsToRemove => "[orange1] No installations available to remove. [/]";
     public static string SetAsDefaultVersionNote => "[dim]Set as default version.[/]";
     public static string AutoSetAsDefaultNote => "[dim]Set as default version since no other versions are installed.[/]";
@@ -34,15 +47,8 @@ public static class Messages
     public static string UpdatedVersionFile => "[dim]Updated `.fgvm-version` file in current directory.[/]";
     public static string ChooseFromInstalled => "[dim]Choose from installed versions:[/]";
 
-    // Godot
-    public static string MultipleArgsError => "[red]Error: Multiple arguments detected. Please pass all Godot arguments as a single quoted string.[/]";
-    public static string ArgsExplanation => "[dim]This ensures proper argument parsing and avoids shell interpretation issues.[/]";
-
     // List
     public static string ListPanelHeader => "List Of Installed Versions";
-
-    // Local
-    public static string InteractiveWithQueryWarning => "[yellow]Warning: Cannot use --interactive with version query. Defaulting to interactive selection.[/]";
 
     // Search
     public static string AvailableVersionsHeader => "[green]List Of Available Versions[/]";
@@ -55,6 +61,11 @@ public static class Messages
     public static string InstallationFailedNoVersions => "Installation failed and no versions available.";
     public static string UnknownInstallationOutcome => "Unknown installation outcome";
     public static string UnknownInstallationResultType => "Unknown installation result type";
+
+    public static string SymlinkUnsupportedOS(string os) =>
+        $"[yellow]Symlinks are not supported on this OS: {os}.[/]\n" +
+        "[dim]You can still use `fgvm local` to create a `.fgvm-version` file.[/]";
+
     public static string CurrentVersionSetTo(string symlinkPath) => $"[green]Current version set to:[/] {symlinkPath}";
     public static string CurrentMacOSAppSetTo(string macAppSymlinkPath) => $"\n[green]Current macOS App set to:[/] {macAppSymlinkPath}";
     public static string ConfigurationError(string message) => $"[red]Configuration error: {message}[/]";
@@ -75,14 +86,11 @@ public static class Messages
     public static string SomethingWentWrong(string when) =>
         $"[red]Something went wrong {when} 💣[/]\n[red]Please use [hotpink_1]fgvm logs[/] for more information.[/]";
 
-    public static string InvalidSymlink(string path, string target) =>
-        $"[red]Invalid symlink detected:[/] {path} -> {target}\n[red]Symlink appears to be invalid[/]";
 
     public static string InvalidSymlinkWarn(string symlinkPath) =>
         $"[orange1]WARN: Symlink for {symlinkPath} was created but appears to be invalid. Removing it.[/]";
 
     // Installation
-    public static string NewInstallation(string releaseNameWithRuntime) => $"[green]Successfully installed {releaseNameWithRuntime}[/]";
     public static string AlreadyInstalled(string releaseNameWithRuntime) => $"[yellow]{releaseNameWithRuntime} is already installed[/]";
 
     public static string InstallationNotFound(string version, IHostSystem hostSystem) =>
@@ -137,7 +145,6 @@ public static class Messages
     public static string ProjectRequiresInstall(string projectVersion, string runtimeText) =>
         $"[yellow]Project requires {projectVersion}{runtimeText} but it's not installed.[/]\n[green]Would you like to install it now?[/]";
 
-    public static string ArgsExampleUsage(string args) => $"[yellow]Example: fgvm godot --args \"{args}\"[/]";
     public static string AutoDetectedProject(string fileName) => $"[dim]Auto-detected project file: {fileName}[/]";
     public static string LaunchedGodotDetached(string versionName, int processId) => $"[green]Launched Godot {versionName} in detached mode (PID: {processId}).[/]";
 
@@ -153,7 +160,7 @@ public static class Messages
     public static string UnableToGetRelease(string version) => $"Unable to get release with selection `{version}`.";
 
     // Checksum verification
-    public static string ChecksumVerificationFailed(string releaseNameWithRuntime, Types.NetworkError error) =>
+    public static string ChecksumVerificationFailed(string releaseNameWithRuntime, NetworkError error) =>
         $"[orange1]Warning: Could not verify checksum for {releaseNameWithRuntime}. Installation continued without verification.[/]";
 
     public static string ChecksumMismatch(string fileName, string expected, string actual) =>

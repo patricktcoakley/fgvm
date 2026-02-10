@@ -217,9 +217,19 @@ public class VersionManagementService(
             {
                 logger.ZLogError($"Failed to create symlink: {failure.Error}");
 
-                if (failure.Error is SymlinkError.InvalidSymlink(var path, var target))
+                switch (failure.Error)
                 {
-                    throw new InvalidSymlinkException(target, path);
+                    case SymlinkError.DeveloperModeRequired:
+                        console.MarkupLine(Messages.DeveloperModeRequiredForSymlink);
+                        return godotRelease;
+                    case SymlinkError.PermissionDenied:
+                        console.MarkupLine(Messages.SymlinkPermissionDenied);
+                        return godotRelease;
+                    case SymlinkError.UnsupportedOS(var os):
+                        console.MarkupLine(Messages.SymlinkUnsupportedOS(os));
+                        return godotRelease;
+                    case SymlinkError.InvalidSymlink(var path, var target):
+                        throw new InvalidSymlinkException(target, path);
                 }
             }
 
@@ -326,7 +336,7 @@ public class VersionManagementService(
             {
                 var releaseNameWithRuntime = installSuccess.Value switch
                 {
-                    InstallationOutcome.NewInstallation(var name, _) => name,
+                    InstallationOutcome.NewInstallation(var name, _, _) => name,
                     InstallationOutcome.AlreadyInstalled(var name) => name,
                     _ => throw new InvalidOperationException(Messages.UnknownInstallationOutcome)
                 };
@@ -429,7 +439,29 @@ public class VersionManagementService(
         if (!Path.Exists(pathService.SymlinkPath))
         {
             logger.ZLogError($"Tried to launch when no version is set.");
-            console.MarkupLine(Messages.NoCurrentVersionSet);
+            if (hostSystem.AreSymlinksSupported() is Result<Unit, SymlinkError>.Failure supportFailure)
+            {
+                switch (supportFailure.Error)
+                {
+                    case SymlinkError.DeveloperModeRequired:
+                        console.MarkupLine(Messages.DeveloperModeRequiredForGodot);
+                        break;
+                    case SymlinkError.PermissionDenied:
+                        console.MarkupLine(Messages.SymlinkPermissionDenied);
+                        break;
+                    case SymlinkError.UnsupportedOS(var os):
+                        console.MarkupLine(Messages.SymlinkUnsupportedOS(os));
+                        break;
+                    default:
+                        console.MarkupLine(Messages.NoCurrentVersionSet);
+                        break;
+                }
+            }
+            else
+            {
+                console.MarkupLine(Messages.NoCurrentVersionSet);
+            }
+
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.NotFound("No current version set"));
         }
@@ -588,7 +620,7 @@ public class VersionManagementService(
 
         var releaseNameWithRuntime = installSuccess.Value switch
         {
-            InstallationOutcome.NewInstallation(var name, _) => name,
+            InstallationOutcome.NewInstallation(var name, _, _) => name,
             InstallationOutcome.AlreadyInstalled(var name) => name,
             _ => throw new InvalidOperationException(Messages.UnknownInstallationOutcome)
         };
@@ -640,7 +672,7 @@ public class VersionManagementService(
 
         var releaseNameWithRuntime = installSuccess.Value switch
         {
-            InstallationOutcome.NewInstallation(var name, _) => name,
+            InstallationOutcome.NewInstallation(var name, _, _) => name,
             InstallationOutcome.AlreadyInstalled(var name) => name,
             _ => throw new InvalidOperationException(Messages.UnknownInstallationOutcome)
         };

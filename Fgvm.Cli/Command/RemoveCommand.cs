@@ -20,7 +20,7 @@ public sealed class RemoveCommand(
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <param name="query"></param>
-    [ConsoleAppFramework.Command("remove|r")]
+    [Command("remove|r")]
     public async Task Remove(CancellationToken cancellationToken = default, [Argument] params string[] query)
     {
         try

@@ -23,7 +23,7 @@ public sealed class SearchCommand(
     /// <param name="json">-j, Output results as JSON.</param>
     /// <param name="query">Optional query arguments.</param>
     /// <param name="cancellationToken"></param>
-    [ConsoleAppFramework.Command("search|s")]
+    [Command("search|s")]
     public async Task Search(bool json = false, [Argument] string[]? query = null, CancellationToken cancellationToken = default)
     {
         var searchQuery = query ?? [];

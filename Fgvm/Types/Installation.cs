@@ -20,7 +20,8 @@ public abstract record ChecksumVerification
 /// </summary>
 public abstract record InstallationOutcome
 {
-    public record NewInstallation(string ReleaseNameWithRuntime, ChecksumVerification ChecksumStatus) : InstallationOutcome;
+    public record NewInstallation(string ReleaseNameWithRuntime, ChecksumVerification ChecksumStatus, SymlinkError? SymlinkWarning = null)
+        : InstallationOutcome;
 
     public record AlreadyInstalled(string ReleaseNameWithRuntime) : InstallationOutcome;
 }
