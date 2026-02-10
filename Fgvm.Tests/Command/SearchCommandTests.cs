@@ -24,7 +24,7 @@ public sealed class SearchCommandTests
 
         var command = CreateCommand(releaseManager.Object, out var console);
 
-        await command.Search(json: true);
+        await command.Search(true);
 
         var json = console.Output.Trim();
         Assert.False(string.IsNullOrWhiteSpace(json));

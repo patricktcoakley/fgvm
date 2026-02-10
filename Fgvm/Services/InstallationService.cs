@@ -1,5 +1,4 @@
 using Fgvm.Environment;
-using Fgvm.Error;
 using Fgvm.Extensions;
 using Fgvm.Godot;
 using Fgvm.Progress;

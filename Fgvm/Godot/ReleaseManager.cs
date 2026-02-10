@@ -77,7 +77,7 @@ public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvide
         // Extract runtime environment filter (mono/standard)
         var runtimeFilter = query.Length > 0
             ? query.FirstOrDefault(x => x.Equals("mono", StringComparison.OrdinalIgnoreCase) ||
-                                       x.Equals("standard", StringComparison.OrdinalIgnoreCase), string.Empty)
+                                        x.Equals("standard", StringComparison.OrdinalIgnoreCase), string.Empty)
             : string.Empty;
 
         // Extract release type filter (stable/rc/beta/alpha/dev)
@@ -89,7 +89,7 @@ public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvide
         // Extract version filter (anything that's not runtime or release type)
         var possibleVersion = query.Length > 0
             ? query.Where(x => !x.Equals(releaseType, StringComparison.OrdinalIgnoreCase) &&
-                              !x.Equals(runtimeFilter, StringComparison.OrdinalIgnoreCase))
+                               !x.Equals(runtimeFilter, StringComparison.OrdinalIgnoreCase))
                 .FirstOrDefault(string.Empty)
             : string.Empty;
 

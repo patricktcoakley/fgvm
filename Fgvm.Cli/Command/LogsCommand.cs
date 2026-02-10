@@ -56,7 +56,9 @@ public sealed class LogsCommand(
             while (await reader.ReadLineAsync(cancellationToken) is { } line)
             {
                 if (string.IsNullOrWhiteSpace(line))
+                {
                     continue;
+                }
 
                 try
                 {
@@ -64,9 +66,10 @@ public sealed class LogsCommand(
 
                     // Apply filters
                     var levelMatch = string.IsNullOrEmpty(level) ||
-                                   entry.Level.Contains(level, StringComparison.OrdinalIgnoreCase);
+                                     entry.Level.Contains(level, StringComparison.OrdinalIgnoreCase);
+
                     var messageMatch = string.IsNullOrEmpty(message) ||
-                                     entry.Message.Contains(message, StringComparison.OrdinalIgnoreCase);
+                                       entry.Message.Contains(message, StringComparison.OrdinalIgnoreCase);
 
                     if (levelMatch && messageMatch)
                     {
@@ -103,7 +106,8 @@ public sealed class LogsCommand(
 public readonly record struct LogEntryView(
     [property: JsonPropertyName("Timestamp")]
     DateTime Timestamp,
-    [property: JsonPropertyName("LogLevel")] string Level,
+    [property: JsonPropertyName("LogLevel")]
+    string Level,
     [property: JsonPropertyName("Message")]
     string Message,
     [property: JsonPropertyName("Category")]

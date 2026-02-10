@@ -13,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Net.Http.Headers;
-using Utf8StringInterpolation;
 using ZLogger;
 using static ConsoleAppFramework.ConsoleApp;
 
@@ -39,10 +38,7 @@ public class Program
                 builder.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 
                 builder.AddZLoggerFile(pathService.LogPath,
-                    opts =>
-                    {
-                        opts.UseJsonFormatter();
-                    });
+                    opts => { opts.UseJsonFormatter(); });
             });
         }));
 

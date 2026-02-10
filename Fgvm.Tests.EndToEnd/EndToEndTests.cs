@@ -241,6 +241,7 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
         var hasDevMono = lines.Any(line =>
             line.Contains("dev", StringComparison.OrdinalIgnoreCase) &&
             line.Contains("mono", StringComparison.OrdinalIgnoreCase));
+
         Assert.False(hasDevMono, "Dev mono version should be removed");
     }
 

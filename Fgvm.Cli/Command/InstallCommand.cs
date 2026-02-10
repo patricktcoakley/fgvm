@@ -197,5 +197,4 @@ public sealed class InstallCommand(
 
         return setAsDefault ? $"{baseMessage}\n{Messages.SetAsDefaultVersionNote}" : baseMessage;
     }
-
 }

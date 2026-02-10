@@ -85,7 +85,7 @@ public class GitHubClient : IGitHubClient
             return new Result<string, NetworkError>.Failure(
                 new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             _logger.LogError("Failed to get SHA512 from GitHub for {Version}: {Message}", godotRelease.Version, ex.Message);
             return new Result<string, NetworkError>.Failure(
