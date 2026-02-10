@@ -16,7 +16,7 @@ public sealed class SetCommand(IVersionManagementService versionManagementServic
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="query">Version query arguments</param>
     /// <exception cref="FileNotFoundException"></exception>
-    [ConsoleAppFramework.Command("set")]
+    [Command("set")]
     public async Task Set(CancellationToken cancellationToken = default, [Argument] params string[] query)
     {
         try

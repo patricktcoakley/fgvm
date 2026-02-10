@@ -30,8 +30,7 @@ public class TestContainerFixture : IAsyncLifetime
             throw new InvalidOperationException("Could not find Fgvm.sln to determine solution root");
         }
 
-        _container = new ContainerBuilder()
-            .WithImage("mcr.microsoft.com/dotnet/sdk:10.0")
+        _container = new ContainerBuilder("mcr.microsoft.com/dotnet/sdk:10.0")
             .WithWorkingDirectory("/workspace")
             .WithBindMount(solutionDir, "/workspace")
             .WithCommand("tail", "-f", "/dev/null") // Keep container running

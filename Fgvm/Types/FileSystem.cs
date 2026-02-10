@@ -12,5 +12,11 @@ public abstract record SymlinkError
 {
     public record NoVersionSet : SymlinkError;
 
+    public record DeveloperModeRequired : SymlinkError;
+
+    public record UnsupportedOS(string OS) : SymlinkError;
+
+    public record PermissionDenied : SymlinkError;
+
     public record InvalidSymlink(string SymlinkPath, string Target) : SymlinkError;
 }

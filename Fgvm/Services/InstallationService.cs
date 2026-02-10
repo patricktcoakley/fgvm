@@ -185,6 +185,7 @@ public class InstallationService(
             await using var archive = new ZipArchive(memStream, ZipArchiveMode.Read);
             archive.ExtractWithFlatteningSupport(extractPath, true);
 
+            SymlinkError? symlinkWarning = null;
             if (setAsDefault)
             {
                 progress.Report(new OperationProgress<InstallationStage>(InstallationStage.SettingDefault, "Setting as default version..."));
@@ -195,17 +196,13 @@ public class InstallationService(
                 {
                     logger.LogError("Failed to create symlink: {Error}", failure.Error);
                     hostSystem.RemoveSymbolicLinks();
-
-                    if (failure.Error is SymlinkError.InvalidSymlink(var path, var target))
-                    {
-                        throw new InvalidSymlinkException(target, path);
-                    }
+                    symlinkWarning = failure.Error;
                 }
             }
 
             logger.LogInformation("Successfully installed {ReleaseNameWithRuntime}", godotRelease.ReleaseNameWithRuntime);
             return new Result<InstallationOutcome, InstallationError>.Success(
-                new InstallationOutcome.NewInstallation(godotRelease.ReleaseNameWithRuntime, checksumStatus));
+                new InstallationOutcome.NewInstallation(godotRelease.ReleaseNameWithRuntime, checksumStatus, symlinkWarning));
         }
         catch (TaskCanceledException)
         {

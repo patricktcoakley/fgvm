@@ -1,7 +1,9 @@
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 using System.IO.Enumeration;
+using System.Runtime.Versioning;
 
 namespace Fgvm.Environment;
 
@@ -12,6 +14,7 @@ public interface IHostSystem
     void RemoveSymbolicLinks();
     Result<SymlinkInfo, SymlinkError> ResolveCurrentSymlinks();
     IEnumerable<string> ListInstallations();
+    Result<Unit, SymlinkError> AreSymlinksSupported();
 }
 
 /// <summary>
@@ -21,16 +24,44 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
 {
     public SystemInfo SystemInfo { get; } = systemInfo;
 
+    public Result<Unit, SymlinkError> AreSymlinksSupported()
+    {
+        Result<Unit, SymlinkError> result = SystemInfo.CurrentOS switch
+        {
+            OS.Windows => IsWindowsDeveloperModeEnabled()
+                ? new Result<Unit, SymlinkError>.Success(Unit.Value)
+                : new Result<Unit, SymlinkError>.Failure(new SymlinkError.DeveloperModeRequired()),
+            OS.Linux or OS.MacOS => new Result<Unit, SymlinkError>.Success(Unit.Value),
+            _ => new Result<Unit, SymlinkError>.Failure(new SymlinkError.UnsupportedOS(SystemInfo.CurrentOS.ToString()))
+        };
+
+        return result;
+    }
+
     public Result<Unit, SymlinkError> CreateOrOverwriteSymbolicLink(string symlinkTargetPath)
     {
         RemoveSymbolicLinks();
+
+        var supportResult = AreSymlinksSupported();
+        if (supportResult is Result<Unit, SymlinkError>.Failure supportFailure)
+        {
+            return new Result<Unit, SymlinkError>.Failure(supportFailure.Error);
+        }
 
         switch (SystemInfo.CurrentOS)
         {
             // We link to both the .app and the Godot command-line binary on macOS.
             case OS.MacOS:
-                Directory.CreateSymbolicLink(pathService.MacAppSymlinkPath, symlinkTargetPath);
-                File.CreateSymbolicLink(pathService.SymlinkPath, Path.Combine(symlinkTargetPath, "Contents/MacOS/Godot"));
+                try
+                {
+                    Directory.CreateSymbolicLink(pathService.MacAppSymlinkPath, symlinkTargetPath);
+                    File.CreateSymbolicLink(pathService.SymlinkPath, Path.Combine(symlinkTargetPath, "Contents/MacOS/Godot"));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return new Result<Unit, SymlinkError>.Failure(new SymlinkError.PermissionDenied());
+                } 
+
                 break;
             case OS.Windows:
                 try
@@ -44,12 +75,26 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
                 {
                     logger.LogWarning(
                         "Windows requires Developer Mode enabled to create symlinks. See: https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development.");
+
+                    return new Result<Unit, SymlinkError>.Failure(new SymlinkError.DeveloperModeRequired());
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return new Result<Unit, SymlinkError>.Failure(new SymlinkError.PermissionDenied());
                 }
 
                 break;
 
             case OS.Linux:
-                File.CreateSymbolicLink(pathService.SymlinkPath, symlinkTargetPath);
+                try
+                {
+                    File.CreateSymbolicLink(pathService.SymlinkPath, symlinkTargetPath);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return new Result<Unit, SymlinkError>.Failure(new SymlinkError.PermissionDenied());
+                }
+
                 break;
 
             // TODO: Untested but possibly works with Linux builds?
@@ -58,7 +103,7 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
             default:
                 logger.LogError("Unsupported OS: {OS}", SystemInfo.CurrentOS);
                 return new Result<Unit, SymlinkError>.Failure(
-                    new SymlinkError.InvalidSymlink(pathService.SymlinkPath, "Unsupported OS"));
+                    new SymlinkError.UnsupportedOS(SystemInfo.CurrentOS.ToString()));
         }
 
         if (SystemInfo.CurrentOS == OS.MacOS && !IsSymbolicLinkValid(pathService.MacAppSymlinkPath))
@@ -158,6 +203,34 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
             .OfType<Release>()
             .OrderByDescending(release => release)
             .Select(release => release.ReleaseNameWithRuntime);
+    }
+
+
+    // Stub Developer Mode check by existing early on non-Windows and only checking when necessary
+    private static bool IsWindowsDeveloperModeEnabled() =>
+        !OperatingSystem.IsWindows() || IsDeveloperModeEnabled();
+
+    /// <summary>
+    ///     Determines whether Windows Developer Mode is enabled by querying the system registry. This method assumes it is
+    ///     only called on Windows platforms that support registry access.
+    /// </summary>
+    /// <returns>
+    ///     True if Windows Developer Mode is enabled; otherwise, false. Defaults to false if the registry query fails.
+    /// </returns>
+    [SupportedOSPlatform("windows")]
+    private static bool IsDeveloperModeEnabled()
+    {
+        try
+        {
+            const string subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock";
+            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default);
+            using var key = baseKey.OpenSubKey(subKey);
+            return key?.GetValue("AllowDevelopmentWithoutDevLicense") is 1;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsSymbolicLinkValid(string symlinkTargetPath)
