@@ -6,7 +6,8 @@ public static class ZipArchiveExtensions
 {
     /// <summary>
     ///     Basically here for convenience to extract the Godot Mono releases for Linux and Windows one level higher since they
-    ///     are not archived at the root-level like the others, i.e. extract `/blahblah/file1.txt` to `/my/path/file1.txt` instead
+    ///     are not archived at the root-level like the others, i.e. extract `/blahblah/file1.txt` to `/my/path/file1.txt`
+    ///     instead
     ///     of `/my/path/blahblah/file1.txt`.
     /// </summary>
     /// <param name="archive"></param>

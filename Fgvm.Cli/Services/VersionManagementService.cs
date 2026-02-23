@@ -93,6 +93,7 @@ public class VersionManagementService(
     IHostSystem hostSystem,
     IReleaseManager releaseManager,
     IInstallationService installationService,
+    IInstallationOrchestrator installationOrchestrator,
     IPathService pathService,
     IProjectManager projectManager,
     IAnsiConsole console,
@@ -294,13 +295,8 @@ public class VersionManagementService(
                 return compatibleVersion;
             }
 
-            // No compatible version found, attempt installation if prompting is enabled
-            if (!promptForInstallation)
-            {
-                return null;
-            }
-
-            if (!await PromptForInstallationAsync(projectVersion, isDotNet, cancellationToken))
+            // No compatible version found, prompt only when requested
+            if (promptForInstallation && !await PromptForInstallationAsync(projectVersion, isDotNet, cancellationToken))
             {
                 return null;
             }
@@ -319,10 +315,9 @@ public class VersionManagementService(
                 ? new[] { baseVersion, "mono" }
                 : new[] { baseVersion };
 
-            var installedRelease =
-                await installationService.InstallByQueryAsync(installQuery, new Progress<OperationProgress<InstallationStage>>(), cancellationToken: cancellationToken);
+            var installationResult = await installationOrchestrator.InstallAsync(installQuery, cancellationToken: cancellationToken);
 
-            if (installedRelease is not Result<InstallationOutcome, InstallationError>.Success installSuccess)
+            if (installationResult is not Result<InstallationOutcome, InstallationError>.Success installSuccess)
             {
                 return null;
             }

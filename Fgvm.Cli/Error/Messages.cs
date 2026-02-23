@@ -123,10 +123,10 @@ public static class Messages
         $"[red]Failed to install {projectVersion}{runtimeDisplaySuffix}.[/]";
 
     public static string InstallationInstructions(string projectVersion, bool isDotNet) =>
-        $"[dim]Run 'fgvm install {projectVersion}{(isDotNet ? " mono" : "")}' or 'fgvm local {projectVersion}{(isDotNet ? " mono" : "")}' to install it.[/]";
+        $"[dim]Run 'fgvm install {BuildInstallQuery(projectVersion, isDotNet)}' or 'fgvm local {BuildInstallQuery(projectVersion, isDotNet)}' to install it.[/]";
 
     public static string ManualInstallInstructions(string projectVersion, bool isDotNet) =>
-        $"[dim]You can manually install with: fgvm install {projectVersion}{(isDotNet ? " mono" : "")}[/]";
+        $"[dim]You can manually install with: fgvm install {BuildInstallQuery(projectVersion, isDotNet)}[/]";
 
     public static string SuccessfullyInstalledAndUsing(string projectVersion, string runtimeDisplaySuffix, string newCompatibleVersion) =>
         $"[green]Successfully installed and using: {projectVersion}{runtimeDisplaySuffix} → {newCompatibleVersion}[/]";
@@ -168,4 +168,17 @@ public static class Messages
 
     public static string ChecksumParseError(string content) =>
         $"[red]Failed to parse checksum file.[/]\n[dim]Content preview: {(content.Length > 100 ? content[..100] + "..." : content)}[/]";
+
+    private static string BuildInstallQuery(string projectVersion, bool isDotNet)
+    {
+        var hasRuntimeSuffix = projectVersion.EndsWith("-mono", StringComparison.OrdinalIgnoreCase) ||
+                               projectVersion.EndsWith("-standard", StringComparison.OrdinalIgnoreCase);
+
+        if (hasRuntimeSuffix)
+        {
+            return projectVersion;
+        }
+
+        return isDotNet ? $"{projectVersion} mono" : projectVersion;
+    }
 }

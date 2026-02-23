@@ -1,8 +1,6 @@
 using ConsoleAppFramework;
+using Fgvm.Cli.Services;
 using Fgvm.Environment;
-using Fgvm.Godot;
-using Fgvm.Progress;
-using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -20,10 +18,8 @@ namespace Fgvm.Cli.Command;
 
 public sealed class InstallCommand(
     IHostSystem hostSystem,
-    IReleaseManager releaseManager,
-    IInstallationService installationService,
+    IInstallationOrchestrator installationOrchestrator,
     IPathService pathService,
-    IProgressHandler<InstallationStage> progressHandler,
     IAnsiConsole console,
     ILogger<InstallCommand> logger)
 {
@@ -53,104 +49,11 @@ public sealed class InstallCommand(
     {
         try
         {
-            Result<InstallationOutcome, InstallationError> installationResult;
-            var wasAutoSetAsDefault = false;
-
-            if (query.Length == 0)
-            {
-                var releaseNames = await installationService.FetchReleaseNames(cancellationToken);
-                var version = await Prompts.Install.ShowVersionSelectionPrompt(releaseNames, console, cancellationToken);
-                var godotRelease = releaseManager.TryCreateRelease(version) ?? throw new Exception(Messages.UnableToGetRelease(version));
-
-                // Check if already installed before starting progress
-                var existingPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
-                if (Directory.Exists(existingPath))
-                {
-                    installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-                        new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
-                }
-                else
-                {
-                    // Check if this would be the only version installed
-                    var installedVersions = hostSystem.ListInstallations().ToList();
-                    var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
-                    wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
-
-                    installationResult = await progressHandler.TrackProgressAsync(progress =>
-                        installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, cancellationToken));
-                }
-            }
-            else
-            {
-                // First check without progress to see if we need the progress UI
-                var releaseNames = await installationService.FetchReleaseNames(cancellationToken);
-                var godotRelease = releaseManager.TryFindReleaseByQuery(query, releaseNames);
-
-                if (godotRelease != null)
-                {
-                    var existingPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
-                    if (Directory.Exists(existingPath))
-                    {
-                        installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-                            new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
-                    }
-                    else
-                    {
-                        // Check if this would be the only version installed
-                        var installedVersions = hostSystem.ListInstallations().ToList();
-                        var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
-                        wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
-
-                        installationResult = await progressHandler.TrackProgressAsync(progress =>
-                            installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, cancellationToken));
-                    }
-                }
-                else
-                {
-                    var installedVersions = hostSystem.ListInstallations().ToList();
-                    var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
-                    wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
-
-                    installationResult = await progressHandler.TrackProgressAsync(progress =>
-                        installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, cancellationToken));
-                }
-            }
+            var installationResult = await installationOrchestrator.InstallAsync(query, setAsDefault, cancellationToken);
 
             switch (installationResult)
             {
-                case Result<InstallationOutcome, InstallationError>.Success(InstallationOutcome.NewInstallation(var release, var checksumStatus, var symlinkWarning)):
-                    var successMessage = GetInstallationSuccessMessage(release, setAsDefault, wasAutoSetAsDefault);
-                    console.MarkupLine(successMessage);
-
-                    // Add checksum warning if verification failed
-                    if (checksumStatus is ChecksumVerification.Failed(var networkError))
-                    {
-                        console.MarkupLine(Messages.ChecksumVerificationFailed(release, networkError));
-                    }
-
-                    if (symlinkWarning is not null)
-                    {
-                        switch (symlinkWarning)
-                        {
-                            case SymlinkError.DeveloperModeRequired:
-                                console.MarkupLine(Messages.DeveloperModeRequiredForSymlink);
-                                break;
-                            case SymlinkError.PermissionDenied:
-                                console.MarkupLine(Messages.SymlinkPermissionDenied);
-                                break;
-                            case SymlinkError.UnsupportedOS(var os):
-                                console.MarkupLine(Messages.SymlinkUnsupportedOS(os));
-                                break;
-                            case SymlinkError.InvalidSymlink(var path, _):
-                                console.MarkupLine(Messages.InvalidSymlinkWarn(path));
-                                break;
-                        }
-                    }
-
-                    break;
-
-                case Result<InstallationOutcome, InstallationError>.Success(InstallationOutcome.AlreadyInstalled(var release)):
-                    console.MarkupLine(Messages.AlreadyInstalled(release));
+                case Result<InstallationOutcome, InstallationError>.Success:
                     break;
 
                 case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.NotFound notFound):
@@ -184,17 +87,5 @@ public sealed class InstallCommand(
 
             throw;
         }
-    }
-
-    private static string GetInstallationSuccessMessage(string releaseNameWithRuntime, bool setAsDefault, bool wasAutoSetAsDefault)
-    {
-        var baseMessage = Messages.InstallationSuccessBase(releaseNameWithRuntime);
-
-        if (wasAutoSetAsDefault)
-        {
-            return $"{baseMessage}\n{Messages.AutoSetAsDefaultNote}";
-        }
-
-        return setAsDefault ? $"{baseMessage}\n{Messages.SetAsDefaultVersionNote}" : baseMessage;
     }
 }

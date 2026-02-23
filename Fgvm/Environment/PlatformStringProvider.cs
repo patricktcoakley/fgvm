@@ -9,8 +9,10 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
 {
     /// <summary>
     ///     A messy but simple way to implement platform matrixing. Godot versions, prior to 3.3, differ in how they labeled
-    ///     their release assets, so there are minor differences you have to account for, such as `osx` vs `macos` vs `osx.64` and the lack
-    ///     of parity between platform support. At this point only a few are tested on actual hardware but they "should work" in theory.
+    ///     their release assets, so there are minor differences you have to account for, such as `osx` vs `macos` vs `osx.64`
+    ///     and the lack
+    ///     of parity between platform support. At this point only a few are tested on actual hardware but they "should work"
+    ///     in theory.
     /// </summary>
     public Result<string, PlatformError> GetPlatformString(Release release)
     {

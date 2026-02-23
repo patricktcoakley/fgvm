@@ -4,7 +4,8 @@ namespace Fgvm.Godot;
 
 /// <summary>
 ///     A type to represent Godot releases. Currently, there is only support for MAJOR.MINOR(.PATCH), but in previous
-///     editions of Godot there were "sub-patches", such as `2.0.4.1`. There's not much reason to handle these because in all
+///     editions of Godot there were "sub-patches", such as `2.0.4.1`. There's not much reason to handle these because in
+///     all
 ///     likelihood people are using 3+, which is more closely following a more standardized versioning approach. Godot
 ///     itself does not follow semver, but it tries to mostly be compatible, and so we don't want to strictly follow semver
 ///     either.
@@ -134,7 +135,8 @@ public sealed record Release : IComparable<Release>
 
 
     /// <summary>
-    ///     The primary way to create a Release. Instead of using ctors, we want to try parsing the version string and figure it out contextually.
+    ///     The primary way to create a Release. Instead of using ctors, we want to try parsing the version string and figure
+    ///     it out contextually.
     /// </summary>
     /// <param name="versionString"></param>
     // TODO: Replace with Result<Release, ParseError> ParseRelease(string versionString)
