@@ -1,5 +1,12 @@
 # Changelog
 
+<a name="2.0.2"></a>
+## [2.0.2](https://github.com/patricktcoakley/fgvm/releases/tag/v2.0.2) (2026-03-01)
+
+### 🐛 Bug Fixes
+
+* **cli:** Centralize installation logic so the experience is the same when called from other commands. ([a1bfea9](https://github.com/patricktcoakley/fgvm/commit/a1bfea9a667866ac83653c1155b2c5cff8025942))
+
 <a name="2.0.1"></a>
 ## [2.0.1](https://github.com/patricktcoakley/fgvm/releases/tag/v2.0.1) (2026-02-10)
 
