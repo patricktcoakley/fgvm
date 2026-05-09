@@ -36,19 +36,19 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.2" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.Ini" Version="10.0.2" />
-        <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.2" />
-        <PackageReference Include="Spectre.Console" Version="0.54.0" />
-        <PackageReference Include="ZLogger" Version="2.5.10" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.7"/>
+        <PackageReference Include="Microsoft.Extensions.Configuration.Ini" Version="10.0.7"/>
+        <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.7"/>
+        <PackageReference Include="Spectre.Console" Version="0.55.2"/>
+        <PackageReference Include="ZLogger" Version="2.5.10"/>
     </ItemGroup>
 
     <ItemGroup>
-        <InternalsVisibleTo Include="Fgvm.Tests" />
+        <InternalsVisibleTo Include="Fgvm.Tests"/>
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Fgvm\Fgvm.csproj" />
+        <ProjectReference Include="..\Fgvm\Fgvm.csproj"/>
     </ItemGroup>
 
 </Project>
