@@ -1,17 +1,54 @@
+using Fgvm.Environment;
+using Fgvm.Godot;
 using Fgvm.Services;
+using Fgvm.Types;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Fgvm.Tests.Services;
 
 public class InstallationServiceTests
 {
+    [Fact]
+    public async Task FetchReleaseNames_UsesCatalogCacheByDefault()
+    {
+        var releaseManager = CreateReleaseManagerMock("4.4-stable");
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Success(["4.4-stable"]));
+
+        var service = CreateService(releaseManager.Object, releaseCatalog.Object);
+
+        var releaseNames = await service.FetchReleaseNames(CancellationToken.None);
+
+        Assert.Equal(["4.4-stable"], releaseNames);
+        releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task FetchReleaseNames_ForceRemote_ForcesRemoteCatalogRefresh()
+    {
+        var releaseManager = CreateReleaseManagerMock("4.4-stable");
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Success(["4.4-stable"]));
+
+        var service = CreateService(releaseManager.Object, releaseCatalog.Object);
+
+        var releaseNames = await service.FetchReleaseNames(CancellationToken.None, ReleaseFetchMode.ForceRemote);
+
+        Assert.Equal(["4.4-stable"], releaseNames);
+        releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Theory]
     [MemberData(nameof(ParseTestData))]
-    public void TryParseSha512SumsContent_ReturnsExpectedSha512SumsContent(string fileName, string hash)
+    public void ParseSha512SumsContent_ReturnsExpectedSha512SumsContent(string fileName, string hash)
     {
-        var parsed = InstallationService.TryParseSha512SumsContent(fileName, TryParseSha512SumsContentTestInput());
+        var result = InstallationService.ParseSha512SumsContent(fileName, ParseSha512SumsContentTestInput());
 
-        Assert.NotNull(parsed);
-        Assert.Equal(parsed, hash);
+        var success = Assert.IsType<Result<string, InstallationError.ChecksumParseError>.Success>(result);
+        Assert.Equal(hash, success.Value);
     }
 
     public static IEnumerable<object[]> ParseTestData()
@@ -172,7 +209,7 @@ public class InstallationServiceTests
         ];
     }
 
-    private static string TryParseSha512SumsContentTestInput() =>
+    private static string ParseSha512SumsContentTestInput() =>
         """
                        57557f3a05476518f2d9388dba4b2e9a5fd09a6ba7e5247b73919a7d31c846d5b0b2379279543c12cc7cd03ae828cf84751b1a0499d1ad2bb1f546c9372976e3  godot-4.4-dev3.tar.xz
                        b6e37f559e52417b6734f18d09f380bc26c0e755457b5d94890dd9515504170d639257876683bab78dde8e260a69e197655717dcbb951f413099fb06f8807e63  godot-4.4-dev3.tar.xz.sha256
@@ -201,4 +238,31 @@ public class InstallationServiceTests
                        ae3aaf0f92d4dac271940ee2a4817d004f91231a17429264fd806330e143036d30348fca09f46e0c92cda752819302941a7b48a4358cc12f436d90b13352a5b7  Godot_v4.4-dev3_mono_win64.zip
                        461b48ccff128969f8c7105b9a423569325692ad48af0ed838eff216cede765775f176206e21bd9e47bcd0aa0475bab58f3583c183c99db2f5a00cf563dcdea4  Godot_v4.4-dev3_mono_windows_arm64.zip
         """;
+
+    private static InstallationService CreateService(IReleaseManager releaseManager, IReleaseCatalog releaseCatalog)
+    {
+        var hostSystem = new Mock<IHostSystem>();
+        var pathService = new Mock<IPathService>();
+        pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(Path.GetTempPath(), "releases.json"));
+
+        return new InstallationService(
+            hostSystem.Object,
+            releaseManager,
+            releaseCatalog,
+            pathService.Object,
+            NullLogger<InstallationService>.Instance);
+    }
+
+    private static Mock<IReleaseManager> CreateReleaseManagerMock(params string[] releaseIds)
+    {
+        var releaseManager = new Mock<IReleaseManager>();
+
+        foreach (var releaseId in releaseIds)
+        {
+            releaseManager.Setup(x => x.TryCreateRelease($"{releaseId}-standard"))
+                .Returns(Release.TryParse($"{releaseId}-standard"));
+        }
+
+        return releaseManager;
+    }
 }

@@ -40,12 +40,13 @@ public interface IInstallationService
         IProgress<OperationProgress<InstallationStage>> progress, bool setAsDefault = false,
         CancellationToken cancellationToken = default);
 
-    Task<string[]> FetchReleaseNames(CancellationToken cancellationToken, bool remote = false);
+    Task<string[]> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache);
 }
 
 public class InstallationService(
     IHostSystem hostSystem,
     IReleaseManager releaseManager,
+    IReleaseCatalog releaseCatalog,
     IPathService pathService,
     ILogger<InstallationService> logger)
     : IInstallationService
@@ -83,7 +84,24 @@ public class InstallationService(
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
 
             const int bufferSize = 32768;
-            using var response = await releaseManager.GetZipFile(godotRelease.ZipFileName, godotRelease, cancellationToken);
+            var catalogArtifact = await releaseCatalog.FindArtifact(godotRelease, cancellationToken);
+            var zipFileName = catalogArtifact?.FileName ?? godotRelease.ZipFileName;
+            var responseResult = await releaseManager.GetZipFile(zipFileName, godotRelease, cancellationToken);
+
+            HttpResponseMessage response;
+            switch (responseResult)
+            {
+                case Result<HttpResponseMessage, NetworkError>.Success downloadSuccess:
+                    response = downloadSuccess.Value;
+                    break;
+                case Result<HttpResponseMessage, NetworkError>.Failure downloadFailure:
+                    return new Result<InstallationOutcome, InstallationError>.Failure(
+                        new InstallationError.Failed($"Download failed for {zipFileName}: {downloadFailure.Error}"));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
+
+            using var responseOwner = response;
 
             var contentLength = response.Content.Headers.ContentLength ?? 0;
 
@@ -129,52 +147,17 @@ public class InstallationService(
                 }
             }
 
-            // TODO: Revisit this to use the godot-builds JSON artifacts instead
-            // Verify checksum if available
-            ChecksumVerification checksumStatus = new ChecksumVerification.Skipped();
-
-            if (ShouldVerifyChecksum(godotRelease))
+            var checksumResult = await VerifyChecksum(godotRelease, zipFileName, catalogArtifact, memStream, progress, cancellationToken);
+            ChecksumVerification checksumStatus;
+            switch (checksumResult)
             {
-                progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));
-                memStream.Position = 0;
-
-                var sha512Result = await releaseManager.GetSha512(godotRelease, cancellationToken);
-
-                if (sha512Result is Result<string, NetworkError>.Success success)
-                {
-                    var sha512String = success.Value;
-                    if (TryParseSha512SumsContent(godotRelease.ZipFileName, sha512String) is not { } expectedHash)
-                    {
-                        logger.LogWarning("Checksum entry not found for {FileName} in SHA512-SUMS.txt, continuing installation without verification",
-                            godotRelease.ZipFileName);
-
-                        checksumStatus = new ChecksumVerification.Failed(
-                            new NetworkError.ConnectionFailure($"Checksum entry for {godotRelease.ZipFileName} not found in SHA512-SUMS.txt"));
-                    }
-                    else
-                    {
-                        var calculatedChecksum = await CalculateChecksum(memStream, cancellationToken);
-
-                        if (!calculatedChecksum.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
-                        {
-                            logger.LogError("Checksum mismatch for {FileName}. Expected: {Expected}, Actual: {Actual}",
-                                godotRelease.ZipFileName, expectedHash, calculatedChecksum);
-
-                            return new Result<InstallationOutcome, InstallationError>.Failure(
-                                new InstallationError.ChecksumMismatch(expectedHash, calculatedChecksum, godotRelease.ZipFileName));
-                        }
-
-                        checksumStatus = new ChecksumVerification.Verified();
-                        logger.LogInformation("Checksum verified successfully for {FileName}", godotRelease.ZipFileName);
-                    }
-                }
-                else if (sha512Result is Result<string, NetworkError>.Failure failure)
-                {
-                    logger.LogWarning("Failed to fetch checksum for {ReleaseNameWithRuntime}, continuing installation without verification",
-                        godotRelease.ReleaseNameWithRuntime);
-
-                    checksumStatus = new ChecksumVerification.Failed(failure.Error);
-                }
+                case Result<ChecksumVerification, InstallationError>.Success checksumSuccess:
+                    checksumStatus = checksumSuccess.Value;
+                    break;
+                case Result<ChecksumVerification, InstallationError>.Failure checksumFailure:
+                    return new Result<InstallationOutcome, InstallationError>.Failure(checksumFailure.Error);
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Extracting, "Extracting files..."));
@@ -191,11 +174,17 @@ public class InstallationService(
                 var symlinkTargetPath = Path.Combine(extractPath, godotRelease.ExecName);
                 var symlinkResult = hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath);
 
-                if (symlinkResult is Result<Unit, SymlinkError>.Failure failure)
+                switch (symlinkResult)
                 {
-                    logger.LogError("Failed to create symlink: {Error}", failure.Error);
-                    hostSystem.RemoveSymbolicLinks();
-                    symlinkWarning = failure.Error;
+                    case Result<Unit, SymlinkError>.Success:
+                        break;
+                    case Result<Unit, SymlinkError>.Failure failure:
+                        logger.LogError("Failed to create symlink: {Error}", failure.Error);
+                        hostSystem.RemoveSymbolicLinks();
+                        symlinkWarning = failure.Error;
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
                 }
             }
 
@@ -239,7 +228,7 @@ public class InstallationService(
             var godotRelease = releaseManager.TryFindReleaseByQuery(query, releaseNames);
 
             // Retry with remote fetch if not found
-            godotRelease ??= releaseManager.TryFindReleaseByQuery(query, await FetchReleaseNames(cancellationToken, true));
+            godotRelease ??= releaseManager.TryFindReleaseByQuery(query, await FetchReleaseNames(cancellationToken, ReleaseFetchMode.ForceRemote));
 
             return godotRelease == null
                 ? new Result<InstallationOutcome, InstallationError>.Failure(
@@ -253,51 +242,16 @@ public class InstallationService(
         }
     }
 
-    public async Task<string[]> FetchReleaseNames(CancellationToken cancellationToken, bool remote = false)
+    public async Task<string[]> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache)
     {
-        var lastWriteTime = File.GetLastWriteTime(pathService.ReleasesPath);
-        var isCacheValid = !remote && File.Exists(pathService.ReleasesPath) && DateTime.Now.AddDays(-1) <= lastWriteTime;
-
-        string[] releaseNames;
-        var fetchedRemote = false;
-
-        if (isCacheValid)
+        var releaseIds = await releaseCatalog.ReadReleaseIds(fetchMode, cancellationToken) switch
         {
-            logger.LogInformation("Reading from {ReleasesPath}, last updated {LastWriteTime}", pathService.ReleasesPath, lastWriteTime);
-            var cachedReleases = await File.ReadAllLinesAsync(pathService.ReleasesPath, cancellationToken);
-            if (cachedReleases.Length > 0)
-            {
-                releaseNames = cachedReleases;
-            }
-            else
-            {
-                logger.LogWarning("Cached releases file is empty, fetching from remote");
-                var result = await releaseManager.ListReleases(cancellationToken);
-                releaseNames = result switch
-                {
-                    Result<IEnumerable<string>, NetworkError>.Success(var releases) => releases.ToArray(),
-                    Result<IEnumerable<string>, NetworkError>.Failure(var error) => throw new HttpRequestException($"Failed to fetch releases: {error}"),
-                    _ => throw new InvalidOperationException("Unexpected Result type")
-                };
+            Result<string[], NetworkError>.Success success => success.Value,
+            Result<string[], NetworkError>.Failure failure => throw new HttpRequestException($"Failed to fetch releases: {failure.Error}"),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
 
-                fetchedRemote = true;
-            }
-        }
-        else
-        {
-            var result = await releaseManager.ListReleases(cancellationToken);
-            releaseNames = result switch
-            {
-                Result<IEnumerable<string>, NetworkError>.Success(var releases) => releases.ToArray(),
-                Result<IEnumerable<string>, NetworkError>.Failure(var error) => throw new HttpRequestException($"Failed to fetch releases: {error}"),
-                _ => throw new InvalidOperationException("Unexpected Result type")
-            };
-
-            fetchedRemote = true;
-        }
-
-        // Always sort releases using Release.CompareTo for consistent ordering
-        var sortedReleases = releaseNames
+        var sortedReleases = releaseIds
             .Select(name => releaseManager.TryCreateRelease($"{name}-standard"))
             .OfType<Release>()
             .OrderByDescending(r => r)
@@ -308,11 +262,6 @@ public class InstallationService(
         {
             logger.LogError("Unable to fetch remote releases");
             return [];
-        }
-
-        if (fetchedRemote)
-        {
-            await File.WriteAllLinesAsync(pathService.ReleasesPath, sortedReleases, cancellationToken);
         }
 
         return sortedReleases;
@@ -326,12 +275,78 @@ public class InstallationService(
         return checksum;
     }
 
-    // TODO: Update once manifest-based releases are used
-    private static bool ShouldVerifyChecksum(Release release) =>
+    private async Task<Result<ChecksumVerification, InstallationError>> VerifyChecksum(
+        Release godotRelease,
+        string zipFileName,
+        ReleaseCatalogArtifact? catalogArtifact,
+        MemoryStream memStream,
+        IProgress<OperationProgress<InstallationStage>> progress,
+        CancellationToken cancellationToken)
+    {
+        var expectedHash = catalogArtifact?.Sha512;
+        ChecksumVerification checksumStatus = new ChecksumVerification.Skipped();
+
+        if (expectedHash is null && ShouldUseLegacyChecksumFallback(godotRelease))
+        {
+            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Fetching checksum..."));
+
+            switch (await releaseManager.GetSha512(godotRelease, cancellationToken))
+            {
+                case Result<string, NetworkError>.Success success:
+                    switch (ParseSha512SumsContent(zipFileName, success.Value))
+                    {
+                        case Result<string, InstallationError.ChecksumParseError>.Success parsed:
+                            expectedHash = parsed.Value;
+                            await releaseCatalog.RecordArtifact(godotRelease, zipFileName, expectedHash, cancellationToken);
+                            break;
+                        case Result<string, InstallationError.ChecksumParseError>.Failure failure:
+                            logger.LogWarning("Checksum entry not found for {FileName} in SHA512-SUMS.txt, continuing installation without verification",
+                                zipFileName);
+                            checksumStatus = new ChecksumVerification.Failed(
+                                new NetworkError.ConnectionFailure(failure.Error.Content));
+                            break;
+                        default:
+                            throw new InvalidOperationException("Unexpected Result type");
+                    }
+
+                    break;
+                case Result<string, NetworkError>.Failure failure:
+                    logger.LogWarning("Failed to fetch checksum for {ReleaseNameWithRuntime}, continuing installation without verification",
+                        godotRelease.ReleaseNameWithRuntime);
+
+                    checksumStatus = new ChecksumVerification.Failed(failure.Error);
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
+        }
+
+        if (expectedHash is null)
+        {
+            return new Result<ChecksumVerification, InstallationError>.Success(checksumStatus);
+        }
+
+        progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));
+        memStream.Position = 0;
+        var calculatedChecksum = await CalculateChecksum(memStream, cancellationToken);
+
+        if (!calculatedChecksum.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogError("Checksum mismatch for {FileName}. Expected: {Expected}, Actual: {Actual}",
+                zipFileName, expectedHash, calculatedChecksum);
+
+            return new Result<ChecksumVerification, InstallationError>.Failure(
+                new InstallationError.ChecksumMismatch(expectedHash, calculatedChecksum, zipFileName));
+        }
+
+        logger.LogInformation("Checksum verified successfully for {FileName}", zipFileName);
+        return new Result<ChecksumVerification, InstallationError>.Success(new ChecksumVerification.Verified());
+    }
+
+    private static bool ShouldUseLegacyChecksumFallback(Release release) =>
         release.Major > 3 || release is { Major: 3, Minor: >= 3 };
 
-    // TODO: Replace with Result<string, ParseError> ParseSha512SumsContent(string fileName, string content)
-    public static string? TryParseSha512SumsContent(string fileName, string content)
+    public static Result<string, InstallationError.ChecksumParseError> ParseSha512SumsContent(string fileName, string content)
     {
         var lines = content.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
 
@@ -351,9 +366,11 @@ public class InstallationService(
                 continue;
             }
 
-            return currentHash;
+            return new Result<string, InstallationError.ChecksumParseError>.Success(currentHash);
         }
 
-        return null;
+        return new Result<string, InstallationError.ChecksumParseError>.Failure(
+            new InstallationError.ChecksumParseError($"Checksum entry for {fileName} not found in SHA512-SUMS.txt"));
     }
+
 }

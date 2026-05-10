@@ -6,7 +6,7 @@ namespace Fgvm.Godot;
 public interface ITuxFamilyClient
 {
     Task<Result<string, NetworkError>> GetSha512Async(Release godotRelease, CancellationToken cancellationToken);
-    Task<HttpResponseMessage> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken);
+    Task<Result<HttpResponseMessage, NetworkError>> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken);
 }
 
 // Basically exists as a backup for checksums of older versions since GitHub doesn't seem to always have them.
@@ -46,8 +46,7 @@ public class TuxFamilyClient(HttpClient httpClient, ILogger<TuxFamilyClient> log
         }
     }
 
-    // TODO: Replace with Task<Result<HttpResponseMessage, NetworkError>> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken)
-    public async Task<HttpResponseMessage> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken)
+    public async Task<Result<HttpResponseMessage, NetworkError>> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken)
     {
         var url = BuildUrl(filename, godotRelease);
 
@@ -60,17 +59,23 @@ public class TuxFamilyClient(HttpClient httpClient, ILogger<TuxFamilyClient> log
             if (response.IsSuccessStatusCode)
             {
                 logger.LogInformation("Found {File} for {Release} at TuxFamily", filename, godotRelease.ReleaseNameWithRuntime);
-                return response;
+                return new Result<HttpResponseMessage, NetworkError>.Success(response);
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             logger.LogError("{Url} returned {StatusCode}. Body: {Body}", url, response.StatusCode, body);
-            throw new HttpRequestException($"TuxFamily zip file request failed: {response.StatusCode}");
+            return new Result<HttpResponseMessage, NetworkError>.Failure(
+                new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             logger.LogError("Failed to get zip file from TuxFamily for {ReleaseNameWithRuntime}: {Message}", godotRelease.ReleaseNameWithRuntime, ex.Message);
-            throw;
+            return new Result<HttpResponseMessage, NetworkError>.Failure(
+                new NetworkError.ConnectionFailure(ex.Message));
         }
     }
 

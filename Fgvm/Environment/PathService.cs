@@ -16,7 +16,7 @@ public interface IPathService
     string ConfigPath { get; }
 
     /// <summary>
-    ///     Path to the releases cache file.
+    ///     Path to the releases catalog file.
     /// </summary>
     string ReleasesPath { get; }
 
@@ -49,7 +49,7 @@ public sealed class PathService : IPathService
             ? Path.GetFullPath("fgvm", _fgvmHomeEnvVar)
             : Path.GetFullPath("fgvm", System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile));
     public string ConfigPath => Path.Combine(RootPath, "fgvm.ini");
-    public string ReleasesPath => Path.Combine(RootPath, ".releases");
+    public string ReleasesPath => Path.Combine(RootPath, "releases.json");
     public string BinPath => Path.Combine(RootPath, "bin");
     public string SymlinkPath => Path.Combine(BinPath, "godot");
     public string MacAppSymlinkPath => Path.Combine(BinPath, "Godot.app");

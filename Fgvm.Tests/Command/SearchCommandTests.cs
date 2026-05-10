@@ -19,7 +19,7 @@ public sealed class SearchCommandTests
     {
         var releases = new[] { "4.5-stable-standard", "4.5-stable-mono" };
         var releaseManager = new Mock<IReleaseManager>();
-        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), It.IsAny<CancellationToken>()))
+        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), It.IsAny<ReleaseFetchMode>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(releases));
 
         var command = CreateCommand(releaseManager.Object, out var console);
@@ -40,7 +40,7 @@ public sealed class SearchCommandTests
     {
         var releases = new[] { "4.5-stable-standard" };
         var releaseManager = new Mock<IReleaseManager>();
-        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), It.IsAny<CancellationToken>()))
+        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), It.IsAny<ReleaseFetchMode>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(releases));
 
         var command = CreateCommand(releaseManager.Object, out var console);
@@ -52,13 +52,29 @@ public sealed class SearchCommandTests
         Assert.Contains("List Of Available Versions", output);
     }
 
+    [Fact]
+    public async Task SearchCommand_NoCache_ForcesRemoteFetch()
+    {
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success([]));
+
+        var command = CreateCommand(releaseManager.Object, out _);
+
+        await command.Search(noCache: true);
+
+        releaseManager.Verify(
+            x => x.SearchRemoteReleases(It.IsAny<string[]>(), ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     private static SearchCommand CreateCommand(IReleaseManager releaseManager, out TestConsole console)
     {
         var pathServiceMock = new Mock<IPathService>();
         var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-search-tests");
         pathServiceMock.SetupGet(x => x.RootPath).Returns(rootPath);
         pathServiceMock.SetupGet(x => x.ConfigPath).Returns(Path.Combine(rootPath, "fgvm.ini"));
-        pathServiceMock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, ".releases"));
+        pathServiceMock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
         pathServiceMock.SetupGet(x => x.BinPath).Returns(Path.Combine(rootPath, "bin"));
         pathServiceMock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(rootPath, "bin", "godot"));
         pathServiceMock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(rootPath, "bin", "Godot.app"));

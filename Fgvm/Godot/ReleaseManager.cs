@@ -6,31 +6,55 @@ namespace Fgvm.Godot;
 public interface IReleaseManager
 {
     Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken);
-    Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(string[] query, CancellationToken cancellationToken);
+
+    Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(
+        string[] query,
+        ReleaseFetchMode fetchMode,
+        CancellationToken cancellationToken);
+
     Task<Result<string, NetworkError>> GetSha512(Release release, CancellationToken cancellationToken);
-    Task<HttpResponseMessage> GetZipFile(string filename, Release release, CancellationToken cancellationToken);
+    Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken);
 
     Release? TryFindReleaseByQuery(string[] query, string[] releaseNames);
+    Result<Release, QueryError> ResolveReleaseQuery(string[] query, string[] releaseIds);
     IEnumerable<string> FilterReleasesByQuery(string[] query, string[] releaseNames, bool chronological = false);
     string? FindCompatibleVersion(string projectVersion, bool isDotNet, IEnumerable<string> installedVersions);
+    Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion, bool isDotNet, IEnumerable<string> installedReleaseIds);
 
     Release? TryCreateRelease(string versionString);
 }
 
-public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvider platformStringProvider, IDownloadClient downloadClient) : IReleaseManager
+public sealed class ReleaseManager(
+    IHostSystem hostSystem,
+    PlatformStringProvider platformStringProvider,
+    IDownloadClient downloadClient,
+    IReleaseCatalog releaseCatalog) : IReleaseManager
 {
-    public async Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken) =>
-        await downloadClient.ListReleases(cancellationToken);
-
-    public async Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(string[] query, CancellationToken cancellationToken)
+    public async Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken)
     {
-        var result = await ListReleases(cancellationToken);
+        var result = await releaseCatalog.ReadReleaseIds(ReleaseFetchMode.UseCache, cancellationToken);
         return result switch
         {
-            Result<IEnumerable<string>, NetworkError>.Success(var releases) =>
+            Result<string[], NetworkError>.Success(var releases) =>
+                new Result<IEnumerable<string>, NetworkError>.Success(releases),
+            Result<string[], NetworkError>.Failure(var error) =>
+                new Result<IEnumerable<string>, NetworkError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
+    public async Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(
+        string[] query,
+        ReleaseFetchMode fetchMode,
+        CancellationToken cancellationToken)
+    {
+        var result = await releaseCatalog.ReadReleaseIds(fetchMode, cancellationToken);
+        return result switch
+        {
+            Result<string[], NetworkError>.Success(var releases) =>
                 new Result<IEnumerable<string>, NetworkError>.Success(
-                    FilterReleasesByQuery(query, releases.ToArray(), true)),
-            Result<IEnumerable<string>, NetworkError>.Failure(var error) =>
+                    FilterReleasesByQuery(query, releases, true)),
+            Result<string[], NetworkError>.Failure(var error) =>
                 new Result<IEnumerable<string>, NetworkError>.Failure(error),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
@@ -39,37 +63,36 @@ public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvide
     public async Task<Result<string, NetworkError>> GetSha512(Release release, CancellationToken cancellationToken) =>
         await downloadClient.GetSha512(release, cancellationToken);
 
-    public async Task<HttpResponseMessage> GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
+    public async Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
         await downloadClient.GetZipFile(filename, release, cancellationToken);
 
-    /// <summary>
-    ///     A way to handle the various argument possibilities for filtering releases by query
-    /// </summary>
-    /// <param name="query"></param>
-    /// <param name="releaseNames"></param>
-    /// <returns></returns>
-    /// <exception cref="ArgumentException"></exception>
-    // TODO: Replace with Result<Release, QueryError> FindReleaseByQuery(string[] query, string[] releaseNames)
     public Release? TryFindReleaseByQuery(string[] query, string[] releaseNames)
     {
-        return query switch
+        var result = ResolveReleaseQuery(query, releaseNames);
+        return result switch
         {
-            // We handle empty query at the call site
-            [] => throw new ArgumentException("Empty query"),
-            // Handle latest stable standard
-            ["latest"] => TryFilterLatest("stable", "standard", releaseNames),
-            // Handle latest stable by with runtime
-            ["latest", var releaseType and ("mono" or "standard")] => TryFilterLatest("stable", releaseType, releaseNames),
-            // Handle latest standard with release type
-            ["latest", var releaseType] when ReleaseType.Prefixes.Contains(releaseType, StringComparer.OrdinalIgnoreCase)
-                => TryFilterLatest(releaseType, "standard", releaseNames),
-            // Handle latest with release type and runtime
-            ["latest", var releaseType, var runtime] when ReleaseType.Prefixes.Contains(releaseType, StringComparer.OrdinalIgnoreCase) &&
-                                                          runtime is "mono" or "standard"
-                => TryFilterLatest(releaseType, runtime, releaseNames),
-            // Explicit version, i.e. `4.2-stable(-mono)`
-            _ => TryFilterRelease(query, releaseNames)
+            Result<Release, QueryError>.Success(var release) => release,
+            Result<Release, QueryError>.Failure(QueryError.EmptyQuery) => throw new ArgumentException("Empty query"),
+            Result<Release, QueryError>.Failure(QueryError.InvalidQuery(var message)) => throw new ArgumentException(message),
+            Result<Release, QueryError>.Failure(QueryError.NotFound) => null,
+            _ => throw new InvalidOperationException("Unexpected Result type")
         };
+    }
+
+    public Result<Release, QueryError> ResolveReleaseQuery(string[] query, string[] releaseIds)
+    {
+        try
+        {
+            return query.Length == 0
+                ? new Result<Release, QueryError>.Failure(new QueryError.EmptyQuery())
+                : FindReleaseByQuery(query, releaseIds) is { } release
+                    ? new Result<Release, QueryError>.Success(release)
+                    : new Result<Release, QueryError>.Failure(new QueryError.NotFound(string.Join(" ", query)));
+        }
+        catch (ArgumentException ex)
+        {
+            return new Result<Release, QueryError>.Failure(new QueryError.InvalidQuery(ex.Message));
+        }
     }
 
     public IEnumerable<string> FilterReleasesByQuery(string[] query, string[] releaseNames, bool chronological = false)
@@ -134,14 +157,24 @@ public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvide
         };
     }
 
-    // TODO: Replace with Result<string, CompatibilityError> FindCompatibleVersion(string projectVersion, bool isDotNet, IEnumerable<string> installedVersions)
     public string? FindCompatibleVersion(string projectVersion, bool isDotNet, IEnumerable<string> installedVersions)
     {
-        var versions = installedVersions.ToList();
+        var result = FindCompatibleVersionResult(projectVersion, isDotNet, installedVersions);
+        return result switch
+        {
+            Result<string, CompatibilityError>.Success(var version) => version,
+            Result<string, CompatibilityError>.Failure => null,
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
+    public Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion, bool isDotNet, IEnumerable<string> installedReleaseIds)
+    {
+        var versions = installedReleaseIds.ToList();
 
         if (versions.Count == 0)
         {
-            return null;
+            return new Result<string, CompatibilityError>.Failure(new CompatibilityError.NoInstalledVersions());
         }
 
         var preferredRuntime = isDotNet ? "mono" : "standard";
@@ -150,7 +183,7 @@ public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvide
         var exactMatch = versions.FirstOrDefault(v => v == projectVersion);
         if (exactMatch != null)
         {
-            return exactMatch;
+            return new Result<string, CompatibilityError>.Success(exactMatch);
         }
 
         // Parse all compatible releases and find the best match
@@ -182,7 +215,7 @@ public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvide
 
         if (compatibleReleases.Length == 0)
         {
-            return null;
+            return new Result<string, CompatibilityError>.Failure(new CompatibilityError.NotFound(projectVersion, isDotNet));
         }
 
         // Use OrderByDescending with the built-in Release.CompareTo for preference ordering
@@ -193,7 +226,29 @@ public sealed class ReleaseManager(IHostSystem hostSystem, PlatformStringProvide
             .OrderByDescending(r => r)
             .First();
 
-        return bestRelease.ReleaseNameWithRuntime;
+        return new Result<string, CompatibilityError>.Success(bestRelease.ReleaseNameWithRuntime);
+    }
+
+    private Release? FindReleaseByQuery(string[] query, string[] releaseNames)
+    {
+        return query switch
+        {
+            // We handle empty query at the call site
+            [] => throw new ArgumentException("Empty query"),
+            // Handle latest stable standard
+            ["latest"] => TryFilterLatest("stable", "standard", releaseNames),
+            // Handle latest stable by with runtime
+            ["latest", var releaseType and ("mono" or "standard")] => TryFilterLatest("stable", releaseType, releaseNames),
+            // Handle latest standard with release type
+            ["latest", var releaseType] when ReleaseType.Prefixes.Contains(releaseType, StringComparer.OrdinalIgnoreCase)
+                => TryFilterLatest(releaseType, "standard", releaseNames),
+            // Handle latest with release type and runtime
+            ["latest", var releaseType, var runtime] when ReleaseType.Prefixes.Contains(releaseType, StringComparer.OrdinalIgnoreCase) &&
+                                                          runtime is "mono" or "standard"
+                => TryFilterLatest(releaseType, runtime, releaseNames),
+            // Explicit version, i.e. `4.2-stable(-mono)`
+            _ => TryFilterRelease(query, releaseNames)
+        };
     }
 
 

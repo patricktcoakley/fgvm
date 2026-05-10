@@ -1,3 +1,4 @@
+using Fgvm.Godot;
 using Fgvm.Types;
 using Moq;
 
@@ -12,7 +13,7 @@ public class QueryTests
     public async Task SearchReleases_Query_ReturnsExpectedResults(string[] query, string[] expected)
     {
         var releaseManager = new ReleaseManagerBuilder().Build();
-        var result = await releaseManager.SearchRemoteReleases(query, CancellationToken.None);
+        var result = await releaseManager.SearchRemoteReleases(query, ReleaseFetchMode.UseCache, CancellationToken.None);
         Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
         var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
         Assert.Equal(expected, success.Value);
@@ -117,7 +118,7 @@ public class QueryTests
             .WithReleases(new List<string>())
             .Build();
 
-        var result = await releaseManager.SearchRemoteReleases(["stable"], CancellationToken.None);
+        var result = await releaseManager.SearchRemoteReleases(["stable"], ReleaseFetchMode.UseCache, CancellationToken.None);
         Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
         var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
         Assert.Empty(success.Value);
@@ -128,14 +129,14 @@ public class QueryTests
     {
         var cts = new CancellationTokenSource();
         var releaseManager = new ReleaseManagerBuilder()
-            .ConfigureDownloadClient(mock =>
+            .ConfigureReleaseCatalog(mock =>
             {
-                mock.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+                mock.Setup(x => x.ReadReleaseIds(It.IsAny<ReleaseFetchMode>(), It.IsAny<CancellationToken>()))
                     .ThrowsAsync(new OperationCanceledException());
             })
             .Build();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() => releaseManager.SearchRemoteReleases(["stable"], cts.Token));
+        await Assert.ThrowsAsync<OperationCanceledException>(() => releaseManager.SearchRemoteReleases(["stable"], ReleaseFetchMode.UseCache, cts.Token));
     }
 
     [Fact]
@@ -218,7 +219,7 @@ public class QueryTests
             .Build();
 
         // Test chronological ordering (for search/display)
-        var chronologicalResult = await releaseManager.SearchRemoteReleases(["4"], CancellationToken.None);
+        var chronologicalResult = await releaseManager.SearchRemoteReleases(["4"], ReleaseFetchMode.UseCache, CancellationToken.None);
         var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(chronologicalResult);
         var chronologicalArray = success.Value.ToArray();
 

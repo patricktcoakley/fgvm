@@ -120,7 +120,7 @@ public sealed class LogsCommandTests : IDisposable
         mock.SetupGet(x => x.LogPath).Returns(logPath);
         mock.SetupGet(x => x.RootPath).Returns(rootPath);
         mock.SetupGet(x => x.ConfigPath).Returns(Path.Combine(rootPath, "fgvm.ini"));
-        mock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, ".releases"));
+        mock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
         mock.SetupGet(x => x.BinPath).Returns(binPath);
         mock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(binPath, "godot"));
         mock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(binPath, "Godot.app"));

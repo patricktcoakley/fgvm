@@ -21,13 +21,15 @@ public sealed class SearchCommand(
     ///     Search available Godot versions.
     /// </summary>
     /// <param name="json">-j, Output results as JSON.</param>
+    /// <param name="noCache">-F, Force a remote refresh instead of reading releases.json.</param>
     /// <param name="query">Optional query arguments.</param>
     /// <param name="cancellationToken"></param>
     [Command("search|s")]
-    public async Task Search(bool json = false, [Argument] string[]? query = null, CancellationToken cancellationToken = default)
+    public async Task Search(bool json = false, bool noCache = false, [Argument] string[]? query = null, CancellationToken cancellationToken = default)
     {
         var searchQuery = query ?? [];
-        var result = await releaseManager.SearchRemoteReleases(searchQuery, cancellationToken);
+        var fetchMode = noCache ? ReleaseFetchMode.ForceRemote : ReleaseFetchMode.UseCache;
+        var result = await releaseManager.SearchRemoteReleases(searchQuery, fetchMode, cancellationToken);
 
         switch (result)
         {

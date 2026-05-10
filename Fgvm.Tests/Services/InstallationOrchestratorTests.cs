@@ -32,7 +32,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
         mockPathService.Setup(x => x.RootPath).Returns(_tempRoot);
         mockPathService.Setup(x => x.SymlinkPath).Returns(Path.Combine(_tempRoot, "bin", "godot"));
         mockPathService.Setup(x => x.ConfigPath).Returns(Path.Combine(_tempRoot, "fgvm.ini"));
-        mockPathService.Setup(x => x.ReleasesPath).Returns(Path.Combine(_tempRoot, ".releases"));
+        mockPathService.Setup(x => x.ReleasesPath).Returns(Path.Combine(_tempRoot, "releases.json"));
         mockPathService.Setup(x => x.BinPath).Returns(Path.Combine(_tempRoot, "bin"));
         mockPathService.Setup(x => x.MacAppSymlinkPath).Returns(Path.Combine(_tempRoot, "bin", "Godot.app"));
         mockPathService.Setup(x => x.LogPath).Returns(Path.Combine(_tempRoot, "fgvm.log"));

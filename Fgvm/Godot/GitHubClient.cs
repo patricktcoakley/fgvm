@@ -10,7 +10,7 @@ public interface IGitHubClient
 {
     Task<Result<IEnumerable<string>, NetworkError>> ListReleasesAsync(CancellationToken cancellationToken);
     Task<Result<string, NetworkError>> GetSha512Async(Release godotRelease, CancellationToken cancellationToken);
-    Task<HttpResponseMessage> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken);
+    Task<Result<HttpResponseMessage, NetworkError>> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken);
 }
 
 public class GitHubClient : IGitHubClient
@@ -93,8 +93,7 @@ public class GitHubClient : IGitHubClient
         }
     }
 
-    // TODO: Replace with Task<Result<HttpResponseMessage, NetworkError>> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken)
-    public async Task<HttpResponseMessage> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken)
+    public async Task<Result<HttpResponseMessage, NetworkError>> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken)
     {
         var url = $"{BaseUrl}/{godotRelease.ReleaseName}/{filename}";
 
@@ -106,17 +105,23 @@ public class GitHubClient : IGitHubClient
 
             if (response.IsSuccessStatusCode)
             {
-                return response;
+                return new Result<HttpResponseMessage, NetworkError>.Success(response);
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             _logger.LogError("{Url} returned {StatusCode}. Body: {Body}", url, response.StatusCode, body);
-            throw new HttpRequestException($"GitHub zip file request failed: {response.StatusCode}");
+            return new Result<HttpResponseMessage, NetworkError>.Failure(
+                new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError("Failed to get zip file from GitHub for {ReleaseNameWithRuntime}: {Message}", godotRelease.ReleaseNameWithRuntime, ex.Message);
-            throw;
+            return new Result<HttpResponseMessage, NetworkError>.Failure(
+                new NetworkError.ConnectionFailure(ex.Message));
         }
     }
 
