@@ -75,6 +75,7 @@ public class Program
 
         // Register core services
         services.AddSingleton<IDownloadClient, DownloadClient>();
+        services.AddSingleton<IReleaseCatalog, ReleaseCatalog>();
         services.AddSingleton<IReleaseManager, ReleaseManager>();
         services.AddSingleton<IInstallationService, InstallationService>();
         services.AddSingleton<IProjectManager, ProjectManager>();

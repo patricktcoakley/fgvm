@@ -121,6 +121,97 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
     }
 
     [Fact]
+    public async Task SearchCommandCreatesReleasesJsonWhenMissing()
+    {
+        var home = $"/tmp/fgvm-cache-missing-{Guid.NewGuid():N}";
+        var root = $"{home}/fgvm";
+        var releasesPath = $"{root}/releases.json";
+
+        try
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+
+            var result = await fixture.ExecuteShellCommand("sh", ["-c", $"FGVM_HOME={home} {fixture.FgvmPath} search --json 4.5"]);
+
+            await fixture.AssertSuccessfulExecutionAsync(result, "search");
+            Assert.True(await fixture.FileExists(releasesPath), "Expected search to create releases.json when no cache exists.");
+
+            var content = await fixture.ReadFile(releasesPath);
+            using var document = JsonDocument.Parse(content);
+            Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
+            Assert.Contains(document.RootElement.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
+        }
+        finally
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+        }
+    }
+
+    [Fact]
+    public async Task SearchCommandNoCacheCreatesReleasesJsonWhenMissing()
+    {
+        var home = $"/tmp/fgvm-no-cache-missing-{Guid.NewGuid():N}";
+        var root = $"{home}/fgvm";
+        var releasesPath = $"{root}/releases.json";
+
+        try
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+
+            var result = await fixture.ExecuteShellCommand("sh", ["-c", $"FGVM_HOME={home} {fixture.FgvmPath} search --no-cache --json 4.5"]);
+
+            await fixture.AssertSuccessfulExecutionAsync(result, "search --no-cache");
+            Assert.True(await fixture.FileExists(releasesPath), "Expected --no-cache search to create releases.json when no cache exists.");
+
+            var content = await fixture.ReadFile(releasesPath);
+            using var document = JsonDocument.Parse(content);
+            Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
+            Assert.Contains(document.RootElement.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
+        }
+        finally
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+        }
+    }
+
+    [Fact]
+    public async Task SearchCommandNoCacheRefreshesSeededReleasesJson()
+    {
+        var home = $"/tmp/fgvm-no-cache-refresh-{Guid.NewGuid():N}";
+        var root = $"{home}/fgvm";
+        var releasesPath = $"{root}/releases.json";
+
+        try
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+            await fixture.ExecuteShellCommand("mkdir", ["-p", root]);
+            await fixture.ExecuteShellCommand("sh", [
+                "-c",
+                $"cat > {releasesPath} << 'EOF'\n{{\"4.999\":{{\"stable\":{{}}}}}}\nEOF"
+            ]);
+
+            var cachedSearch = await fixture.ExecuteShellCommand("sh", ["-c", $"FGVM_HOME={home} {fixture.FgvmPath} search --json 4.999"]);
+            await fixture.AssertSuccessfulExecutionAsync(cachedSearch, "cached search");
+            Assert.Contains("4.999-stable", cachedSearch.Stdout);
+
+            var refreshedSearch = await fixture.ExecuteShellCommand("sh", ["-c", $"FGVM_HOME={home} {fixture.FgvmPath} search --no-cache --json 4.999"]);
+            await fixture.AssertSuccessfulExecutionAsync(refreshedSearch, "search --no-cache");
+            Assert.DoesNotContain("4.999-stable", refreshedSearch.Stdout);
+
+            var content = await fixture.ReadFile(releasesPath);
+            Assert.DoesNotContain("4.999-stable", content);
+
+            using var document = JsonDocument.Parse(content);
+            Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
+            Assert.Contains(document.RootElement.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
+        }
+        finally
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+        }
+    }
+
+    [Fact]
     public async Task ListCommandDisplaysOutput()
     {
         var result = await fixture.ExecuteCommand(["list"]);

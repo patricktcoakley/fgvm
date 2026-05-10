@@ -1,4 +1,5 @@
 using Fgvm.Godot;
+using Fgvm.Types;
 
 namespace Fgvm.Tests.Godot.ReleaseManager;
 
@@ -140,5 +141,38 @@ public class TryFindReleaseByQueryTests
         Assert.NotNull(result);
         Assert.Equal(RuntimeEnvironment.Standard, result.RuntimeEnvironment);
         Assert.Equal("4.2-stable-standard", result.ReleaseNameWithRuntime);
+    }
+
+    [Fact]
+    public void ResolveReleaseQuery_ValidQuery_ReturnsSuccess()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery(["4.2-stable-standard"], TestReleases.ToArray());
+
+        var success = Assert.IsType<Result<Release, QueryError>.Success>(result);
+        Assert.Equal("4.2-stable-standard", success.Value.ReleaseNameWithRuntime);
+    }
+
+    [Fact]
+    public void ResolveReleaseQuery_InvalidQuery_ReturnsInvalidQueryFailure()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery(["4.5-bad"], TestReleases.ToArray());
+
+        var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+        Assert.IsType<QueryError.InvalidQuery>(failure.Error);
+    }
+
+    [Fact]
+    public void ResolveReleaseQuery_NoMatch_ReturnsNotFoundFailure()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery(["9.9"], TestReleases.ToArray());
+
+        var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+        Assert.IsType<QueryError.NotFound>(failure.Error);
     }
 }

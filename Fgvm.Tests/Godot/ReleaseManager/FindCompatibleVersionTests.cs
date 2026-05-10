@@ -1,3 +1,6 @@
+using Fgvm.Godot;
+using Fgvm.Types;
+
 namespace Fgvm.Tests.Godot.ReleaseManager;
 
 public class FindCompatibleVersionTests
@@ -86,6 +89,39 @@ public class FindCompatibleVersionTests
         var result = releaseManager.FindCompatibleVersion("4.3", false, []);
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public void FindCompatibleVersionResult_ValidProjectVersion_ReturnsSuccess()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.FindCompatibleVersionResult("4.3", false, TestInstalledVersions);
+
+        var success = Assert.IsType<Result<string, CompatibilityError>.Success>(result);
+        Assert.Equal("4.3-stable-standard", success.Value);
+    }
+
+    [Fact]
+    public void FindCompatibleVersionResult_EmptyInstalledVersions_ReturnsNoInstalledVersions()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.FindCompatibleVersionResult("4.3", false, []);
+
+        var failure = Assert.IsType<Result<string, CompatibilityError>.Failure>(result);
+        Assert.IsType<CompatibilityError.NoInstalledVersions>(failure.Error);
+    }
+
+    [Fact]
+    public void FindCompatibleVersionResult_NoMatch_ReturnsNotFound()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.FindCompatibleVersionResult("9.9", false, TestInstalledVersions);
+
+        var failure = Assert.IsType<Result<string, CompatibilityError>.Failure>(result);
+        Assert.IsType<CompatibilityError.NotFound>(failure.Error);
     }
 
     [Theory]

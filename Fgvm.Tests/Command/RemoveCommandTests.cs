@@ -25,7 +25,7 @@ public class RemoveCommandTests
         _mockPathService.Setup(x => x.SymlinkPath).Returns("/test/symlink");
         _mockPathService.Setup(x => x.LogPath).Returns("/test/logs");
         _mockPathService.Setup(x => x.ConfigPath).Returns("/test/config");
-        _mockPathService.Setup(x => x.ReleasesPath).Returns("/test/releases");
+        _mockPathService.Setup(x => x.ReleasesPath).Returns("/test/releases.json");
         _mockPathService.Setup(x => x.BinPath).Returns("/test/bin");
         _mockPathService.Setup(x => x.MacAppSymlinkPath).Returns("/test/bin/Godot.app");
 

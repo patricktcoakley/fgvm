@@ -36,7 +36,7 @@ public class VersionManagementServiceTests
         mockPathService.Setup(x => x.RootPath).Returns("/test/fgvm");
         mockPathService.Setup(x => x.SymlinkPath).Returns("/test/fgvm/bin/godot");
         mockPathService.Setup(x => x.ConfigPath).Returns("/test/fgvm/fgvm.ini");
-        mockPathService.Setup(x => x.ReleasesPath).Returns("/test/fgvm/.releases");
+        mockPathService.Setup(x => x.ReleasesPath).Returns("/test/fgvm/releases.json");
         mockPathService.Setup(x => x.BinPath).Returns("/test/fgvm/bin");
         mockPathService.Setup(x => x.MacAppSymlinkPath).Returns("/test/fgvm/bin/Godot.app");
         mockPathService.Setup(x => x.LogPath).Returns("/test/fgvm/.log");
