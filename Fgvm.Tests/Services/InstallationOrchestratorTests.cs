@@ -99,7 +99,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
-                new InstallationOutcome.NewInstallation(releaseName, new ChecksumVerification.Skipped())));
+                new InstallationOutcome.NewInstallation(releaseName, new ChecksumVerification.Verified())));
 
         var result = await _orchestrator.InstallAsync(query);
 
@@ -120,7 +120,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     true,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
-                new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Skipped())));
+                new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Verified())));
 
         var result = await _orchestrator.InstallAsync(query);
 
@@ -141,7 +141,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     true,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
-                new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Skipped())));
+                new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Verified())));
 
         var result = await _orchestrator.InstallAsync(query, setAsDefault: true);
 
@@ -150,10 +150,9 @@ public sealed class InstallationOrchestratorTests : IDisposable
     }
 
     [Fact]
-    public async Task InstallAsync_ChecksumAndSymlinkWarnings_RendersWarnings()
+    public async Task InstallAsync_SymlinkWarning_RendersWarning()
     {
         var query = new[] { "4.3.0" };
-        var checksum = new ChecksumVerification.Failed(new NetworkError.ConnectionFailure("offline"));
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.2.0-stable" });
         _mockInstallationService.Setup(x =>
@@ -163,13 +162,35 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
-                new InstallationOutcome.NewInstallation("4.3.0-stable", checksum, new SymlinkError.PermissionDenied())));
+                new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Verified(),
+                    new SymlinkError.PermissionDenied())));
 
         var result = await _orchestrator.InstallAsync(query);
 
         Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
-        Assert.Contains("Could not verify checksum", _console.Output);
         Assert.Contains("Unable to create symlinks due to insufficient permissions", _console.Output);
+    }
+
+    [Fact]
+    public async Task InstallAsync_UnavailableChecksum_RendersExplicitWarning()
+    {
+        var query = new[] { "3.2.1" };
+
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.2.0-stable" });
+        _mockInstallationService.Setup(x =>
+                x.InstallByQueryAsync(
+                    It.Is<string[]>(q => q.SequenceEqual(query)),
+                    It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                    false,
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
+                new InstallationOutcome.NewInstallation("3.2.1-stable-standard", new ChecksumVerification.Unavailable())));
+
+        var result = await _orchestrator.InstallAsync(query);
+
+        Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
+        Assert.Contains("Checksum unavailable", _console.Output);
+        Assert.Contains("verification", _console.Output);
     }
 
     public void Dispose()

@@ -84,8 +84,20 @@ public class InstallationService(
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
 
             const int bufferSize = 32768;
-            var catalogArtifact = await releaseCatalog.FindArtifact(godotRelease, cancellationToken);
-            var zipFileName = catalogArtifact?.FileName ?? godotRelease.ZipFileName;
+            ReleaseArtifact artifact;
+            switch (await releaseCatalog.FindOrHydrateArtifact(godotRelease, cancellationToken))
+            {
+                case Result<ReleaseArtifact, NetworkError>.Success success:
+                    artifact = success.Value;
+                    break;
+                case Result<ReleaseArtifact, NetworkError>.Failure failure:
+                    return new Result<InstallationOutcome, InstallationError>.Failure(
+                        new InstallationError.Failed($"Release catalog hydration failed for {godotRelease.ReleaseName}: {failure.Error}"));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
+
+            var zipFileName = artifact.FileName;
             var responseResult = await releaseManager.GetZipFile(zipFileName, godotRelease, cancellationToken);
 
             HttpResponseMessage response;
@@ -147,7 +159,7 @@ public class InstallationService(
                 }
             }
 
-            var checksumResult = await VerifyChecksum(godotRelease, zipFileName, catalogArtifact, memStream, progress, cancellationToken);
+            var checksumResult = await VerifyChecksum(zipFileName, artifact, memStream, progress, cancellationToken);
             ChecksumVerification checksumStatus;
             switch (checksumResult)
             {
@@ -276,54 +288,16 @@ public class InstallationService(
     }
 
     private async Task<Result<ChecksumVerification, InstallationError>> VerifyChecksum(
-        Release godotRelease,
         string zipFileName,
-        ReleaseCatalogArtifact? catalogArtifact,
+        ReleaseArtifact artifact,
         MemoryStream memStream,
         IProgress<OperationProgress<InstallationStage>> progress,
         CancellationToken cancellationToken)
     {
-        var expectedHash = catalogArtifact?.Sha512;
-        ChecksumVerification checksumStatus = new ChecksumVerification.Skipped();
-
-        if (expectedHash is null && ShouldUseLegacyChecksumFallback(godotRelease))
+        if (artifact.Sha512 is not { } expectedHash)
         {
-            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Fetching checksum..."));
-
-            switch (await releaseManager.GetSha512(godotRelease, cancellationToken))
-            {
-                case Result<string, NetworkError>.Success success:
-                    switch (ParseSha512SumsContent(zipFileName, success.Value))
-                    {
-                        case Result<string, InstallationError.ChecksumParseError>.Success parsed:
-                            expectedHash = parsed.Value;
-                            await releaseCatalog.RecordArtifact(godotRelease, zipFileName, expectedHash, cancellationToken);
-                            break;
-                        case Result<string, InstallationError.ChecksumParseError>.Failure failure:
-                            logger.LogWarning("Checksum entry not found for {FileName} in SHA512-SUMS.txt, continuing installation without verification",
-                                zipFileName);
-                            checksumStatus = new ChecksumVerification.Failed(
-                                new NetworkError.ConnectionFailure(failure.Error.Content));
-                            break;
-                        default:
-                            throw new InvalidOperationException("Unexpected Result type");
-                    }
-
-                    break;
-                case Result<string, NetworkError>.Failure failure:
-                    logger.LogWarning("Failed to fetch checksum for {ReleaseNameWithRuntime}, continuing installation without verification",
-                        godotRelease.ReleaseNameWithRuntime);
-
-                    checksumStatus = new ChecksumVerification.Failed(failure.Error);
-                    break;
-                default:
-                    throw new InvalidOperationException("Unexpected Result type");
-            }
-        }
-
-        if (expectedHash is null)
-        {
-            return new Result<ChecksumVerification, InstallationError>.Success(checksumStatus);
+            logger.LogWarning("Checksum unavailable for {FileName}. Installation will continue without verification", zipFileName);
+            return new Result<ChecksumVerification, InstallationError>.Success(new ChecksumVerification.Unavailable());
         }
 
         progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));
@@ -341,36 +315,6 @@ public class InstallationService(
 
         logger.LogInformation("Checksum verified successfully for {FileName}", zipFileName);
         return new Result<ChecksumVerification, InstallationError>.Success(new ChecksumVerification.Verified());
-    }
-
-    private static bool ShouldUseLegacyChecksumFallback(Release release) =>
-        release.Major > 3 || release is { Major: 3, Minor: >= 3 };
-
-    public static Result<string, InstallationError.ChecksumParseError> ParseSha512SumsContent(string fileName, string content)
-    {
-        var lines = content.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var line in lines)
-        {
-            var parts = line.Split([' '], 2, StringSplitOptions.RemoveEmptyEntries);
-
-            if (parts.Length != 2)
-            {
-                continue;
-            }
-
-            var (currentHash, currentFile) = (parts[0].Trim(), parts[1].Trim());
-
-            if (currentFile != fileName)
-            {
-                continue;
-            }
-
-            return new Result<string, InstallationError.ChecksumParseError>.Success(currentHash);
-        }
-
-        return new Result<string, InstallationError.ChecksumParseError>.Failure(
-            new InstallationError.ChecksumParseError($"Checksum entry for {fileName} not found in SHA512-SUMS.txt"));
     }
 
 }

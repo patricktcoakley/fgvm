@@ -367,7 +367,7 @@ public class VersionManagementServiceTests
 
         var mockRelease = CreateMockRelease(newVersion);
         var installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-            new InstallationOutcome.NewInstallation(mockRelease.ReleaseNameWithRuntime, new ChecksumVerification.Skipped()));
+            new InstallationOutcome.NewInstallation(mockRelease.ReleaseNameWithRuntime, new ChecksumVerification.Verified()));
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
@@ -456,7 +456,7 @@ public class VersionManagementServiceTests
 
         var mockRelease = CreateMockRelease(compatibleVersion);
         var installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-            new InstallationOutcome.NewInstallation(mockRelease.ReleaseNameWithRuntime, new ChecksumVerification.Skipped()));
+            new InstallationOutcome.NewInstallation(mockRelease.ReleaseNameWithRuntime, new ChecksumVerification.Verified()));
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => q.SequenceEqual(new[] { projectVersion })),
@@ -529,7 +529,7 @@ public class VersionManagementServiceTests
 
         var mockRelease = CreateMockRelease(compatibleVersion);
         var installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-            new InstallationOutcome.NewInstallation(mockRelease.ReleaseNameWithRuntime, new ChecksumVerification.Skipped()));
+            new InstallationOutcome.NewInstallation(mockRelease.ReleaseNameWithRuntime, new ChecksumVerification.Verified()));
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => q.SequenceEqual(new[] { projectVersion })),

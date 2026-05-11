@@ -1,9 +1,11 @@
 using Fgvm.Environment;
 using Fgvm.Godot;
+using Fgvm.Progress;
 using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.IO.Compression;
 
 namespace Fgvm.Tests.Services;
 
@@ -41,14 +43,68 @@ public class InstallationServiceTests
         releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task InstallReleaseAsync_MissingCatalogArtifact_ContinuesWithUnavailableChecksum()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
+        var release = Release.TryParse("3.2.1-stable-standard")! with
+        {
+            OS = OS.MacOS,
+            PlatformString = "osx.64"
+        };
+
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.GetZipFile(It.IsAny<string>(), release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<HttpResponseMessage, NetworkError>.Success(new HttpResponseMessage
+            {
+                Content = new ByteArrayContent(CreateZipArchive())
+            }));
+
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.FindOrHydrateArtifact(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<ReleaseArtifact, NetworkError>.Success(new ReleaseArtifact(release.ZipFileName, null)));
+
+        var hostSystem = new Mock<IHostSystem>();
+        var pathService = new Mock<IPathService>();
+        pathService.SetupGet(x => x.RootPath).Returns(rootPath);
+        pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
+
+        var service = new InstallationService(
+            hostSystem.Object,
+            releaseManager.Object,
+            releaseCatalog.Object,
+            pathService.Object,
+            NullLogger<InstallationService>.Instance);
+
+        try
+        {
+            var result = await service.InstallReleaseAsync(
+                release,
+                new Progress<OperationProgress<InstallationStage>>(),
+                setAsDefault: false,
+                CancellationToken.None);
+
+            var success = Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
+            var installation = Assert.IsType<InstallationOutcome.NewInstallation>(success.Value);
+            Assert.IsType<ChecksumVerification.Unavailable>(installation.ChecksumStatus);
+        }
+        finally
+        {
+            if (Directory.Exists(rootPath))
+            {
+                Directory.Delete(rootPath, true);
+            }
+        }
+    }
+
     [Theory]
     [MemberData(nameof(ParseTestData))]
     public void ParseSha512SumsContent_ReturnsExpectedSha512SumsContent(string fileName, string hash)
     {
-        var result = InstallationService.ParseSha512SumsContent(fileName, ParseSha512SumsContentTestInput());
+        var artifacts = ReleaseCatalog.ParseSha512SumsContent(ParseSha512SumsContentTestInput());
 
-        var success = Assert.IsType<Result<string, InstallationError.ChecksumParseError>.Success>(result);
-        Assert.Equal(hash, success.Value);
+        var artifact = Assert.Single(artifacts, entry => entry.FileName == fileName);
+        Assert.Equal(hash, artifact.Sha512);
     }
 
     public static IEnumerable<object[]> ParseTestData()
@@ -264,5 +320,18 @@ public class InstallationServiceTests
         }
 
         return releaseManager;
+    }
+
+    private static byte[] CreateZipArchive()
+    {
+        using var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("Godot");
+            using var writer = new StreamWriter(entry.Open());
+            writer.Write("fake executable");
+        }
+
+        return stream.ToArray();
     }
 }

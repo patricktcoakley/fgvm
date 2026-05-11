@@ -38,6 +38,10 @@ public class TuxFamilyClient(HttpClient httpClient, ILogger<TuxFamilyClient> log
             return new Result<string, NetworkError>.Failure(
                 new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError("Failed to get SHA512 from TuxFamily for {Version}: {Message}", godotRelease.Version, ex.Message);
