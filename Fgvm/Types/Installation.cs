@@ -8,11 +8,8 @@ public abstract record ChecksumVerification
     /// <summary>Checksum was verified successfully</summary>
     public record Verified : ChecksumVerification;
 
-    /// <summary>Checksum verification was skipped (version too old)</summary>
-    public record Skipped : ChecksumVerification;
-
-    /// <summary>Checksum verification failed due to network error</summary>
-    public record Failed(NetworkError Error) : ChecksumVerification;
+    /// <summary>Checksum metadata was unavailable for the selected artifact</summary>
+    public record Unavailable : ChecksumVerification;
 }
 
 /// <summary>
@@ -38,6 +35,4 @@ public abstract record InstallationError
     /// <summary>Checksum mismatch - actual security issue</summary>
     public record ChecksumMismatch(string Expected, string Actual, string FileName) : InstallationError;
 
-    /// <summary>Checksum content couldn't be parsed</summary>
-    public record ChecksumParseError(string Content) : InstallationError;
 }

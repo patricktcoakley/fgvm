@@ -160,14 +160,11 @@ public static class Messages
     public static string UnableToGetRelease(string version) => $"Unable to get release with selection `{version}`.";
 
     // Checksum verification
-    public static string ChecksumVerificationFailed(string releaseNameWithRuntime, NetworkError error) =>
-        $"[orange1]Warning: Could not verify checksum for {releaseNameWithRuntime}. Installation continued without verification.[/]";
+    public static string ChecksumUnavailable(string releaseNameWithRuntime) =>
+        $"[orange1]Warning: Checksum unavailable for {releaseNameWithRuntime}. Installation continued without verification.[/]";
 
     public static string ChecksumMismatch(string fileName, string expected, string actual) =>
         $"[red]Checksum mismatch for {fileName}![/]\n[red]Expected: {expected}[/]\n[red]Actual:   {actual}[/]\n[red]This could indicate a corrupted download or security issue.[/]";
-
-    public static string ChecksumParseError(string content) =>
-        $"[red]Failed to parse checksum file.[/]\n[dim]Content preview: {(content.Length > 100 ? content[..100] + "..." : content)}[/]";
 
     private static string BuildInstallQuery(string projectVersion, bool isDotNet)
     {

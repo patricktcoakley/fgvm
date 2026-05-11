@@ -96,9 +96,9 @@ public sealed class InstallationOrchestrator(
                 var successMessage = GetInstallationSuccessMessage(release, setAsDefault, wasAutoSetAsDefault);
                 console.MarkupLine(successMessage);
 
-                if (checksumStatus is ChecksumVerification.Failed(var networkError))
+                if (checksumStatus is ChecksumVerification.Unavailable)
                 {
-                    console.MarkupLine(Messages.ChecksumVerificationFailed(release, networkError));
+                    console.MarkupLine(Messages.ChecksumUnavailable(release));
                 }
 
                 if (symlinkWarning is not null)

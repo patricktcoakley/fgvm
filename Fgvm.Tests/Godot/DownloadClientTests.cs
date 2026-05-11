@@ -109,6 +109,50 @@ public class DownloadClientTests
     }
 
     [Fact]
+    public async Task GetReleaseManifest_GitHubSucceeds_ReturnsManifest()
+    {
+        var release = Release.TryParse("4.2-dev2-standard")!;
+        var gitHubMockHandler = new Mock<HttpMessageHandler>();
+        gitHubMockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.Is<HttpRequestMessage>(request =>
+                    request.RequestUri!.ToString() == "https://raw.githubusercontent.com/godotengine/godot-builds/main/releases/godot-4.2-dev2.json"),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent(
+            """
+            {
+              "name": "4.2-dev2",
+              "version": "4.2",
+              "status": "dev2",
+              "release_date": 123,
+              "git_reference": "abc123",
+              "files": [
+                {
+                  "filename": "Godot_v4.2-dev2_macos.universal.zip",
+                  "checksum": "hash"
+                }
+              ]
+            }
+            """)
+            });
+        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
+        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(new Mock<HttpMessageHandler>().Object), _mockTuxFamilyLogger.Object);
+        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
+
+        var result = await downloadClient.GetReleaseManifest(release, CancellationToken.None);
+
+        var success = Assert.IsType<Result<GodotReleaseManifest, NetworkError>.Success>(result);
+        Assert.Equal("4.2-dev2", success.Value.Name);
+        Assert.Equal(123, success.Value.ReleaseDate);
+        Assert.Single(success.Value.Files);
+        Assert.Equal("hash", success.Value.Files[0].Checksum);
+    }
+
+    [Fact]
     public async Task GetZipFile_GitHubSucceeds_ReturnsSuccess()
     {
         var gitHubMockHandler = CreateMockHttpHandler(HttpStatusCode.OK, "zip");

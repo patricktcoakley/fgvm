@@ -9,6 +9,7 @@ namespace Fgvm.Godot;
 public interface IGitHubClient
 {
     Task<Result<IEnumerable<string>, NetworkError>> ListReleasesAsync(CancellationToken cancellationToken);
+    Task<Result<GodotReleaseManifest, NetworkError>> GetReleaseManifestAsync(string releaseName, CancellationToken cancellationToken);
     Task<Result<string, NetworkError>> GetSha512Async(Release godotRelease, CancellationToken cancellationToken);
     Task<Result<HttpResponseMessage, NetworkError>> GetZipFileAsync(string filename, Release godotRelease, CancellationToken cancellationToken);
 }
@@ -17,6 +18,7 @@ public class GitHubClient : IGitHubClient
 {
     private const string BaseUrl = "https://github.com/godotengine/godot-builds/releases/download";
     private const string ApiUrl = "https://api.github.com/repos/godotengine/godot-builds/contents/releases";
+    private const string RawManifestBaseUrl = "https://raw.githubusercontent.com/godotengine/godot-builds/main/releases";
     private readonly Lazy<IConfiguration> _configuration;
 
     private readonly HttpClient _httpClient;
@@ -56,10 +58,51 @@ public class GitHubClient : IGitHubClient
             return new Result<IEnumerable<string>, NetworkError>.Failure(
                 new NetworkError.RequestFailure(ApiUrl, (int)response.StatusCode, body));
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError("Failed to list releases from GitHub: {Message}", ex.Message);
             return new Result<IEnumerable<string>, NetworkError>.Failure(
+                new NetworkError.ConnectionFailure(ex.Message));
+        }
+    }
+
+    public async Task<Result<GodotReleaseManifest, NetworkError>> GetReleaseManifestAsync(string releaseName, CancellationToken cancellationToken)
+    {
+        var url = $"{RawManifestBaseUrl}/godot-{releaseName}.json";
+
+        try
+        {
+            _logger.LogInformation("HTTP GET {Url}", url);
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+            _logger.LogInformation("HTTP GET {Url} completed with status {StatusCode}", url, (int)response.StatusCode);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var jsonString = await response.Content.ReadAsStringAsync(cancellationToken);
+                var manifest = JsonSerializer.Deserialize(jsonString, GithubReleaseAssetContext.Default.GodotReleaseManifest);
+                return manifest is not null
+                    ? new Result<GodotReleaseManifest, NetworkError>.Success(manifest)
+                    : new Result<GodotReleaseManifest, NetworkError>.Failure(
+                        new NetworkError.ConnectionFailure($"Release manifest {releaseName} was empty or invalid"));
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogError("{Url} returned {StatusCode}. Body: {Body}", url, response.StatusCode, body);
+            return new Result<GodotReleaseManifest, NetworkError>.Failure(
+                new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Failed to get release manifest from GitHub for {ReleaseName}: {Message}", releaseName, ex.Message);
+            return new Result<GodotReleaseManifest, NetworkError>.Failure(
                 new NetworkError.ConnectionFailure(ex.Message));
         }
     }
@@ -84,6 +127,10 @@ public class GitHubClient : IGitHubClient
             _logger.LogError("{Url} returned {StatusCode}. Body: {Body}", url, response.StatusCode, body);
             return new Result<string, NetworkError>.Failure(
                 new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

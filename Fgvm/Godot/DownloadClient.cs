@@ -7,6 +7,7 @@ namespace Fgvm.Godot;
 public interface IDownloadClient
 {
     Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken);
+    Task<Result<GodotReleaseManifest, NetworkError>> GetReleaseManifest(Release godotRelease, CancellationToken cancellationToken);
     Task<Result<string, NetworkError>> GetSha512(Release godotRelease, CancellationToken cancellationToken);
     Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken);
 }
@@ -19,6 +20,9 @@ public class DownloadClient(IGitHubClient gitHubClient, ITuxFamilyClient tuxFami
 {
     public async Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken) =>
         await gitHubClient.ListReleasesAsync(cancellationToken);
+
+    public async Task<Result<GodotReleaseManifest, NetworkError>> GetReleaseManifest(Release godotRelease, CancellationToken cancellationToken) =>
+        await gitHubClient.GetReleaseManifestAsync(godotRelease.ReleaseName, cancellationToken);
 
     public async Task<Result<string, NetworkError>> GetSha512(Release godotRelease, CancellationToken cancellationToken)
     {
@@ -114,4 +118,5 @@ public class GitHubReleaseAsset
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(GitHubReleaseAsset))]
 [JsonSerializable(typeof(List<GitHubReleaseAsset>))]
+[JsonSerializable(typeof(GodotReleaseManifest))]
 internal partial class GithubReleaseAssetContext : JsonSerializerContext;

@@ -5,7 +5,6 @@ using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Security;
-using System.Security.Cryptography;
 using ZLogger;
 using Messages = Fgvm.Cli.Error.Messages;
 
@@ -30,7 +29,6 @@ public sealed class InstallCommand(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="query">Version query arguments</param>
     /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="CryptographicException"></exception>
     /// <exception cref="SecurityException"></exception>
     [Command("install|i")]
     public async Task Install(bool @default = false, CancellationToken cancellationToken = default, [Argument] params string[] query) =>
@@ -43,7 +41,6 @@ public sealed class InstallCommand(
     /// <param name="setAsDefault">Whether to set the installed version as default</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="CryptographicException"></exception>
     /// <exception cref="SecurityException"></exception>
     private async Task InstallCore(string[] query, bool setAsDefault, CancellationToken cancellationToken)
     {
@@ -61,9 +58,6 @@ public sealed class InstallCommand(
 
                 case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.ChecksumMismatch mismatch):
                     throw new SecurityException(Messages.ChecksumMismatch(mismatch.FileName, mismatch.Expected, mismatch.Actual));
-
-                case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.ChecksumParseError parseError):
-                    throw new CryptographicException(Messages.ChecksumParseError(parseError.Content));
 
                 case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.Failed failed):
                     throw new InvalidOperationException(Messages.InstallationFailed(failed.Reason));

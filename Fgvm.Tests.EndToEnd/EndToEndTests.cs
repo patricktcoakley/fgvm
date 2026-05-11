@@ -139,7 +139,9 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
             var content = await fixture.ReadFile(releasesPath);
             using var document = JsonDocument.Parse(content);
             Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
-            Assert.Contains(document.RootElement.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
+            Assert.True(document.RootElement.TryGetProperty("lastUpdated", out _));
+            Assert.True(document.RootElement.TryGetProperty("releases", out var releases));
+            Assert.Contains(releases.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
         }
         finally
         {
@@ -166,7 +168,37 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
             var content = await fixture.ReadFile(releasesPath);
             using var document = JsonDocument.Parse(content);
             Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
-            Assert.Contains(document.RootElement.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
+            Assert.True(document.RootElement.TryGetProperty("lastUpdated", out _));
+            Assert.True(document.RootElement.TryGetProperty("releases", out var releases));
+            Assert.Contains(releases.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
+        }
+        finally
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+        }
+    }
+
+    [Fact]
+    public async Task SearchCommandRebuildsInvalidReleasesJson()
+    {
+        var home = $"/tmp/fgvm-cache-invalid-{Guid.NewGuid():N}";
+        var root = $"{home}/fgvm";
+        var releasesPath = $"{root}/releases.json";
+
+        try
+        {
+            await fixture.ExecuteShellCommand("rm", ["-rf", home]);
+            await fixture.ExecuteShellCommand("mkdir", ["-p", root]);
+            await fixture.ExecuteShellCommand("sh", ["-c", $"printf '{{ nope' > {releasesPath}"]);
+
+            var result = await fixture.ExecuteShellCommand("sh", ["-c", $"FGVM_HOME={home} {fixture.FgvmPath} search --json 4.5"]);
+
+            await fixture.AssertSuccessfulExecutionAsync(result, "search with invalid releases.json");
+            var content = await fixture.ReadFile(releasesPath);
+            using var document = JsonDocument.Parse(content);
+            Assert.True(document.RootElement.TryGetProperty("lastUpdated", out _));
+            Assert.True(document.RootElement.TryGetProperty("releases", out var releases));
+            Assert.Contains(releases.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
         }
         finally
         {
@@ -187,7 +219,7 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
             await fixture.ExecuteShellCommand("mkdir", ["-p", root]);
             await fixture.ExecuteShellCommand("sh", [
                 "-c",
-                $"cat > {releasesPath} << 'EOF'\n{{\"4.999\":{{\"stable\":{{}}}}}}\nEOF"
+                $"cat > {releasesPath} << 'EOF'\n{{\"lastUpdated\":\"2999-01-01T00:00:00+00:00\",\"releases\":{{\"4.999\":{{\"stable\":{{}}}}}}}}\nEOF"
             ]);
 
             var cachedSearch = await fixture.ExecuteShellCommand("sh", ["-c", $"FGVM_HOME={home} {fixture.FgvmPath} search --json 4.999"]);
@@ -203,7 +235,9 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
 
             using var document = JsonDocument.Parse(content);
             Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
-            Assert.Contains(document.RootElement.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
+            Assert.True(document.RootElement.TryGetProperty("lastUpdated", out _));
+            Assert.True(document.RootElement.TryGetProperty("releases", out var releases));
+            Assert.Contains(releases.EnumerateObject(), property => property.Value.TryGetProperty("stable", out _));
         }
         finally
         {
