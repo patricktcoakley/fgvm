@@ -103,7 +103,7 @@ Each installation will be in a folder with the `<VERSION>-<TYPE>-<RUNTIME>`; whi
 if you installed the 4.3 stable with .NET support, it would be in a folder marked `4.3-stable-mono`. 
 
 By default, when you install a version a [symlink](https://en.wikipedia.org/wiki/Symbolic_link) is created in a folder called `bin`. This is what the `fgvm godot` command is running when you don't pass any arguments,
-but you can also just run `fgvm godot -i` to pick any another installation to launch, or you can simply use `fgvm set` to pick the version you want to launch by default.
+but you can also just run `fgvm godot -i` to pick another installation to launch, or you can simply use `fgvm set` to pick the version you want to launch by default.
 
 Right now fvgm supports installing whatever your computer supports by CPU and OS, so if you're running Windows on a standard x86_64 CPU you are able to install
 and run versions of Godot all the way back to 1.x. macOS went through multiple architecture transitions since Godot 1 and so most modern Macs will only support releases
@@ -152,8 +152,8 @@ but here is a detailed summary of the available commands:
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if remove a specific version, like
       `4.4.1-stable-mono`, it will just delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
-- `fgvm logs` [`--level|-l <string>`] [`--message|-m <string>`] [`--json`] displays all the of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
-- `fgvm search` or `fgvm s` `[<...strings>]` [`--json|-j`] [`--no-cache|-F`] takes an optional query to search all available remote versions of Godot. Use `--json` or `-j` to output in JSON format,
+- `fgvm logs` [`--level|-l <string>`] [`--message|-m <string>`] [`--json`] displays all of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
+- `fgvm search` or `fgvm s` `[<...strings>]` [`--json|-j`] [`--no-cache|-F`] takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
   and `--no-cache` or `-F` to force a remote refresh instead of using the local release cache.
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
@@ -245,7 +245,7 @@ other use cases in the future, but otherwise all functionality exists inside the
 
 ### Build
 
-In order to build this project, you just need the .NET 10 SDK. Running `dotnet run -- <command> [args]` will let you run commands immediately, but you can also run `dotnet build -c Release` to get a
+In order to build this project, you just need the .NET 10 SDK. Running `dotnet run --project Fgvm.Cli -- <command> [args]` will let you run commands immediately, but you can also run `dotnet build -c Release` to get a
 release build and just copy to a directory in your PATH:
 
 ```shell
@@ -268,6 +268,14 @@ mise run test
 
 ```shell
 dotnet test
+```
+
+Or, with mise:
+
+```shell
+mise run test
+mise run test:unit
+mise run test:e2e
 ```
 
 ### Contributing
