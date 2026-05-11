@@ -24,7 +24,22 @@ internal abstract record ReleaseCatalogRead
 /// </summary>
 public interface IReleaseCatalog
 {
+    /// <summary>
+    ///     Reads available release identifiers from the local catalog or remote source.
+    /// </summary>
+    /// <param name="fetchMode">Whether to use the local cache or force a remote refresh.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Release identifiers, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when release lookup is canceled.</exception>
     Task<Result<string[], NetworkError>> ReadReleaseIds(ReleaseFetchMode fetchMode, CancellationToken cancellationToken);
+
+    /// <summary>
+    ///     Finds artifact metadata for a release, hydrating the local catalog from remote metadata when needed.
+    /// </summary>
+    /// <param name="release">The release whose artifact should be found.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The release artifact, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when artifact lookup is canceled.</exception>
     Task<Result<ReleaseArtifact, NetworkError>> FindOrHydrateArtifact(Release release, CancellationToken cancellationToken);
 }
 
@@ -35,6 +50,7 @@ public sealed class ReleaseCatalog(
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromDays(1);
 
+    /// <inheritdoc />
     public async Task<Result<string[], NetworkError>> ReadReleaseIds(ReleaseFetchMode fetchMode, CancellationToken cancellationToken)
     {
         var cachedResult = await ReadCatalogState(cancellationToken);
@@ -64,6 +80,7 @@ public sealed class ReleaseCatalog(
         }
     }
 
+    /// <inheritdoc />
     public async Task<Result<ReleaseArtifact, NetworkError>> FindOrHydrateArtifact(Release release, CancellationToken cancellationToken)
     {
         var manifestResult = await ReadCatalogOrRebuild(cancellationToken);

@@ -24,6 +24,8 @@ public sealed class SearchCommand(
     /// <param name="noCache">-F, Force a remote refresh instead of reading releases.json.</param>
     /// <param name="query">Optional query arguments.</param>
     /// <param name="cancellationToken"></param>
+    /// <exception cref="InvalidOperationException">Thrown when remote release lookup fails.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when search is canceled.</exception>
     [Command("search|s")]
     public async Task Search(bool json = false, bool noCache = false, [Argument] string[]? query = null, CancellationToken cancellationToken = default)
     {

@@ -3,25 +3,83 @@ using Fgvm.Types;
 
 namespace Fgvm.Godot;
 
+/// <summary>
+///     Resolves, filters, and fetches Godot releases.
+/// </summary>
 public interface IReleaseManager
 {
+    /// <summary>
+    ///     Lists available release identifiers.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Release identifiers, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when release lookup is canceled.</exception>
     Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken);
 
+    /// <summary>
+    ///     Searches available remote releases using the supplied query.
+    /// </summary>
+    /// <param name="query">Version query arguments.</param>
+    /// <param name="fetchMode">Whether to use the local cache or force a remote refresh.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Matching release identifiers, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when release lookup is canceled.</exception>
     Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(
         string[] query,
         ReleaseFetchMode fetchMode,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    ///     Gets SHA512 checksum metadata for a release.
+    /// </summary>
+    /// <param name="release">The release whose checksum metadata should be fetched.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Checksum metadata, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when the request is canceled.</exception>
     Task<Result<string, NetworkError>> GetSha512(Release release, CancellationToken cancellationToken);
+
+    /// <summary>
+    ///     Gets the release archive response for a release file.
+    /// </summary>
+    /// <param name="filename">The archive filename to fetch.</param>
+    /// <param name="release">The release that owns the archive.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The HTTP response, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when the request is canceled.</exception>
     Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken);
 
-    Release? TryFindReleaseByQuery(string[] query, string[] releaseNames);
+    /// <summary>
+    ///     Resolves a version query against available release identifiers.
+    /// </summary>
+    /// <param name="query">Version query arguments.</param>
+    /// <param name="releaseIds">Available release identifiers.</param>
+    /// <returns>The resolved release, or a query error.</returns>
     Result<Release, QueryError> ResolveReleaseQuery(string[] query, string[] releaseIds);
+
+    /// <summary>
+    ///     Filters release identifiers by version query.
+    /// </summary>
+    /// <param name="query">Version query arguments.</param>
+    /// <param name="releaseNames">Release identifiers to filter.</param>
+    /// <param name="chronological">Whether to sort chronologically instead of by selection preference.</param>
+    /// <returns>Matching release identifiers.</returns>
     IEnumerable<string> FilterReleasesByQuery(string[] query, string[] releaseNames, bool chronological = false);
-    string? FindCompatibleVersion(string projectVersion, bool isDotNet, IEnumerable<string> installedVersions);
+
+    /// <summary>
+    ///     Finds an installed release compatible with a project requirement.
+    /// </summary>
+    /// <param name="projectVersion">The project-required version.</param>
+    /// <param name="isDotNet">Whether the project requires Mono/.NET.</param>
+    /// <param name="installedReleaseIds">Installed release identifiers.</param>
+    /// <returns>The compatible release identifier, or a compatibility error.</returns>
     Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion, bool isDotNet, IEnumerable<string> installedReleaseIds);
 
-    Release? TryCreateRelease(string versionString);
+    /// <summary>
+    ///     Creates a release model for the current host platform.
+    /// </summary>
+    /// <param name="versionString">The release version string.</param>
+    /// <returns>The release, or a parse/platform error.</returns>
+    Result<Release, ReleaseParseError> CreateRelease(string versionString);
 }
 
 public sealed class ReleaseManager(
@@ -30,6 +88,7 @@ public sealed class ReleaseManager(
     IDownloadClient downloadClient,
     IReleaseCatalog releaseCatalog) : IReleaseManager
 {
+    /// <inheritdoc />
     public async Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken)
     {
         var result = await releaseCatalog.ReadReleaseIds(ReleaseFetchMode.UseCache, cancellationToken);
@@ -43,6 +102,7 @@ public sealed class ReleaseManager(
         };
     }
 
+    /// <inheritdoc />
     public async Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(
         string[] query,
         ReleaseFetchMode fetchMode,
@@ -60,41 +120,46 @@ public sealed class ReleaseManager(
         };
     }
 
+    /// <inheritdoc />
     public async Task<Result<string, NetworkError>> GetSha512(Release release, CancellationToken cancellationToken) =>
         await downloadClient.GetSha512(release, cancellationToken);
 
+    /// <inheritdoc />
     public async Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
         await downloadClient.GetZipFile(filename, release, cancellationToken);
 
-    public Release? TryFindReleaseByQuery(string[] query, string[] releaseNames)
+    internal Release? TryFindReleaseByQuery(string[] query, string[] releaseNames)
     {
         var result = ResolveReleaseQuery(query, releaseNames);
         return result switch
         {
             Result<Release, QueryError>.Success(var release) => release,
-            Result<Release, QueryError>.Failure(QueryError.EmptyQuery) => throw new ArgumentException("Empty query"),
-            Result<Release, QueryError>.Failure(QueryError.InvalidQuery(var message)) => throw new ArgumentException(message),
-            Result<Release, QueryError>.Failure(QueryError.NotFound) => null,
+            Result<Release, QueryError>.Failure => null,
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
     }
 
+    /// <inheritdoc />
     public Result<Release, QueryError> ResolveReleaseQuery(string[] query, string[] releaseIds)
     {
-        try
+        if (query.Length == 0)
         {
-            return query.Length == 0
-                ? new Result<Release, QueryError>.Failure(new QueryError.EmptyQuery())
-                : FindReleaseByQuery(query, releaseIds) is { } release
-                    ? new Result<Release, QueryError>.Success(release)
-                    : new Result<Release, QueryError>.Failure(new QueryError.NotFound(string.Join(" ", query)));
+            return new Result<Release, QueryError>.Failure(new QueryError.EmptyQuery());
         }
-        catch (ArgumentException ex)
+
+        return FindReleaseByQuery(query, releaseIds) switch
         {
-            return new Result<Release, QueryError>.Failure(new QueryError.InvalidQuery(ex.Message));
-        }
+            Result<Release?, QueryError>.Success(var release) when release is not null =>
+                new Result<Release, QueryError>.Success(release),
+            Result<Release?, QueryError>.Success =>
+                new Result<Release, QueryError>.Failure(new QueryError.NotFound(string.Join(" ", query))),
+            Result<Release?, QueryError>.Failure(var error) =>
+                new Result<Release, QueryError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
     }
 
+    /// <inheritdoc />
     public IEnumerable<string> FilterReleasesByQuery(string[] query, string[] releaseNames, bool chronological = false)
     {
         // Extract runtime environment filter (mono/standard)
@@ -136,38 +201,43 @@ public sealed class ReleaseManager(
         return sorted.Select(x => x.OriginalName);
     }
 
-    public Release? TryCreateRelease(string versionString)
+    /// <inheritdoc />
+    public Result<Release, ReleaseParseError> CreateRelease(string versionString)
     {
+        if (string.IsNullOrWhiteSpace(versionString))
+        {
+            return new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.EmptyVersion());
+        }
+
         var release = Release.TryParse(versionString);
         if (release == null)
         {
-            return null;
+            return new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.InvalidVersion(versionString));
         }
 
         var platformStringResult = platformStringProvider.GetPlatformString(release);
 
         return platformStringResult switch
         {
-            Result<string, PlatformError>.Success(var platformString) => release with
-            {
-                OS = hostSystem.SystemInfo.CurrentOS,
-                PlatformString = platformString
-            },
-            _ => null
-        };
-    }
-
-    public string? FindCompatibleVersion(string projectVersion, bool isDotNet, IEnumerable<string> installedVersions)
-    {
-        var result = FindCompatibleVersionResult(projectVersion, isDotNet, installedVersions);
-        return result switch
-        {
-            Result<string, CompatibilityError>.Success(var version) => version,
-            Result<string, CompatibilityError>.Failure => null,
+            Result<string, PlatformError>.Success(var platformString) =>
+                new Result<Release, ReleaseParseError>.Success(release with
+                {
+                    OS = hostSystem.SystemInfo.CurrentOS,
+                    PlatformString = platformString
+                }),
+            Result<string, PlatformError>.Failure(PlatformError.Unsupported(var unsupportedRelease, var os, var arch)) =>
+                new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.UnsupportedPlatform(unsupportedRelease, os, arch)),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
     }
 
+    internal Release? TryCreateRelease(string versionString)
+    {
+        var result = CreateRelease(versionString);
+        return result is Result<Release, ReleaseParseError>.Success success ? success.Value : null;
+    }
+
+    /// <inheritdoc />
     public Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion, bool isDotNet, IEnumerable<string> installedReleaseIds)
     {
         var versions = installedReleaseIds.ToList();
@@ -229,12 +299,21 @@ public sealed class ReleaseManager(
         return new Result<string, CompatibilityError>.Success(bestRelease.ReleaseNameWithRuntime);
     }
 
-    private Release? FindReleaseByQuery(string[] query, string[] releaseNames)
+    internal string? FindCompatibleVersion(string projectVersion, bool isDotNet, IEnumerable<string> installedVersions)
     {
-        return query switch
+        var result = FindCompatibleVersionResult(projectVersion, isDotNet, installedVersions);
+        return result switch
         {
-            // We handle empty query at the call site
-            [] => throw new ArgumentException("Empty query"),
+            Result<string, CompatibilityError>.Success(var version) => version,
+            Result<string, CompatibilityError>.Failure => null,
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
+    private Result<Release?, QueryError> FindReleaseByQuery(string[] query, string[] releaseNames)
+    {
+        Release? release = query switch
+        {
             // Handle latest stable standard
             ["latest"] => TryFilterLatest("stable", "standard", releaseNames),
             // Handle latest stable by with runtime
@@ -247,12 +326,24 @@ public sealed class ReleaseManager(
                                                           runtime is "mono" or "standard"
                 => TryFilterLatest(releaseType, runtime, releaseNames),
             // Explicit version, i.e. `4.2-stable(-mono)`
+            _ => null
+        };
+
+        if (release is not null)
+        {
+            return new Result<Release?, QueryError>.Success(release);
+        }
+
+        return query switch
+        {
+            ["latest"] or ["latest", _] or ["latest", _, _] =>
+                new Result<Release?, QueryError>.Success(null),
             _ => TryFilterRelease(query, releaseNames)
         };
     }
 
 
-    private Release? TryFilterRelease(string[] query, string[] releaseNames)
+    private Result<Release?, QueryError> TryFilterRelease(string[] query, string[] releaseNames)
     {
         // Split on single arguments to for exact version queries like `4.2-stable-mono` or `4.3-beta2`
         if (query.Length == 1)
@@ -263,8 +354,9 @@ public sealed class ReleaseManager(
         var invalidArgs = ArgumentValidator.GetInvalidArguments(query);
         if (invalidArgs.Count > 0)
         {
-            throw new ArgumentException(
-                $"Invalid arguments: {string.Join(", ", invalidArgs)}. Valid arguments are version numbers (e.g. `4`, `4.2`), release types ( {string.Join(", ", ReleaseType.Prefixes.Select(p => $"`{p}`"))}), and runtime environments (`mono`, `standard`).");
+            return new Result<Release?, QueryError>.Failure(
+                new QueryError.InvalidQuery(
+                    $"Invalid arguments: {string.Join(", ", invalidArgs)}. Valid arguments are version numbers (e.g. `4`, `4.2`), release types ( {string.Join(", ", ReleaseType.Prefixes.Select(p => $"`{p}`"))}), and runtime environments (`mono`, `standard`)."));
         }
 
         var runtime = query
@@ -289,13 +381,15 @@ public sealed class ReleaseManager(
         }
 
         // Try to find the first release that matches the criteria
-        return releaseNames
+        var release = releaseNames
             .Where(x => x.StartsWith(possibleVersion))
             .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType))
             .Select(releaseName => TryCreateRelease($"{releaseName}-{runtime.Name()}"))
             .OfType<Release>()
             .OrderByDescending(release => release)
             .FirstOrDefault();
+
+        return new Result<Release?, QueryError>.Success(release);
     }
 
 

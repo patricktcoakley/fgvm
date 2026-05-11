@@ -10,23 +10,27 @@ namespace Fgvm.Cli.Progress;
 public class SpectreProgressHandler<TStage>(IAnsiConsole console) : IProgressHandler<TStage>
     where TStage : Enum
 {
-    /// <summary>
-    ///     Executes an operation with progress tracking
-    /// </summary>
-    /// <param name="operation">The operation to perform with progress tracking</param>
-    /// <returns>The result of the operation</returns>
+    /// <inheritdoc />
     public async Task<T> TrackProgressAsync<T>(Func<IProgress<OperationProgress<TStage>>, Task<T>> operation)
     {
         return await console.Status()
             .StartAsync("Starting operation...", async ctx =>
             {
-                var progress = new Progress<OperationProgress<TStage>>(progressUpdate =>
-                {
-                    ctx.Status = progressUpdate.Message;
-                    ctx.Refresh();
-                });
-
-                return await operation(progress);
+                return await operation(new StatusProgress(ctx));
             });
+    }
+
+    private sealed class StatusProgress(StatusContext context) : IProgress<OperationProgress<TStage>>
+    {
+        private readonly object _lock = new();
+
+        public void Report(OperationProgress<TStage> value)
+        {
+            lock (_lock)
+            {
+                context.Status = value.Message;
+                context.Refresh();
+            }
+        }
     }
 }

@@ -38,6 +38,7 @@ public sealed class GodotArgumentService : IGodotArgumentService
         "--validate-extension-api", "--install-android-build-template"
     };
 
+    /// <inheritdoc />
     public bool ShouldForceAttachedMode(string? argumentString)
     {
         if (string.IsNullOrEmpty(argumentString))

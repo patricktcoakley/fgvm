@@ -1,5 +1,6 @@
 using Fgvm.Godot;
 using Fgvm.Tests.Godot.ReleaseManager;
+using Fgvm.Types;
 
 namespace Fgvm.Tests.Godot;
 
@@ -31,7 +32,7 @@ public sealed class ProjectManagerTests : IDisposable
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, versionContent);
 
-        var result = _projectManager.FindProjectVersion(_tempDirectory);
+        var result = FindProjectVersionValue(_tempDirectory);
 
         Assert.Equal("4.3-stable-standard", result);
     }
@@ -43,7 +44,7 @@ public sealed class ProjectManagerTests : IDisposable
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, versionContent);
 
-        var result = _projectManager.FindProjectVersion(_tempDirectory);
+        var result = FindProjectVersionValue(_tempDirectory);
 
         Assert.Equal("4.3-stable-standard", result);
     }
@@ -63,7 +64,7 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectVersion(_tempDirectory);
+        var result = FindProjectVersionValue(_tempDirectory);
 
         Assert.Equal("4.3-stable-standard", result);
     }
@@ -80,7 +81,7 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectVersion(_tempDirectory);
+        var result = FindProjectVersionValue(_tempDirectory);
 
         Assert.Equal("4.3-stable-standard", result);
     }
@@ -97,7 +98,7 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectVersion(_tempDirectory);
+        var result = FindProjectVersionValue(_tempDirectory);
 
         Assert.Equal("4.3-stable-standard", result);
     }
@@ -105,7 +106,7 @@ public sealed class ProjectManagerTests : IDisposable
     [Fact]
     public void FindProjectVersion_WithNoFiles_ReturnsNull()
     {
-        var result = _projectManager.FindProjectVersion(_tempDirectory);
+        var result = FindProjectVersionValue(_tempDirectory);
 
         Assert.Null(result);
     }
@@ -122,7 +123,7 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectVersion(_tempDirectory);
+        var result = FindProjectVersionValue(_tempDirectory);
 
         Assert.Null(result);
     }
@@ -134,7 +135,7 @@ public sealed class ProjectManagerTests : IDisposable
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, versionContent);
 
-        var result = _projectManager.FindProjectInfo(_tempDirectory);
+        var result = FindProjectInfoValue(_tempDirectory);
 
         Assert.NotNull(result);
         Assert.Equal("4.3-stable-standard", result.ReleaseNameWithRuntime);
@@ -148,7 +149,7 @@ public sealed class ProjectManagerTests : IDisposable
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, versionContent);
 
-        var result = _projectManager.FindProjectInfo(_tempDirectory);
+        var result = FindProjectInfoValue(_tempDirectory);
 
         Assert.NotNull(result);
         Assert.Equal("4.3-stable-mono", result.ReleaseNameWithRuntime);
@@ -170,7 +171,7 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectInfo(_tempDirectory);
+        var result = FindProjectInfoValue(_tempDirectory);
 
         Assert.NotNull(result);
         Assert.Equal("4.3-stable-mono", result.ReleaseNameWithRuntime);
@@ -189,7 +190,7 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectInfo(_tempDirectory);
+        var result = FindProjectInfoValue(_tempDirectory);
 
         Assert.NotNull(result);
         Assert.Equal("4.3-stable-standard", result.ReleaseNameWithRuntime);
@@ -212,7 +213,7 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectInfo(_tempDirectory);
+        var result = FindProjectInfoValue(_tempDirectory);
 
         Assert.NotNull(result);
         Assert.Equal(expectedRelease, result.ReleaseNameWithRuntime);
@@ -233,14 +234,14 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectInfo(_tempDirectory);
+        var result = FindProjectInfoValue(_tempDirectory);
 
         Assert.NotNull(result);
         Assert.Equal("4.3-stable-standard", result.ReleaseNameWithRuntime);
     }
 
     [Fact]
-    public void FindProjectInfo_WithMalformedProjectGodotFile_ReturnsNull()
+    public void FindProjectInfo_WithMalformedProjectGodotFile_ReturnsInvalidProjectFileFailure()
     {
         var projectFilePath = Path.Combine(_tempDirectory, "project.godot");
         const string projectContent = """
@@ -253,7 +254,8 @@ public sealed class ProjectManagerTests : IDisposable
 
         var result = _projectManager.FindProjectInfo(_tempDirectory);
 
-        Assert.Null(result);
+        var failure = Assert.IsType<Result<ProjectLookup<Release>, ProjectError>.Failure>(result);
+        Assert.IsType<ProjectError.InvalidProjectFile>(failure.Error);
     }
 
     [Fact]
@@ -261,7 +263,7 @@ public sealed class ProjectManagerTests : IDisposable
     {
         const string version = "4.3-stable";
 
-        _projectManager.CreateVersionFile(version, _tempDirectory);
+        CreateVersionFile(version, _tempDirectory);
 
         var filePath = Path.Combine(_tempDirectory, ".fgvm-version");
         Assert.True(File.Exists(filePath));
@@ -279,7 +281,7 @@ public sealed class ProjectManagerTests : IDisposable
             Directory.SetCurrentDirectory(_tempDirectory);
             const string version = "4.3-stable";
 
-            _projectManager.CreateVersionFile(version);
+            CreateVersionFile(version);
 
             var filePath = Path.Combine(_tempDirectory, ".fgvm-version");
             Assert.True(File.Exists(filePath));
@@ -303,7 +305,7 @@ public sealed class ProjectManagerTests : IDisposable
             var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
             File.WriteAllText(versionFilePath, "4.3-stable");
 
-            var result = _projectManager.FindProjectVersion();
+            var result = FindProjectVersionValue();
 
             Assert.Equal("4.3-stable-standard", result);
         }
@@ -328,9 +330,30 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = _projectManager.FindProjectInfo(_tempDirectory);
+        var result = FindProjectInfoValue(_tempDirectory);
 
         Assert.NotNull(result);
         Assert.Equal("4.4-dev5-standard", result.ReleaseNameWithRuntime);
     }
+
+    private Release? FindProjectInfoValue(string? directory = null) =>
+        ProjectLookupToNullable(_projectManager.FindProjectInfo(directory));
+
+    private string? FindProjectVersionValue(string? directory = null) =>
+        ProjectLookupToNullable(_projectManager.FindProjectVersion(directory));
+
+    private void CreateVersionFile(string version, string? directory = null)
+    {
+        Assert.IsType<Result<Unit, ProjectError>.Success>(_projectManager.CreateVersionFile(version, directory));
+    }
+
+    private static T? ProjectLookupToNullable<T>(Result<ProjectLookup<T>, ProjectError> result) where T : class =>
+        result switch
+        {
+            Result<ProjectLookup<T>, ProjectError>.Success(ProjectLookup<T>.Found(var value)) => value,
+            Result<ProjectLookup<T>, ProjectError>.Success(ProjectLookup<T>.Missing) => null,
+            Result<ProjectLookup<T>, ProjectError>.Failure(var error) =>
+                throw new InvalidOperationException($"Unexpected project error: {error}"),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
 }

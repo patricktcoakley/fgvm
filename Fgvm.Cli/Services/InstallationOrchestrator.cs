@@ -16,6 +16,15 @@ namespace Fgvm.Cli.Services;
 /// </summary>
 public interface IInstallationOrchestrator
 {
+    /// <summary>
+    ///     Installs a Godot release from a query or interactive selection.
+    /// </summary>
+    /// <param name="query">Version query arguments.</param>
+    /// <param name="setAsDefault">Whether to set the installed version as default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The installation result.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when release names, installed versions, or release parsing cannot continue.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when interactive selection or installation is canceled.</exception>
     Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query, bool setAsDefault = false,
         CancellationToken cancellationToken = default);
 }
@@ -28,6 +37,7 @@ public sealed class InstallationOrchestrator(
     IProgressHandler<InstallationStage> progressHandler,
     IAnsiConsole console) : IInstallationOrchestrator
 {
+    /// <inheritdoc />
     public async Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query, bool setAsDefault = false,
         CancellationToken cancellationToken = default)
     {
@@ -36,9 +46,9 @@ public sealed class InstallationOrchestrator(
 
         if (query.Length == 0)
         {
-            var releaseNames = await installationService.FetchReleaseNames(cancellationToken);
+            var releaseNames = await FetchReleaseNames(cancellationToken);
             var version = await Install.ShowVersionSelectionPrompt(releaseNames, console, cancellationToken);
-            var godotRelease = releaseManager.TryCreateRelease(version) ?? throw new Exception(Messages.UnableToGetRelease(version));
+            var godotRelease = CreateRelease(version);
 
             var existingPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
             if (Directory.Exists(existingPath))
@@ -48,7 +58,7 @@ public sealed class InstallationOrchestrator(
             }
             else
             {
-                var installedVersions = hostSystem.ListInstallations().ToList();
+                var installedVersions = ListInstallations();
                 var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
                 wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
 
@@ -58,35 +68,47 @@ public sealed class InstallationOrchestrator(
         }
         else
         {
-            var releaseNames = await installationService.FetchReleaseNames(cancellationToken);
-            var godotRelease = releaseManager.TryFindReleaseByQuery(query, releaseNames);
-
-            if (godotRelease != null)
+            var releaseNames = await FetchReleaseNames(cancellationToken);
+            switch (releaseManager.ResolveReleaseQuery(query, releaseNames))
             {
-                var existingPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
-                if (Directory.Exists(existingPath))
+                case Result<Release, QueryError>.Success(var godotRelease):
                 {
-                    installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-                        new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
+                    var existingPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
+                    if (Directory.Exists(existingPath))
+                    {
+                        installationResult = new Result<InstallationOutcome, InstallationError>.Success(
+                            new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
+                    }
+                    else
+                    {
+                        var installedVersions = ListInstallations();
+                        var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
+                        wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
+
+                        installationResult = await progressHandler.TrackProgressAsync(progress =>
+                            installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, cancellationToken));
+                    }
+
+                    break;
                 }
-                else
+
+                case Result<Release, QueryError>.Failure(QueryError.NotFound):
                 {
-                    var installedVersions = hostSystem.ListInstallations().ToList();
+                    var installedVersions = ListInstallations();
                     var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
                     wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
 
                     installationResult = await progressHandler.TrackProgressAsync(progress =>
                         installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, cancellationToken));
+                    break;
                 }
-            }
-            else
-            {
-                var installedVersions = hostSystem.ListInstallations().ToList();
-                var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
-                wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
 
-                installationResult = await progressHandler.TrackProgressAsync(progress =>
-                    installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, cancellationToken));
+                case Result<Release, QueryError>.Failure(var error):
+                    installationResult = new Result<InstallationOutcome, InstallationError>.Failure(MapQueryError(error, query));
+                    break;
+
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
         }
 
@@ -130,6 +152,34 @@ public sealed class InstallationOrchestrator(
         return installationResult;
     }
 
+    private async Task<string[]> FetchReleaseNames(CancellationToken cancellationToken)
+    {
+        return await installationService.FetchReleaseNames(cancellationToken) switch
+        {
+            Result<string[], NetworkError>.Success(var releaseNames) => releaseNames,
+            Result<string[], NetworkError>.Failure =>
+                throw new InvalidOperationException("Unable to fetch available Godot releases."),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
+    private IReadOnlyList<string> ListInstallations() =>
+        hostSystem.ListInstallations() switch
+        {
+            Result<IReadOnlyList<string>, FileSystemError>.Success(var installations) => installations,
+            Result<IReadOnlyList<string>, FileSystemError>.Failure =>
+                throw new InvalidOperationException("Unable to read installed Godot versions."),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+    private Release CreateRelease(string version) =>
+        releaseManager.CreateRelease(version) switch
+        {
+            Result<Release, ReleaseParseError>.Success(var release) => release,
+            Result<Release, ReleaseParseError>.Failure => throw new InvalidOperationException(Messages.UnableToGetRelease(version)),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
     private static string GetInstallationSuccessMessage(string releaseNameWithRuntime, bool setAsDefault, bool wasAutoSetAsDefault)
     {
         var baseMessage = Messages.InstallationSuccessBase(releaseNameWithRuntime);
@@ -141,4 +191,12 @@ public sealed class InstallationOrchestrator(
 
         return setAsDefault ? $"{baseMessage}\n{Messages.SetAsDefaultVersionNote}" : baseMessage;
     }
+
+    private static InstallationError MapQueryError(QueryError error, string[] query) => error switch
+    {
+        QueryError.EmptyQuery => new InstallationError.InvalidQuery("Version query is required."),
+        QueryError.InvalidQuery invalid => new InstallationError.InvalidQuery(invalid.Message),
+        QueryError.NotFound notFound => new InstallationError.NotFound(notFound.Query),
+        _ => new InstallationError.NotFound(string.Join(" ", query))
+    };
 }

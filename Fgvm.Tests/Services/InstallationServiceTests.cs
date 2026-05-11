@@ -21,8 +21,9 @@ public class InstallationServiceTests
 
         var service = CreateService(releaseManager.Object, releaseCatalog.Object);
 
-        var releaseNames = await service.FetchReleaseNames(CancellationToken.None);
+        var releaseNamesResult = await service.FetchReleaseNames(CancellationToken.None);
 
+        var releaseNames = Assert.IsType<Result<string[], NetworkError>.Success>(releaseNamesResult).Value;
         Assert.Equal(["4.4-stable"], releaseNames);
         releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -37,10 +38,35 @@ public class InstallationServiceTests
 
         var service = CreateService(releaseManager.Object, releaseCatalog.Object);
 
-        var releaseNames = await service.FetchReleaseNames(CancellationToken.None, ReleaseFetchMode.ForceRemote);
+        var releaseNamesResult = await service.FetchReleaseNames(CancellationToken.None, ReleaseFetchMode.ForceRemote);
 
+        var releaseNames = Assert.IsType<Result<string[], NetworkError>.Success>(releaseNamesResult).Value;
         Assert.Equal(["4.4-stable"], releaseNames);
         releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task InstallByQueryAsync_InvalidQuery_ReturnsInvalidQueryWithoutRemoteRefresh()
+    {
+        var query = new[] { "bad-query" };
+        var releaseManager = CreateReleaseManagerMock("4.4-stable");
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Success(["4.4-stable"]));
+        releaseManager.Setup(x => x.ResolveReleaseQuery(query, It.IsAny<string[]>()))
+            .Returns(new Result<Release, QueryError>.Failure(new QueryError.InvalidQuery("Invalid query.")));
+
+        var service = CreateService(releaseManager.Object, releaseCatalog.Object);
+
+        var result = await service.InstallByQueryAsync(
+            query,
+            new Progress<OperationProgress<InstallationStage>>(),
+            cancellationToken: CancellationToken.None);
+
+        var failure = Assert.IsType<Result<InstallationOutcome, InstallationError>.Failure>(result);
+        var invalidQuery = Assert.IsType<InstallationError.InvalidQuery>(failure.Error);
+        Assert.Equal("Invalid query.", invalidQuery.Message);
+        releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -315,8 +341,9 @@ public class InstallationServiceTests
 
         foreach (var releaseId in releaseIds)
         {
-            releaseManager.Setup(x => x.TryCreateRelease($"{releaseId}-standard"))
-                .Returns(Release.TryParse($"{releaseId}-standard"));
+            var release = Release.TryParse($"{releaseId}-standard")!;
+            releaseManager.Setup(x => x.CreateRelease($"{releaseId}-standard"))
+                .Returns(new Result<Release, ReleaseParseError>.Success(release));
         }
 
         return releaseManager;

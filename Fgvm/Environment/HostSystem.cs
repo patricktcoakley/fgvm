@@ -8,13 +8,45 @@ using System.Security.Principal;
 
 namespace Fgvm.Environment;
 
+/// <summary>
+///     Provides host OS and filesystem operations used by fgvm.
+/// </summary>
 public interface IHostSystem
 {
+    /// <summary>
+    ///     Gets the current host OS and architecture.
+    /// </summary>
     SystemInfo SystemInfo { get; }
+
+    /// <summary>
+    ///     Creates or replaces fgvm's Godot symlink for the supplied target.
+    /// </summary>
+    /// <param name="symlinkTargetPath">The executable or app bundle path to link to.</param>
+    /// <returns>Success, or a symlink error describing why the link could not be created.</returns>
     Result<Unit, SymlinkError> CreateOrOverwriteSymbolicLink(string symlinkTargetPath);
-    void RemoveSymbolicLinks();
+
+    /// <summary>
+    ///     Removes fgvm-managed Godot symlinks.
+    /// </summary>
+    /// <returns>Success, or a symlink error describing why removal failed.</returns>
+    Result<Unit, SymlinkError> RemoveSymbolicLinks();
+
+    /// <summary>
+    ///     Resolves the currently configured fgvm symlinks.
+    /// </summary>
+    /// <returns>Current symlink information, or a symlink error.</returns>
     Result<SymlinkInfo, SymlinkError> ResolveCurrentSymlinks();
-    IEnumerable<string> ListInstallations();
+
+    /// <summary>
+    ///     Lists locally installed Godot versions.
+    /// </summary>
+    /// <returns>Installed release names, or a filesystem error.</returns>
+    Result<IReadOnlyList<string>, FileSystemError> ListInstallations();
+
+    /// <summary>
+    ///     Checks whether fgvm can create symlinks on the current host.
+    /// </summary>
+    /// <returns>Success, or a symlink support error.</returns>
     Result<Unit, SymlinkError> AreSymlinksSupported();
 }
 
@@ -23,8 +55,10 @@ public interface IHostSystem
 /// </summary>
 public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, ILogger<HostSystem> logger) : IHostSystem
 {
+    /// <inheritdoc />
     public SystemInfo SystemInfo { get; } = systemInfo;
 
+    /// <inheritdoc />
     public Result<Unit, SymlinkError> AreSymlinksSupported()
     {
         Result<Unit, SymlinkError> result = SystemInfo.CurrentOS switch
@@ -39,14 +73,17 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
         return result;
     }
 
+    /// <inheritdoc />
     public Result<Unit, SymlinkError> CreateOrOverwriteSymbolicLink(string symlinkTargetPath)
     {
-        RemoveSymbolicLinks();
-
-        var supportResult = AreSymlinksSupported();
-        if (supportResult is Result<Unit, SymlinkError>.Failure supportFailure)
+        if (AreSymlinksSupported() is Result<Unit, SymlinkError>.Failure supportFailure)
         {
-            return new Result<Unit, SymlinkError>.Failure(supportFailure.Error);
+            return supportFailure;
+        }
+
+        if (RemoveSymbolicLinks() is Result<Unit, SymlinkError>.Failure removeFailure)
+        {
+            return removeFailure;
         }
 
         switch (SystemInfo.CurrentOS)
@@ -122,23 +159,44 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
         return new Result<Unit, SymlinkError>.Success(Unit.Value);
     }
 
-    public void RemoveSymbolicLinks()
+    /// <inheritdoc />
+    public Result<Unit, SymlinkError> RemoveSymbolicLinks()
     {
-        // ATTN: On macOS the behavior of #.Exists can be unreliable due to the differences in how symbolic links are handled on the filesystem.
-        // This is possibly related to the fact that the .app is a symlink to a directory and not a file, so it is technically "neither."
-        // Therefore, we need to check if it has the ReparsePoint attribute to see if it "truly" exists.
-        var macAppSymlinkFileInfo = new FileInfo(pathService.MacAppSymlinkPath);
-        if ((macAppSymlinkFileInfo.Attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+        if (SystemInfo.CurrentOS is OS.FreeBSD or OS.Unknown)
         {
-            macAppSymlinkFileInfo.Delete();
+            return new Result<Unit, SymlinkError>.Failure(
+                new SymlinkError.UnsupportedOS(SystemInfo.CurrentOS.ToString()));
         }
 
-        if (File.Exists(pathService.SymlinkPath))
+        try
         {
-            File.Delete(pathService.SymlinkPath);
+            // ATTN: On macOS the behavior of #.Exists can be unreliable due to the differences in how symbolic links are handled on the filesystem.
+            // This is possibly related to the fact that the .app is a symlink to a directory and not a file, so it is technically "neither."
+            // Therefore, we need to check if it has the ReparsePoint attribute to see if it "truly" exists.
+            var macAppSymlinkFileInfo = new FileInfo(pathService.MacAppSymlinkPath);
+            if ((macAppSymlinkFileInfo.Attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+            {
+                macAppSymlinkFileInfo.Delete();
+            }
+
+            if (File.Exists(pathService.SymlinkPath))
+            {
+                File.Delete(pathService.SymlinkPath);
+            }
+
+            return new Result<Unit, SymlinkError>.Success(Unit.Value);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Result<Unit, SymlinkError>.Failure(new SymlinkError.PermissionDenied());
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException)
+        {
+            return new Result<Unit, SymlinkError>.Failure(new SymlinkError.RemoveFailed(pathService.BinPath));
         }
     }
 
+    /// <inheritdoc />
     public Result<SymlinkInfo, SymlinkError> ResolveCurrentSymlinks()
     {
         var file = new FileInfo(pathService.SymlinkPath);
@@ -187,26 +245,44 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
             new SymlinkInfo(file.LinkTarget, macAppSymlinkPath));
     }
 
-    /// <summary>
-    ///     Lists the local installations naively by just seeing what directories exist. Possibly will use some kind of ledger
-    ///     in the future.
-    /// </summary>
-    /// <returns>List of local installations</returns>
-    public IEnumerable<string> ListInstallations()
+    /// <inheritdoc />
+    public Result<IReadOnlyList<string>, FileSystemError> ListInstallations()
     {
-        var installed = new FileSystemEnumerable<string>(
-            pathService.RootPath,
-            (ref entry) => entry.FileName.ToString())
+        try
         {
-            ShouldIncludePredicate = (ref entry) =>
-                entry is { IsDirectory: true, FileName: not "bin", IsHidden: false }
-        };
+            var installed = new FileSystemEnumerable<string>(
+                pathService.RootPath,
+                (ref entry) => entry.FileName.ToString())
+            {
+                ShouldIncludePredicate = (ref entry) =>
+                    entry is { IsDirectory: true, FileName: not "bin", IsHidden: false }
+            };
 
-        return installed
-            .Select(Release.TryParse)
-            .OfType<Release>()
-            .OrderByDescending(release => release)
-            .Select(release => release.ReleaseNameWithRuntime);
+            var releases = installed
+                .Select(Release.TryParse)
+                .OfType<Release>()
+                .OrderByDescending(release => release)
+                .Select(release => release.ReleaseNameWithRuntime)
+                .ToArray();
+
+            return new Result<IReadOnlyList<string>, FileSystemError>.Success(releases);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.PermissionDenied(pathService.RootPath));
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.DirectoryNotFound(pathService.RootPath));
+        }
+        catch (Exception ex) when (ex is IOException)
+        {
+            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.EnumerationFailed(pathService.RootPath));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.InvalidPath(pathService.RootPath));
+        }
     }
 
 

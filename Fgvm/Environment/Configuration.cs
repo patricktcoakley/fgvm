@@ -1,18 +1,17 @@
-using Fgvm.Error;
+using Fgvm.Types;
 using Microsoft.Extensions.Configuration;
 
 namespace Fgvm.Environment;
 
 public static class Configuration
 {
-    // TODO: Replace with Result<Unit, ConfigError> ValidateConfiguration(IConfiguration configuration)
-    public static void ValidateConfiguration(IConfiguration configuration)
+    public static Result<Unit, ConfigError> ValidateConfiguration(IConfiguration configuration)
     {
         var githubToken = configuration["github:token"];
 
         if (string.IsNullOrEmpty(githubToken))
         {
-            return;
+            return new Result<Unit, ConfigError>.Success(Unit.Value);
         }
 
         // GitHub token format validation per Microsoft Purview specification
@@ -21,19 +20,21 @@ public static class Configuration
             !githubToken.StartsWith("ghu_") && !githubToken.StartsWith("ghs_") &&
             !githubToken.StartsWith("ghr_"))
         {
-            throw new ConfigurationException("GitHub token should start with 'ghp_', 'gho_', 'ghu_', 'ghs_', or 'ghr_' prefix");
+            return new Result<Unit, ConfigError>.Failure(new ConfigError.InvalidGitHubTokenPrefix());
         }
 
         // https://learn.microsoft.com/en-us/purview/sit-defn-github-personal-access-token
         if (githubToken.Length != 40)
         {
-            throw new ConfigurationException("GitHub token should be exactly 40 characters long");
+            return new Result<Unit, ConfigError>.Failure(new ConfigError.InvalidGitHubTokenLength());
         }
 
         // Check that the token contains only valid characters (alphanumeric + underscore)
         if (!githubToken.All(c => char.IsLetterOrDigit(c) || c == '_'))
         {
-            throw new ConfigurationException("GitHub token contains invalid characters");
+            return new Result<Unit, ConfigError>.Failure(new ConfigError.InvalidGitHubTokenCharacters());
         }
+
+        return new Result<Unit, ConfigError>.Success(Unit.Value);
     }
 }

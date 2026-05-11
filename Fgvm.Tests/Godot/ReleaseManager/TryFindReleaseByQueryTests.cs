@@ -32,7 +32,7 @@ public class TryFindReleaseByQueryTests
     }
 
     [Fact]
-    public void TryFindReleaseByQuery_InvalidArguments_ThrowsArgumentException()
+    public void ResolveReleaseQuery_InvalidArguments_ReturnsInvalidQueryFailure()
     {
         var releaseManager = new ReleaseManagerBuilder().Build();
         string[][] testCases =
@@ -46,10 +46,11 @@ public class TryFindReleaseByQueryTests
 
         foreach (var query in testCases)
         {
-            var exception = Assert.Throws<ArgumentException>(() =>
-                releaseManager.TryFindReleaseByQuery(query, TestReleases.ToArray()));
+            var result = releaseManager.ResolveReleaseQuery(query, TestReleases.ToArray());
 
-            Assert.Contains("Invalid arguments:", exception.Message);
+            var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+            var invalid = Assert.IsType<QueryError.InvalidQuery>(failure.Error);
+            Assert.Contains("Invalid arguments:", invalid.Message);
         }
     }
 
@@ -77,7 +78,7 @@ public class TryFindReleaseByQueryTests
     }
 
     [Fact]
-    public void TryFindReleaseByQuery_SingleStringWithInvalidParts_ThrowsArgumentException()
+    public void ResolveReleaseQuery_SingleStringWithInvalidParts_ReturnsInvalidQueryFailure()
     {
         var releaseManager = new ReleaseManagerBuilder().Build();
 
@@ -90,33 +91,36 @@ public class TryFindReleaseByQueryTests
 
         foreach (var query in invalidTestCases)
         {
-            var exception = Assert.Throws<ArgumentException>(() =>
-                releaseManager.TryFindReleaseByQuery(query, TestReleases.ToArray()));
+            var result = releaseManager.ResolveReleaseQuery(query, TestReleases.ToArray());
 
-            Assert.Contains("Invalid arguments:", exception.Message);
+            var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+            var invalid = Assert.IsType<QueryError.InvalidQuery>(failure.Error);
+            Assert.Contains("Invalid arguments:", invalid.Message);
         }
     }
 
     [Fact]
-    public void TryFindReleaseByQuery_InvalidReleaseTypeWithValidRuntimeSuffix_ThrowsArgumentException()
+    public void ResolveReleaseQuery_InvalidReleaseTypeWithValidRuntimeSuffix_ReturnsInvalidQueryFailure()
     {
         var releaseManager = new ReleaseManagerBuilder().Build();
 
-        var exception = Assert.Throws<ArgumentException>(() =>
-            releaseManager.TryFindReleaseByQuery(["4.5-bad-mono"], TestReleases.ToArray()));
+        var result = releaseManager.ResolveReleaseQuery(["4.5-bad-mono"], TestReleases.ToArray());
 
-        Assert.Contains("Invalid arguments:", exception.Message);
+        var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+        var invalid = Assert.IsType<QueryError.InvalidQuery>(failure.Error);
+        Assert.Contains("Invalid arguments:", invalid.Message);
     }
 
     [Fact]
-    public void TryFindReleaseByQuery_InvalidReleaseTypeWithoutRuntimeSuffix_ThrowsArgumentException()
+    public void ResolveReleaseQuery_InvalidReleaseTypeWithoutRuntimeSuffix_ReturnsInvalidQueryFailure()
     {
         var releaseManager = new ReleaseManagerBuilder().Build();
 
-        var exception = Assert.Throws<ArgumentException>(() =>
-            releaseManager.TryFindReleaseByQuery(["4.5-bad"], TestReleases.ToArray()));
+        var result = releaseManager.ResolveReleaseQuery(["4.5-bad"], TestReleases.ToArray());
 
-        Assert.Contains("Invalid arguments:", exception.Message);
+        var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+        var invalid = Assert.IsType<QueryError.InvalidQuery>(failure.Error);
+        Assert.Contains("Invalid arguments:", invalid.Message);
     }
 
     [Fact]

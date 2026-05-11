@@ -26,6 +26,9 @@ public sealed class LogsCommand(
     /// <param name="level">-l, Level to filter by.</param>
     /// <param name="message">-m, Message text to filter by.</param>
     /// <param name="cancellationToken"></param>
+    /// <exception cref="FileNotFoundException">Thrown when the configured log file does not exist.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the requested log level filter is invalid.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when log reading is canceled.</exception>
     public async Task Logs(bool json = false, string level = "", string message = "", CancellationToken cancellationToken = default)
     {
         try

@@ -15,7 +15,9 @@ public sealed class SetCommand(IVersionManagementService versionManagementServic
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="query">Version query arguments</param>
-    /// <exception cref="FileNotFoundException"></exception>
+    /// <exception cref="InvalidOperationException">Thrown when installed versions cannot be read, no version can be selected, or symlink creation cannot continue.</exception>
+    /// <exception cref="InvalidSymlinkException">Thrown when a symlink is created but validation fails.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when interactive selection is canceled.</exception>
     [Command("set")]
     public async Task Set(CancellationToken cancellationToken = default, [Argument] params string[] query)
     {

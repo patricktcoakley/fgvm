@@ -44,14 +44,28 @@ public interface IPathService
 public sealed class PathService : IPathService
 {
     private static string? _fgvmHomeEnvVar => System.Environment.GetEnvironmentVariable("FGVM_HOME");
+
+    /// <inheritdoc />
     public string RootPath =>
         _fgvmHomeEnvVar is not null
             ? Path.GetFullPath("fgvm", _fgvmHomeEnvVar)
             : Path.GetFullPath("fgvm", System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile));
+
+    /// <inheritdoc />
     public string ConfigPath => Path.Combine(RootPath, "fgvm.ini");
+
+    /// <inheritdoc />
     public string ReleasesPath => Path.Combine(RootPath, "releases.json");
+
+    /// <inheritdoc />
     public string BinPath => Path.Combine(RootPath, "bin");
+
+    /// <inheritdoc />
     public string SymlinkPath => Path.Combine(BinPath, "godot");
+
+    /// <inheritdoc />
     public string MacAppSymlinkPath => Path.Combine(BinPath, "Godot.app");
+
+    /// <inheritdoc />
     public string LogPath => Path.Combine(RootPath, "fgvm.log");
 }

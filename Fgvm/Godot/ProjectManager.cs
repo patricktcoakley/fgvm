@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Fgvm.Types;
 
 namespace Fgvm.Godot;
 
@@ -11,30 +12,30 @@ public interface IProjectManager
     ///     Finds project release information including version and runtime environment.
     /// </summary>
     /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
-    /// <returns>Release if found, null otherwise.</returns>
-    Release? FindProjectInfo(string? directory = null);
+    /// <returns>Project lookup result if successful, or a project error.</returns>
+    Result<ProjectLookup<Release>, ProjectError> FindProjectInfo(string? directory = null);
 
 
     /// <summary>
     ///     Finds the path to the project.godot file in the specified directory.
     /// </summary>
     /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
-    /// <returns>The full path to project.godot if found, null otherwise.</returns>
-    string? FindProjectFilePath(string? directory = null);
+    /// <returns>Project file lookup result if successful, or a project error.</returns>
+    Result<ProjectLookup<string>, ProjectError> FindProjectFilePath(string? directory = null);
 
     /// <summary>
     ///     Creates or updates a `.fgvm-version` file in the specified directory.
     /// </summary>
     /// <param name="version">The version to write to the file</param>
     /// <param name="directory">The directory to create the file in (null for current directory)</param>
-    void CreateVersionFile(string version, string? directory = null);
+    Result<Unit, ProjectError> CreateVersionFile(string version, string? directory = null);
 
     /// <summary>
     ///     Finds project release info from `.fgvm-version` file only
     /// </summary>
     /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
-    /// <returns>Release if .fgvm-version file found, null otherwise.</returns>
-    Release? FindExplicitProjectInfo(string? directory = null);
+    /// <returns>Explicit project lookup result if successful, or a project error.</returns>
+    Result<ProjectLookup<Release>, ProjectError> FindExplicitProjectInfo(string? directory = null);
 }
 
 public partial class ProjectManager(IReleaseManager releaseManager) : IProjectManager
@@ -42,76 +43,132 @@ public partial class ProjectManager(IReleaseManager releaseManager) : IProjectMa
     private const string VersionFile = ".fgvm-version";
     private const string ProjectFile = "project.godot";
 
-    /// <summary>
-    ///     Finds project release information including version and .NET status.
-    /// </summary>
-    /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
-    /// <returns>Release if found and parseable, null otherwise.</returns>
-    // TODO: Replace with Result<Release, ProjectError> FindProjectInfo(string? directory = null)
-    public Release? FindProjectInfo(string? directory = null)
+    /// <inheritdoc />
+    public Result<ProjectLookup<Release>, ProjectError> FindProjectInfo(string? directory = null)
     {
         var targetDir = directory ?? Directory.GetCurrentDirectory();
 
-        // 1. Check for `.fgvm-version` file first (user override)
-        var versionFile = Path.Combine(targetDir, VersionFile);
-        if (File.Exists(versionFile))
+        try
         {
-            var content = File.ReadAllText(versionFile).Trim();
-            if (!string.IsNullOrEmpty(content))
+            // 1. Check for `.fgvm-version` file first (user override)
+            var versionFile = Path.Combine(targetDir, VersionFile);
+            if (File.Exists(versionFile))
             {
-                return releaseManager.TryCreateRelease(content);
+                var content = File.ReadAllText(versionFile).Trim();
+                if (!string.IsNullOrEmpty(content))
+                {
+                    return CreateReleaseLookup(content);
+                }
             }
-        }
 
-        // 2. Check `project.godot` file for automatic detection
-        var projectFile = Path.Combine(targetDir, ProjectFile);
-        return File.Exists(projectFile) ? ParseProjectGodot(projectFile) : null;
+            // 2. Check `project.godot` file for automatic detection
+            var projectFile = Path.Combine(targetDir, ProjectFile);
+            return File.Exists(projectFile)
+                ? ParseProjectGodot(projectFile)
+                : new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.PermissionDenied(targetDir));
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.DirectoryNotFound(targetDir));
+        }
+        catch (IOException)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.ReadFailed(targetDir));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.InvalidPath(targetDir));
+        }
     }
 
-    /// <summary>
-    ///     Finds the path to the project.godot file in the specified directory.
-    /// </summary>
-    /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
-    /// <returns>The full path to project.godot if found, null otherwise.</returns>
-    // TODO: Replace with Result<string, ProjectError> FindProjectFilePath(string? directory = null)
-    public string? FindProjectFilePath(string? directory = null)
+    /// <inheritdoc />
+    public Result<ProjectLookup<string>, ProjectError> FindProjectFilePath(string? directory = null)
     {
         var targetDir = directory ?? Directory.GetCurrentDirectory();
-        var projectFile = Path.Combine(targetDir, ProjectFile);
-        return File.Exists(projectFile) ? projectFile : null;
+        try
+        {
+            var projectFile = Path.Combine(targetDir, ProjectFile);
+            return File.Exists(projectFile)
+                ? new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Found(projectFile))
+                : new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Missing());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Result<ProjectLookup<string>, ProjectError>.Failure(new ProjectError.PermissionDenied(targetDir));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return new Result<ProjectLookup<string>, ProjectError>.Failure(new ProjectError.InvalidPath(targetDir));
+        }
     }
 
-    public void CreateVersionFile(string version, string? directory = null)
+    /// <inheritdoc />
+    public Result<Unit, ProjectError> CreateVersionFile(string version, string? directory = null)
     {
         var targetDir = directory ?? Directory.GetCurrentDirectory();
         var filePath = Path.Combine(targetDir, VersionFile);
-        File.WriteAllText(filePath, version + System.Environment.NewLine);
+        try
+        {
+            File.WriteAllText(filePath, version + System.Environment.NewLine);
+            return new Result<Unit, ProjectError>.Success(Unit.Value);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Result<Unit, ProjectError>.Failure(new ProjectError.PermissionDenied(filePath));
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new Result<Unit, ProjectError>.Failure(new ProjectError.DirectoryNotFound(targetDir));
+        }
+        catch (IOException)
+        {
+            return new Result<Unit, ProjectError>.Failure(new ProjectError.WriteFailed(filePath));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return new Result<Unit, ProjectError>.Failure(new ProjectError.InvalidPath(filePath));
+        }
     }
 
-    /// <summary>
-    ///     Finds project release info from `.fgvm-version` file only
-    /// </summary>
-    /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
-    /// <returns>Release if .fgvm-version file found and parseable, null otherwise.</returns>
-    // TODO: Replace with Result<Release, ProjectError> FindExplicitProjectInfo(string? directory = null)
-    public Release? FindExplicitProjectInfo(string? directory = null)
+    /// <inheritdoc />
+    public Result<ProjectLookup<Release>, ProjectError> FindExplicitProjectInfo(string? directory = null)
     {
         var targetDir = directory ?? Directory.GetCurrentDirectory();
 
-        // Only check for `.fgvm-version` file (user override)
-        var versionFile = Path.Combine(targetDir, VersionFile);
-        if (!File.Exists(versionFile))
+        try
         {
-            return null;
-        }
+            // Only check for `.fgvm-version` file (user override)
+            var versionFile = Path.Combine(targetDir, VersionFile);
+            if (!File.Exists(versionFile))
+            {
+                return new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
+            }
 
-        var content = File.ReadAllText(versionFile).Trim();
-        if (string.IsNullOrEmpty(content))
+            var content = File.ReadAllText(versionFile).Trim();
+            return string.IsNullOrEmpty(content)
+                ? new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing())
+                : CreateReleaseLookup(content);
+        }
+        catch (UnauthorizedAccessException)
         {
-            return null;
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.PermissionDenied(targetDir));
         }
-
-        return releaseManager.TryCreateRelease(content);
+        catch (DirectoryNotFoundException)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.DirectoryNotFound(targetDir));
+        }
+        catch (IOException)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.ReadFailed(targetDir));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.InvalidPath(targetDir));
+        }
     }
 
     /// <summary>
@@ -121,64 +178,83 @@ public partial class ProjectManager(IReleaseManager releaseManager) : IProjectMa
     /// </summary>
     /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
     /// <returns>The version string if found, null otherwise.</returns>
-    // TODO: Replace with Result<string, ProjectError> FindProjectVersion(string? directory = null)
-    public string? FindProjectVersion(string? directory = null)
+    public Result<ProjectLookup<string>, ProjectError> FindProjectVersion(string? directory = null)
     {
-        var release = FindProjectInfo(directory);
-        return release?.ReleaseNameWithRuntime;
+        return FindProjectInfo(directory) switch
+        {
+            Result<ProjectLookup<Release>, ProjectError>.Success(ProjectLookup<Release>.Found(var release)) =>
+                new Result<ProjectLookup<string>, ProjectError>.Success(
+                    new ProjectLookup<string>.Found(release.ReleaseNameWithRuntime)),
+            Result<ProjectLookup<Release>, ProjectError>.Success =>
+                new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Missing()),
+            Result<ProjectLookup<Release>, ProjectError>.Failure(var error) =>
+                new Result<ProjectLookup<string>, ProjectError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
     }
 
     /// <summary>
     ///     Parses a project.godot file to extract version and .NET information, then creates a Release.
     /// </summary>
     /// <param name="projectFilePath">Path to the project.godot file.</param>
-    /// <returns>Release if parsing and creation succeeds, null otherwise.</returns>
-    // TODO: Replace with Result<Release, ProjectError> ParseProjectGodot(string projectFilePath)
-    private Release? ParseProjectGodot(string projectFilePath)
+    /// <returns>Project lookup result if parsing succeeds, or a project error.</returns>
+    private Result<ProjectLookup<Release>, ProjectError> ParseProjectGodot(string projectFilePath)
     {
-        try
+        var content = File.ReadAllText(projectFilePath);
+        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        string? version = null;
+        var runtime = RuntimeEnvironment.Standard;
+        var foundFeaturesLine = false;
+        var malformedFeaturesLine = false;
+
+        foreach (var line in lines)
         {
-            var content = File.ReadAllText(projectFilePath);
-            var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var trimmedLine = line.Trim();
 
-            string? version = null;
-            var runtime = RuntimeEnvironment.Standard;
-
-            foreach (var line in lines)
+            // Extract version from config/features
+            if (trimmedLine.StartsWith("config/features=PackedStringArray("))
             {
-                var trimmedLine = line.Trim();
-
-                // Extract version from config/features
-                if (trimmedLine.StartsWith("config/features=PackedStringArray("))
-                {
-                    version = ExtractVersionFromFeatures(trimmedLine);
-                }
-
-                // Check for .NET section
-                if (trimmedLine == "[dotnet]")
-                {
-                    runtime = RuntimeEnvironment.Mono;
-                }
+                foundFeaturesLine = true;
+                malformedFeaturesLine = trimmedLine.LastIndexOf(')') <= trimmedLine.IndexOf('(');
+                version = ExtractVersionFromFeatures(trimmedLine);
             }
 
-            if (version != null)
+            // Check for .NET section
+            if (trimmedLine == "[dotnet]")
             {
-                // For project.godot versions (like "4.3"), we need to append "-stable" and runtime
-                // to create a valid release name
-                var versionWithType = version.Contains('-') ? version : $"{version}-stable";
-                var runtimeSuffix = runtime == RuntimeEnvironment.Mono ? "-mono" : "-standard";
-                var fullVersion = $"{versionWithType}{runtimeSuffix}";
-
-                return releaseManager.TryCreateRelease(fullVersion);
+                runtime = RuntimeEnvironment.Mono;
             }
         }
-        catch (Exception)
+
+        if (version != null)
         {
-            return null;
+            // For project.godot versions (like "4.3"), we need to append "-stable" and runtime
+            // to create a valid release name
+            var versionWithType = version.Contains('-') ? version : $"{version}-stable";
+            var runtimeSuffix = runtime == RuntimeEnvironment.Mono ? "-mono" : "-standard";
+            var fullVersion = $"{versionWithType}{runtimeSuffix}";
+
+            return CreateReleaseLookup(fullVersion);
         }
 
-        return null;
+        if (foundFeaturesLine && malformedFeaturesLine)
+        {
+            return new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.InvalidProjectFile(projectFilePath));
+        }
+
+        return new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
     }
+
+    private Result<ProjectLookup<Release>, ProjectError> CreateReleaseLookup(string version) =>
+        releaseManager.CreateRelease(version) switch
+        {
+            Result<Release, ReleaseParseError>.Success(var release) =>
+                new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Found(release)),
+            Result<Release, ReleaseParseError>.Failure =>
+                new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.InvalidVersion(version)),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
 
     /// <summary>
     ///     Extracts the Godot version from a config/features line.

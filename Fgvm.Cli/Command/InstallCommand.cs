@@ -28,8 +28,10 @@ public sealed class InstallCommand(
     /// <param name="default">-D, Set as the default version after installing</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="query">Version query arguments</param>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="SecurityException"></exception>
+    /// <exception cref="ArgumentException">Thrown when the requested version cannot be found or the query is invalid.</exception>
+    /// <exception cref="SecurityException">Thrown when checksum verification fails.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when installation fails for a non-checksum reason.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when installation is canceled.</exception>
     [Command("install|i")]
     public async Task Install(bool @default = false, CancellationToken cancellationToken = default, [Argument] params string[] query) =>
         await InstallCore(query, @default, cancellationToken);
@@ -40,8 +42,10 @@ public sealed class InstallCommand(
     /// <param name="query">Version query arguments</param>
     /// <param name="setAsDefault">Whether to set the installed version as default</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="SecurityException"></exception>
+    /// <exception cref="ArgumentException">Thrown when the requested version cannot be found or the query is invalid.</exception>
+    /// <exception cref="SecurityException">Thrown when checksum verification fails.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when installation fails for a non-checksum reason.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when installation is canceled.</exception>
     private async Task InstallCore(string[] query, bool setAsDefault, CancellationToken cancellationToken)
     {
         try
@@ -53,8 +57,11 @@ public sealed class InstallCommand(
                 case Result<InstallationOutcome, InstallationError>.Success:
                     break;
 
+                case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.InvalidQuery invalid):
+                    throw new ArgumentException(invalid.Message);
+
                 case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.NotFound notFound):
-                    throw new InvalidOperationException(Messages.InstallationNotFound(notFound.Version, hostSystem));
+                    throw new ArgumentException(Messages.InstallationNotFound(notFound.Version, hostSystem));
 
                 case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.ChecksumMismatch mismatch):
                     throw new SecurityException(Messages.ChecksumMismatch(mismatch.FileName, mismatch.Expected, mismatch.Actual));

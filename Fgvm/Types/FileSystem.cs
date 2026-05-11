@@ -19,4 +19,20 @@ public abstract record SymlinkError
     public record PermissionDenied : SymlinkError;
 
     public record InvalidSymlink(string SymlinkPath, string Target) : SymlinkError;
+
+    public record RemoveFailed(string Path) : SymlinkError;
+}
+
+/// <summary>
+///     Represents failures while reading installation filesystem state.
+/// </summary>
+public abstract record FileSystemError
+{
+    public sealed record DirectoryNotFound(string Directory) : FileSystemError;
+
+    public sealed record PermissionDenied(string Path) : FileSystemError;
+
+    public sealed record InvalidPath(string Path) : FileSystemError;
+
+    public sealed record EnumerationFailed(string Path) : FileSystemError;
 }

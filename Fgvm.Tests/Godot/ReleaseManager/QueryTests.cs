@@ -84,7 +84,9 @@ public class QueryTests
 
         if (query.Length == 0)
         {
-            Assert.Throws<ArgumentException>(() => releaseManager.TryFindReleaseByQuery(query, TestReleases.ToArray()));
+            var result = releaseManager.ResolveReleaseQuery(query, TestReleases.ToArray());
+            var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+            Assert.IsType<QueryError.EmptyQuery>(failure.Error);
         }
         else
         {
@@ -103,7 +105,9 @@ public class QueryTests
 
         if (query.Length == 0)
         {
-            Assert.Throws<ArgumentException>(() => releaseManager.TryFindReleaseByQuery(query, TestReleases.ToArray()));
+            var result = releaseManager.ResolveReleaseQuery(query, TestReleases.ToArray());
+            var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+            Assert.IsType<QueryError.EmptyQuery>(failure.Error);
         }
         else
         {
