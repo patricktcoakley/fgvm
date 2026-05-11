@@ -19,9 +19,9 @@ terminal, or, the preferred method of installation, using a [package manager](#p
   the latest development builds, including both standard and .NET builds.
 - **Hybrid CLI/TUI Interface**: Simple command-line interface with interactive TUI prompts for easy navigation and selection when you don't specify arguments.
 - **Flexible Query System**: Powerful query system for finding and installing versions using keywords like `latest`, `4 mono`, `3.3 rc`, etc.
-- **Project Aware**: Lock a project to a specific Godot version using a `.fgvm-version` file in the project directory, which can be automatically detected from `project.godot` or manually customized
-  if needed. Also prompts to install missing versions when opening a project that is using a version that isn't currently installed. Finally, automatically launch your project using the `godot`
-  command directly from the terminal.
+- **Project Aware**: Lock a project to a specific Godot version using a `.fgvm-version` file in the project directory. `fgvm local` can automatically detect a compatible version from `project.godot`
+  or let you manually choose one, and will prompt to install missing versions when needed. `fgvm godot` uses `.fgvm-version` when present, otherwise falls back to the global default, and can launch the
+  current project directly from the terminal.
 - **Smart Argument Handling**: Detection of arguments passed to Godot that contextually switch to an attached mode when necessary to display terminal output.
 - **CI-Ready**: Perfect for remote installations, CI/CD pipelines, WSL, and containerized environments with its single static binary.
 
@@ -123,7 +123,7 @@ but here is a detailed summary of the available commands:
 > **Note:** Many commands support short-form aliases for faster usage (e.g., `fgvm i` for `fgvm install`, `fgvm g` for `fgvm godot`).
 
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
-- `fgvm install` or `fgvm i` `[<...strings>]` [`--default|-D|--set-default`] will prompt the user to install a version if no arguments are supplied, or will
+- `fgvm install` or `fgvm i` `[<...strings>]` [`--default|-D`] will prompt the user to install a version if no arguments are supplied, or will
   try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
     - Queries:
@@ -131,13 +131,12 @@ but here is a detailed summary of the available commands:
         - `4 mono` will grab the latest stable 4.x .NET release, `3.3 rc` will grab the latest rc of 3.3 standard, `1` would take the last stable version `1`, and so on.
     - Examples:
         - `fgvm install 4.3` - Install 4.3 stable
-        - `fgvm install 4.3 mono` - Install the latest 4.6 dev mono
+        - `fgvm install 4.3 mono` - Install 4.3 stable mono
         - `fgvm i latest --default` - Install latest stable standard and set as default
 - `fgvm godot` or `fgvm g` runs the appropriate Godot version, or with the `--interactive` or `-i` flag, will prompt the user to launch an installed version. When run in a project directory with a `.fgvm-version`
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
   `project.godot` file is found.
-    - Once a version is installed, it will launch the editor with the project directly from the terminal This feature will only work on projects using `config_version=5` in `project.godot`, which is *
-      *Godot 4.0 and later**.
+    - Once a version is installed, it will launch the editor with the project directly from the terminal.
     - Optionally, pass in arguments to the Godot executable directly using the `--args` parameter, such as `fgvm godot --args="--headless"` or `fgvm godot --args="--version"`. Multiple arguments should be
       passed as a quoted string, such as `--args="--headless -v"`.
     - Use the `--attached` or `-a` flag to force Godot connected to the terminal for output; by default, Godot runs in detached mode and will launch in a separate instance. Using an argument detection
@@ -154,7 +153,8 @@ but here is a detailed summary of the available commands:
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if remove a specific version, like
       `4.4.1-stable-mono`, it will just delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
 - `fgvm logs` [`--level|-l <string>`] [`--message|-m <string>`] [`--json`] displays all the of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
-- `fgvm search` or `fgvm s` `[<...strings>]` [`--json|-j`] takes an optional query to search all available remote versions of Godot. Use `--json` or `-j` to output in JSON format.
+- `fgvm search` or `fgvm s` `[<...strings>]` [`--json|-j`] [`--no-cache|-F`] takes an optional query to search all available remote versions of Godot. Use `--json` or `-j` to output in JSON format,
+  and `--no-cache` or `-F` to force a remote refresh instead of using the local release cache.
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
         - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2.-rc3`
@@ -245,7 +245,7 @@ other use cases in the future, but otherwise all functionality exists inside the
 
 ### Build
 
-In order to build this project, you just need the .NET 9 SDK. Running `dotnet run -- <command> [args]` will let you run commands immediately, but you can also run `dotnet build -c Release` to get a
+In order to build this project, you just need the .NET 10 SDK. Running `dotnet run -- <command> [args]` will let you run commands immediately, but you can also run `dotnet build -c Release` to get a
 release build and just copy to a directory in your PATH:
 
 ```shell
@@ -253,6 +253,15 @@ git clone https://github.com/patricktcoakley/fgvm.git
 cd fgvm
 dotnet restore
 dotnet build -c Release
+```
+
+This repo also includes an optional [mise](https://mise.jdx.dev/) setup for installing the expected .NET SDK and running common development tasks:
+
+```shell
+mise install
+mise run restore
+mise run build
+mise run test
 ```
 
 ### Test
