@@ -28,11 +28,11 @@ public abstract record InstallationOutcome
 /// </summary>
 public abstract record InstallationError
 {
+    public record InvalidQuery(string Message) : InstallationError;
+
     public record NotFound(string Version) : InstallationError;
 
     public record Failed(string Reason) : InstallationError;
 
-    /// <summary>Checksum mismatch - actual security issue</summary>
     public record ChecksumMismatch(string Expected, string Actual, string FileName) : InstallationError;
-
 }

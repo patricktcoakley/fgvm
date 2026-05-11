@@ -16,7 +16,7 @@ public sealed class ListCommandTests
     public void ListCommand_WritesJsonOutput()
     {
         var hostSystem = new Mock<IHostSystem>();
-        hostSystem.Setup(x => x.ListInstallations()).Returns(["4.5-stable", "3.5-stable"]);
+        hostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.5-stable", "3.5-stable" });
         hostSystem.Setup(x => x.ResolveCurrentSymlinks())
             .Returns(new Result<SymlinkInfo, SymlinkError>.Failure(new SymlinkError.NoVersionSet()));
 
@@ -39,7 +39,7 @@ public sealed class ListCommandTests
     public void ListCommand_WritesPanelOutput()
     {
         var hostSystem = new Mock<IHostSystem>();
-        hostSystem.Setup(x => x.ListInstallations()).Returns(["4.5-stable"]);
+        hostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.5-stable" });
         hostSystem.Setup(x => x.ResolveCurrentSymlinks())
             .Returns(new Result<SymlinkInfo, SymlinkError>.Failure(new SymlinkError.NoVersionSet()));
 
@@ -58,7 +58,7 @@ public sealed class ListCommandTests
     public void ListCommand_MarksOnlyExactDefaultInstallation()
     {
         var hostSystem = new Mock<IHostSystem>();
-        hostSystem.Setup(x => x.ListInstallations()).Returns(["4.5-stable", "4.5-stable-mono"]);
+        hostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.5-stable", "4.5-stable-mono" });
 
         var pathServiceMock = CreatePathServiceMock();
         var pathService = pathServiceMock.Object;

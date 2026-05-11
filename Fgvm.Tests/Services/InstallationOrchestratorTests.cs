@@ -40,8 +40,8 @@ public sealed class InstallationOrchestratorTests : IDisposable
         _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<string>());
 
-        _mockReleaseManager.Setup(x => x.TryFindReleaseByQuery(It.IsAny<string[]>(), It.IsAny<string[]>()))
-            .Returns((Release?)null);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()))
+            .Returns(new Result<Release, QueryError>.Failure(new QueryError.NotFound("test")));
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
 
@@ -63,8 +63,8 @@ public sealed class InstallationOrchestratorTests : IDisposable
 
         _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
             .ReturnsAsync(releaseNames);
-        _mockReleaseManager.Setup(x => x.TryFindReleaseByQuery(query, releaseNames))
-            .Returns(release);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, releaseNames))
+            .Returns(new Result<Release, QueryError>.Success(release));
 
         Directory.CreateDirectory(Path.Combine(_tempRoot, release.ReleaseNameWithRuntime));
 

@@ -10,28 +10,14 @@ namespace Fgvm.Tests.Godot;
 
 public class DownloadClientTests
 {
-    private readonly Mock<ILogger<GitHubClient>> _mockGitHubLogger;
-    private readonly Mock<ILogger<DownloadClient>> _mockLogger;
-    private readonly Mock<ILogger<TuxFamilyClient>> _mockTuxFamilyLogger;
-    private readonly Release _testRelease;
-
-    public DownloadClientTests()
-    {
-        _mockLogger = new Mock<ILogger<DownloadClient>>();
-        _mockGitHubLogger = new Mock<ILogger<GitHubClient>>();
-        _mockTuxFamilyLogger = new Mock<ILogger<TuxFamilyClient>>();
-        _testRelease = new Release(4, 3, "linux_x86_64", 0, ReleaseType.Stable());
-    }
+    private readonly Mock<ILogger<DownloadClient>> _mockLogger = new();
+    private readonly Release _testRelease = new(4, 3, "linux_x86_64", 0, ReleaseType.Stable());
 
     [Fact]
     public async Task GetSha512_GitHubSucceeds_ReturnsSuccess()
     {
         const string expectedChecksum = "test_checksum_content";
-        var mockHttpHandler = CreateMockHttpHandler(HttpStatusCode.OK, expectedChecksum);
-        var httpClient = new HttpClient(mockHttpHandler.Object);
-        var gitHubClient = new GitHubClient(httpClient, CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(new Mock<HttpMessageHandler>().Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, expectedChecksum));
 
         var result = await downloadClient.GetSha512(_testRelease, CancellationToken.None);
 
@@ -40,72 +26,15 @@ public class DownloadClientTests
     }
 
     [Fact]
-    public async Task GetSha512_GitHubFails_TuxFamilySucceeds_ReturnsSuccess()
+    public async Task GetSha512_GitHubFails_ReturnsFailure()
     {
-        const string expectedChecksum = "test_checksum_content";
-        var gitHubMockHandler = CreateMockHttpHandler(HttpStatusCode.ServiceUnavailable, "GitHub down");
-        var tuxFamilyMockHandler = CreateMockHttpHandler(HttpStatusCode.OK, expectedChecksum);
-
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(tuxFamilyMockHandler.Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
-
-        var result = await downloadClient.GetSha512(_testRelease, CancellationToken.None);
-
-        var success = Assert.IsType<Result<string, NetworkError>.Success>(result);
-        Assert.Equal(expectedChecksum, success.Value);
-    }
-
-    [Fact]
-    public async Task GetSha512_BothFail_ReturnsAllSourcesFailed()
-    {
-        var gitHubMockHandler = CreateMockHttpHandler(HttpStatusCode.ServiceUnavailable, "GitHub down");
-        var tuxFamilyMockHandler = CreateMockHttpHandler(HttpStatusCode.NotFound, "Not found");
-
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(tuxFamilyMockHandler.Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.ServiceUnavailable, "GitHub down"));
 
         var result = await downloadClient.GetSha512(_testRelease, CancellationToken.None);
 
         var failure = Assert.IsType<Result<string, NetworkError>.Failure>(result);
-        var allFailed = Assert.IsType<NetworkError.AllSourcesFailed>(failure.Error);
-        Assert.Equal(2, allFailed.Errors.Count);
-    }
-
-    [Fact]
-    public async Task GetSha512_GitHubThrowsException_TuxFamilySucceeds_ReturnsSuccess()
-    {
-        const string expectedChecksum = "test_checksum_content";
-        var gitHubMockHandler = CreateMockHttpHandlerThrowsException();
-        var tuxFamilyMockHandler = CreateMockHttpHandler(HttpStatusCode.OK, expectedChecksum);
-
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(tuxFamilyMockHandler.Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
-
-        var result = await downloadClient.GetSha512(_testRelease, CancellationToken.None);
-
-        var success = Assert.IsType<Result<string, NetworkError>.Success>(result);
-        Assert.Equal(expectedChecksum, success.Value);
-    }
-
-    [Fact]
-    public async Task GetSha512_BothThrowException_ReturnsAllSourcesFailed()
-    {
-        var gitHubMockHandler = CreateMockHttpHandlerThrowsException();
-        var tuxFamilyMockHandler = CreateMockHttpHandlerThrowsException();
-
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(tuxFamilyMockHandler.Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
-
-        var result = await downloadClient.GetSha512(_testRelease, CancellationToken.None);
-
-        var failure = Assert.IsType<Result<string, NetworkError>.Failure>(result);
-        var allFailed = Assert.IsType<NetworkError.AllSourcesFailed>(failure.Error);
-        Assert.Equal(2, allFailed.Errors.Count);
-        Assert.All(allFailed.Errors, error => Assert.IsType<NetworkError.ConnectionFailure>(error));
+        var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
+        Assert.Equal((int)HttpStatusCode.ServiceUnavailable, requestFailure.StatusCode);
     }
 
     [Fact]
@@ -123,25 +52,23 @@ public class DownloadClientTests
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent(
-            """
-            {
-              "name": "4.2-dev2",
-              "version": "4.2",
-              "status": "dev2",
-              "release_date": 123,
-              "git_reference": "abc123",
-              "files": [
-                {
-                  "filename": "Godot_v4.2-dev2_macos.universal.zip",
-                  "checksum": "hash"
-                }
-              ]
-            }
-            """)
+                    """
+                    {
+                      "name": "4.2-dev2",
+                      "version": "4.2",
+                      "status": "dev2",
+                      "release_date": 123,
+                      "git_reference": "abc123",
+                      "files": [
+                        {
+                          "filename": "Godot_v4.2-dev2_macos.universal.zip",
+                          "checksum": "hash"
+                        }
+                      ]
+                    }
+                    """)
             });
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(new Mock<HttpMessageHandler>().Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
+        var downloadClient = CreateDownloadClient(gitHubMockHandler);
 
         var result = await downloadClient.GetReleaseManifest(release, CancellationToken.None);
 
@@ -155,12 +82,7 @@ public class DownloadClientTests
     [Fact]
     public async Task GetZipFile_GitHubSucceeds_ReturnsSuccess()
     {
-        var gitHubMockHandler = CreateMockHttpHandler(HttpStatusCode.OK, "zip");
-        var tuxFamilyMockHandler = CreateMockHttpHandler(HttpStatusCode.NotFound, "not found");
-
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(tuxFamilyMockHandler.Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, "zip"));
 
         var result = await downloadClient.GetZipFile(_testRelease.ZipFileName, _testRelease, CancellationToken.None);
 
@@ -169,37 +91,20 @@ public class DownloadClientTests
     }
 
     [Fact]
-    public async Task GetZipFile_GitHubFails_TuxFamilySucceeds_ReturnsSuccess()
+    public async Task GetZipFile_GitHubFails_ReturnsFailure()
     {
-        var gitHubMockHandler = CreateMockHttpHandler(HttpStatusCode.ServiceUnavailable, "GitHub down");
-        var tuxFamilyMockHandler = CreateMockHttpHandler(HttpStatusCode.OK, "zip");
-
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(tuxFamilyMockHandler.Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
-
-        var result = await downloadClient.GetZipFile(_testRelease.ZipFileName, _testRelease, CancellationToken.None);
-
-        var success = Assert.IsType<Result<HttpResponseMessage, NetworkError>.Success>(result);
-        Assert.Equal(HttpStatusCode.OK, success.Value.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetZipFile_BothFail_ReturnsAllSourcesFailed()
-    {
-        var gitHubMockHandler = CreateMockHttpHandler(HttpStatusCode.ServiceUnavailable, "GitHub down");
-        var tuxFamilyMockHandler = CreateMockHttpHandler(HttpStatusCode.NotFound, "not found");
-
-        var gitHubClient = new GitHubClient(new HttpClient(gitHubMockHandler.Object), CreateMockConfiguration(), _mockGitHubLogger.Object);
-        var tuxFamilyClient = new TuxFamilyClient(new HttpClient(tuxFamilyMockHandler.Object), _mockTuxFamilyLogger.Object);
-        var downloadClient = new DownloadClient(gitHubClient, tuxFamilyClient, _mockLogger.Object);
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.NotFound, "not found"));
 
         var result = await downloadClient.GetZipFile(_testRelease.ZipFileName, _testRelease, CancellationToken.None);
 
         var failure = Assert.IsType<Result<HttpResponseMessage, NetworkError>.Failure>(result);
-        var allFailed = Assert.IsType<NetworkError.AllSourcesFailed>(failure.Error);
-        Assert.Equal(_testRelease.ZipFileName, allFailed.Resource);
-        Assert.Equal(2, allFailed.Errors.Count);
+        var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
+        Assert.Equal((int)HttpStatusCode.NotFound, requestFailure.StatusCode);
+    }
+
+    private DownloadClient CreateDownloadClient(Mock<HttpMessageHandler> httpHandler)
+    {
+        return new DownloadClient(new HttpClient(httpHandler.Object), CreateMockConfiguration(), _mockLogger.Object);
     }
 
     private static Mock<HttpMessageHandler> CreateMockHttpHandler(HttpStatusCode statusCode, string content)
@@ -215,19 +120,6 @@ public class DownloadClientTests
                 StatusCode = statusCode,
                 Content = new StringContent(content)
             });
-
-        return mockHandler;
-    }
-
-    private static Mock<HttpMessageHandler> CreateMockHttpHandlerThrowsException()
-    {
-        var mockHandler = new Mock<HttpMessageHandler>();
-        mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ThrowsAsync(new HttpRequestException("Network error"));
 
         return mockHandler;
     }

@@ -53,7 +53,6 @@ public sealed record ReleaseType : IComparable<ReleaseType>
     public static ReleaseType Alpha(int version) => new("alpha", version);
     public static ReleaseType Dev(int version) => new("dev", version);
 
-    // TODO: Replace with Result<ReleaseType, ParseError> ParseReleaseType(string input)
     internal static ReleaseType? TryParse(string input)
     {
         var split = input.Split('-');

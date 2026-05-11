@@ -43,13 +43,13 @@ public class VersionManagementServiceTests
 
         // Default mock setup - tests can override this
         _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
-            .Returns((Release?)null);
+            .Returns(ProjectMissing());
 
         _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<string>());
 
-        _mockReleaseManager.Setup(x => x.TryFindReleaseByQuery(It.IsAny<string[]>(), It.IsAny<string[]>()))
-            .Returns((Release?)null);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()))
+            .Returns(new Result<Release, QueryError>.Failure(new QueryError.NotFound("test")));
 
         _mockHostSystem.Setup(x => x.SystemInfo)
             .Returns(new SystemInfo(OS.Linux, Architecture.X64));
@@ -77,7 +77,7 @@ public class VersionManagementServiceTests
     [Fact]
     public async Task ResolveVersionForLaunchAsync_WithNoProjectAndNoInstallations_ReturnsNotFound()
     {
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns([]);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
 
         var result = await _service.ResolveVersionForLaunchAsync();
 
@@ -115,14 +115,14 @@ public class VersionManagementServiceTests
                 // Mock project info for this test
                 var projectRelease = Release.TryParse($"{projectVersion}-stable-standard")!;
                 _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
-                    .Returns(projectRelease);
+                    .Returns(ProjectFound(projectRelease));
 
                 _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-                _mockReleaseManager.Setup(x => x.FindCompatibleVersion(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+                _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
                     .Returns(compatibleVersion);
 
                 var mockRelease = CreateMockRelease(compatibleVersion);
-                _mockReleaseManager.Setup(x => x.TryCreateRelease(compatibleVersion))
+                _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
                     .Returns(mockRelease);
 
                 var result = await _service.ResolveVersionForLaunchAsync();
@@ -159,11 +159,11 @@ public class VersionManagementServiceTests
         // Mock project info for this test
         var projectRelease = Release.TryParse($"{projectVersion}-stable-standard")!;
         _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
-            .Returns(projectRelease);
+            .Returns(ProjectFound(projectRelease));
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-        _mockReleaseManager.Setup(x => x.FindCompatibleVersion(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
-            .Returns((string?)null);
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+            .Returns(CompatibleVersion(null));
 
         var result = await _service.ResolveVersionForLaunchAsync();
 
@@ -180,7 +180,7 @@ public class VersionManagementServiceTests
 
         const string selectedVersion = "4.3.0-stable";
         var mockRelease = CreateMockRelease(selectedVersion);
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(selectedVersion))
+        _mockReleaseManager.Setup(x => x.CreateRelease(selectedVersion))
             .Returns(mockRelease);
 
         await _service.ResolveVersionForLaunchAsync(true);
@@ -214,14 +214,14 @@ public class VersionManagementServiceTests
                 // Mock project info for this test
                 var projectRelease = Release.TryParse($"{projectVersion}-stable-standard")!;
                 _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
-                    .Returns(projectRelease);
+                    .Returns(ProjectFound(projectRelease));
 
                 _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-                _mockReleaseManager.Setup(x => x.FindCompatibleVersion(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+                _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
                     .Returns(compatibleVersion);
 
                 var mockRelease = CreateMockRelease(compatibleVersion, execName);
-                _mockReleaseManager.Setup(x => x.TryCreateRelease(compatibleVersion))
+                _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
                     .Returns(mockRelease);
 
                 var result = await _service.ResolveVersionForLaunchAsync();
@@ -319,7 +319,7 @@ public class VersionManagementServiceTests
     [Fact]
     public async Task SetLocalVersionAsync_WithNoInstallationsAndNoQuery_ThrowsException()
     {
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns([]);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetLocalVersionAsync(forceInteractive: true));
 
@@ -337,10 +337,10 @@ public class VersionManagementServiceTests
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
 
         var mockRelease = CreateMockRelease(matchedVersion);
-        _mockReleaseManager.Setup(x => x.TryFindReleaseByQuery(query, installedVersions))
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, installedVersions))
             .Returns(mockRelease);
 
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(mockRelease.ReleaseNameWithRuntime))
+        _mockReleaseManager.Setup(x => x.CreateRelease(mockRelease.ReleaseNameWithRuntime))
             .Returns(mockRelease);
 
         var result = await _service.SetLocalVersionAsync(query);
@@ -360,10 +360,10 @@ public class VersionManagementServiceTests
 
         _mockHostSystem.SetupSequence(x => x.ListInstallations())
             .Returns(installedVersions)
-            .Returns([newVersion]);
+            .Returns(new[] { newVersion });
 
-        _mockReleaseManager.Setup(x => x.TryFindReleaseByQuery(query, Array.Empty<string>()))
-            .Returns((Release?)null);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, Array.Empty<string>()))
+            .Returns(QueryNotFound(string.Join(" ", query)));
 
         var mockRelease = CreateMockRelease(newVersion);
         var installationResult = new Result<InstallationOutcome, InstallationError>.Success(
@@ -373,10 +373,10 @@ public class VersionManagementServiceTests
                 x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(installationResult);
 
-        _mockReleaseManager.Setup(x => x.TryFindReleaseByQuery(query, new[] { newVersion }))
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, new[] { newVersion }))
             .Returns(mockRelease);
 
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(mockRelease.ReleaseNameWithRuntime))
+        _mockReleaseManager.Setup(x => x.CreateRelease(mockRelease.ReleaseNameWithRuntime))
             .Returns(mockRelease);
 
         var result = await _service.SetLocalVersionAsync(query);
@@ -400,7 +400,7 @@ public class VersionManagementServiceTests
         var installedVersions = new[] { compatibleVersion };
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-        _mockReleaseManager.Setup(x => x.FindCompatibleVersion(projectVersion, false, installedVersions))
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectVersion, false, installedVersions))
             .Returns(compatibleVersion);
 
         var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, false);
@@ -415,8 +415,8 @@ public class VersionManagementServiceTests
         var installedVersions = Array.Empty<string>();
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-        _mockReleaseManager.Setup(x => x.FindCompatibleVersion(projectVersion, false, installedVersions))
-            .Returns((string?)null);
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectVersion, false, installedVersions))
+            .Returns(CompatibleVersion(null));
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => q.SequenceEqual(new[] { projectVersion })),
@@ -450,8 +450,8 @@ public class VersionManagementServiceTests
             .Returns(initialInstalled)
             .Returns(postInstallInstalled);
 
-        _mockReleaseManager.SetupSequence(x => x.FindCompatibleVersion(projectVersion, false, It.IsAny<IEnumerable<string>>()))
-            .Returns((string?)null)
+        _mockReleaseManager.SetupSequence(x => x.FindCompatibleVersionResult(projectVersion, false, It.IsAny<IEnumerable<string>>()))
+            .Returns(CompatibleVersion(null))
             .Returns(compatibleVersion);
 
         var mockRelease = CreateMockRelease(compatibleVersion);
@@ -486,8 +486,8 @@ public class VersionManagementServiceTests
         var installedVersions = Array.Empty<string>();
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-        _mockReleaseManager.Setup(x => x.FindCompatibleVersion(projectVersion, true, installedVersions))
-            .Returns((string?)null);
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectVersion, true, installedVersions))
+            .Returns(CompatibleVersion(null));
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => q.SequenceEqual(new[] { "4.3.0-stable", "mono" })),
@@ -499,7 +499,7 @@ public class VersionManagementServiceTests
         var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, true, false);
 
         Assert.Null(result);
-        _mockReleaseManager.Verify(x => x.FindCompatibleVersion(projectVersion, true, installedVersions), Times.Once);
+        _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(projectVersion, true, installedVersions), Times.Once);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => q.SequenceEqual(new[] { "4.3.0-stable", "mono" })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
@@ -520,8 +520,8 @@ public class VersionManagementServiceTests
             .Returns(initialInstalled)
             .Returns(postInstallInstalled);
 
-        _mockReleaseManager.SetupSequence(x => x.FindCompatibleVersion(projectVersion, false, It.IsAny<IEnumerable<string>>()))
-            .Returns((string?)null)
+        _mockReleaseManager.SetupSequence(x => x.FindCompatibleVersionResult(projectVersion, false, It.IsAny<IEnumerable<string>>()))
+            .Returns(CompatibleVersion(null))
             .Returns(compatibleVersion);
 
         _console.Interactive();
@@ -553,7 +553,7 @@ public class VersionManagementServiceTests
     [Fact]
     public async Task SetGlobalVersionAsync_WithNoInstallations_ThrowsException()
     {
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns([]);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetGlobalVersionAsync(["4.3.0"]));
 
@@ -570,10 +570,10 @@ public class VersionManagementServiceTests
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
         _mockReleaseManager.Setup(x => x.FilterReleasesByQuery(query, installedVersions, false))
-            .Returns([matchedVersion]);
+            .Returns(new[] { matchedVersion });
 
         var mockRelease = CreateMockRelease(matchedVersion);
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(matchedVersion))
+        _mockReleaseManager.Setup(x => x.CreateRelease(matchedVersion))
             .Returns(mockRelease);
 
         _mockHostSystem.Setup(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()))
@@ -597,11 +597,33 @@ public class VersionManagementServiceTests
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
         _mockReleaseManager.Setup(x => x.FilterReleasesByQuery(query, installedVersions, false))
-            .Returns([]);
+            .Returns(Array.Empty<string>());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetGlobalVersionAsync(query));
 
         Assert.Empty(_console.Output);
+    }
+
+    [Fact]
+    public async Task SetLocalVersionAsync_WithInvalidQuery_ThrowsArgumentExceptionWithoutInstalling()
+    {
+        var query = new[] { "bad-query" };
+        var installedVersions = new[] { "4.3.0-stable" };
+
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, installedVersions))
+            .Returns(new Result<Release, QueryError>.Failure(new QueryError.InvalidQuery("Invalid query.")));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => _service.SetLocalVersionAsync(query));
+
+        Assert.Contains("Invalid query.", exception.Message);
+        _mockInstallationService.Verify(
+            x => x.InstallByQueryAsync(
+                It.IsAny<string[]>(),
+                It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -616,7 +638,7 @@ public class VersionManagementServiceTests
         _console.Input.PushKey(ConsoleKey.Enter);
 
         var mockRelease = CreateMockRelease(selectedVersion);
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(selectedVersion))
+        _mockReleaseManager.Setup(x => x.CreateRelease(selectedVersion))
             .Returns(mockRelease);
 
         _mockHostSystem.Setup(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()))
@@ -640,10 +662,10 @@ public class VersionManagementServiceTests
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
         _mockReleaseManager.Setup(x => x.FilterReleasesByQuery(query, installedVersions, false))
-            .Returns([invalidVersion]);
+            .Returns(new[] { invalidVersion });
 
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(invalidVersion))
-            .Returns((Release?)null);
+        _mockReleaseManager.Setup(x => x.CreateRelease(invalidVersion))
+            .Returns(ReleaseFailure(invalidVersion));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _service.SetGlobalVersionAsync(query));
@@ -659,7 +681,7 @@ public class VersionManagementServiceTests
         var mockRelease = CreateMockRelease(installedVersion);
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(installedVersion))
+        _mockReleaseManager.Setup(x => x.CreateRelease(installedVersion))
             .Returns(mockRelease);
 
         await _service.ResolveVersionForLaunchAsync();
@@ -677,7 +699,7 @@ public class VersionManagementServiceTests
     [Fact]
     public async Task ResolveVersionForLaunchAsync_WithNoInstallationsAndInteractive_ReturnsNull()
     {
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns([]);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
 
         var result = await _service.ResolveVersionForLaunchAsync(true);
 
@@ -696,7 +718,7 @@ public class VersionManagementServiceTests
         var mockRelease = CreateMockRelease(selectedVersion);
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(selectedVersion))
+        _mockReleaseManager.Setup(x => x.CreateRelease(selectedVersion))
             .Returns(mockRelease);
 
         _console.Interactive();
@@ -721,8 +743,8 @@ public class VersionManagementServiceTests
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
 
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(selectedVersion))
-            .Returns((Release?)null);
+        _mockReleaseManager.Setup(x => x.CreateRelease(selectedVersion))
+            .Returns(ReleaseFailure(selectedVersion));
 
         _console.Interactive();
         _console.Input.PushKey(ConsoleKey.Enter);
@@ -758,7 +780,7 @@ public class VersionManagementServiceTests
         var cancellationTokenSource = new CancellationTokenSource();
         await cancellationTokenSource.CancelAsync();
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns([]);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
@@ -776,7 +798,7 @@ public class VersionManagementServiceTests
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
 
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(selectedVersion))
+        _mockReleaseManager.Setup(x => x.CreateRelease(selectedVersion))
             .Returns(mockRelease);
 
         _console.Interactive();
@@ -794,9 +816,9 @@ public class VersionManagementServiceTests
         const string errorMessage = "Installation failed";
         var query = new[] { queryVersion };
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns([]);
-        _mockReleaseManager.Setup(x => x.TryFindReleaseByQuery(query, Array.Empty<string>()))
-            .Returns((Release?)null);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, Array.Empty<string>()))
+            .Returns(QueryNotFound(string.Join(" ", query)));
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
@@ -817,12 +839,12 @@ public class VersionManagementServiceTests
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
 
-        _mockReleaseManager.Setup(x => x.TryCreateRelease(selectedVersion))
+        _mockReleaseManager.Setup(x => x.CreateRelease(selectedVersion))
             .Returns(mockRelease);
 
         // Mock ProjectManager to return null (no project info found)
         _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
-            .Returns((Release?)null);
+            .Returns(ProjectMissing());
 
         _console.Interactive();
         _console.Input.PushKey(ConsoleKey.Enter);
@@ -831,6 +853,29 @@ public class VersionManagementServiceTests
 
         Assert.Equal(mockRelease, result);
     }
+
+    private static Result<ProjectLookup<Release>, ProjectError> ProjectFound(Release release) =>
+        new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Found(release));
+
+    private static Result<ProjectLookup<Release>, ProjectError> ProjectMissing() =>
+        new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
+
+    private static Result<Release, ReleaseParseError> ReleaseSuccess(Release release) =>
+        new Result<Release, ReleaseParseError>.Success(release);
+
+    private static Result<Release, ReleaseParseError> ReleaseFailure(string version) =>
+        new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.InvalidVersion(version));
+
+    private static Result<string, CompatibilityError> CompatibleVersion(string? version) =>
+        version is null
+            ? new Result<string, CompatibilityError>.Failure(new CompatibilityError.NotFound("test", false))
+            : new Result<string, CompatibilityError>.Success(version);
+
+    private static Result<Release, QueryError> QuerySuccess(Release release) =>
+        new Result<Release, QueryError>.Success(release);
+
+    private static Result<Release, QueryError> QueryNotFound(string query = "test") =>
+        new Result<Release, QueryError>.Failure(new QueryError.NotFound(query));
 
     private sealed class TestProgressHandler<TStage> : IProgressHandler<TStage> where TStage : Enum
     {

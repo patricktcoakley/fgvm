@@ -2,6 +2,7 @@ using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Environment;
 using Fgvm.Godot;
+using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using ZLogger;
@@ -20,19 +21,19 @@ public sealed class RemoveCommand(
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <param name="query"></param>
+    /// <exception cref="InvalidOperationException">Thrown when installed versions or symlinks cannot be read or removed.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when removal is canceled.</exception>
     [Command("remove|r")]
     public async Task Remove(CancellationToken cancellationToken = default, [Argument] params string[] query)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var installed = hostSystem
-                .ListInstallations()
-                .ToArray();
+            var installed = ListInstallations();
 
             if (installed.Length == 0)
             {
-                hostSystem.RemoveSymbolicLinks();
+                RemoveSymbolicLinks();
                 console.MarkupLine(Messages.NoInstallationsToRemove);
                 return;
             }
@@ -74,10 +75,10 @@ public sealed class RemoveCommand(
                 }
             }
 
-            if (!hostSystem.ListInstallations().Any())
+            if (ListInstallations().Length == 0)
             {
                 logger.ZLogInformation($"No installations remaining, removing symbolic links.");
-                hostSystem.RemoveSymbolicLinks();
+                RemoveSymbolicLinks();
             }
         }
         catch (TaskCanceledException)
@@ -95,6 +96,23 @@ public sealed class RemoveCommand(
             );
 
             throw;
+        }
+    }
+
+    private string[] ListInstallations() =>
+        hostSystem.ListInstallations() switch
+        {
+            Result<IReadOnlyList<string>, FileSystemError>.Success(var installations) => installations.ToArray(),
+            Result<IReadOnlyList<string>, FileSystemError>.Failure =>
+                throw new InvalidOperationException("Unable to read installed Godot versions."),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+    private void RemoveSymbolicLinks()
+    {
+        if (hostSystem.RemoveSymbolicLinks() is Result<Unit, SymlinkError>.Failure)
+        {
+            throw new InvalidOperationException("Unable to remove Godot symlinks.");
         }
     }
 }

@@ -5,9 +5,11 @@ using Fgvm.Cli.Http;
 using Fgvm.Cli.Progress;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
+using Fgvm.Error;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
+using Fgvm.Types;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -53,17 +55,7 @@ public class Program
         services.AddSingleton<IHostSystem, HostSystem>();
 
         // Register HTTP clients
-        services.AddHttpClient<IGitHubClient, GitHubClient>("github")
-            .ConfigureHttpClient((_, client) =>
-            {
-                var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
-                client.DefaultRequestHeaders.UserAgent.Clear();
-                client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("fgvm", version));
-                client.Timeout = TimeSpan.FromSeconds(30);
-            })
-            .AddHttpMessageHandler(() => new ExponentialBackoffHandler(TimeSpan.FromSeconds(2), 3));
-
-        services.AddHttpClient<ITuxFamilyClient, TuxFamilyClient>("tuxfamily")
+        services.AddHttpClient<IDownloadClient, DownloadClient>("godot-builds")
             .ConfigureHttpClient((_, client) =>
             {
                 var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
@@ -74,7 +66,6 @@ public class Program
             .AddHttpMessageHandler(() => new ExponentialBackoffHandler(TimeSpan.FromSeconds(2), 3));
 
         // Register core services
-        services.AddSingleton<IDownloadClient, DownloadClient>();
         services.AddSingleton<IReleaseCatalog, ReleaseCatalog>();
         services.AddSingleton<IReleaseManager, ReleaseManager>();
         services.AddSingleton<IInstallationService, InstallationService>();
@@ -105,7 +96,20 @@ public class Program
                 .AddIniFile(pathService.ConfigPath, false, true)
                 .Build();
 
-            Configuration.ValidateConfiguration(configuration);
+            if (Configuration.ValidateConfiguration(configuration) is Result<Unit, ConfigError>.Failure failure)
+            {
+                throw new ConfigurationException(failure.Error switch
+                {
+                    ConfigError.InvalidGitHubTokenPrefix =>
+                        "GitHub token should start with 'ghp_', 'gho_', 'ghu_', 'ghs_', or 'ghr_' prefix",
+                    ConfigError.InvalidGitHubTokenLength =>
+                        "GitHub token should be exactly 40 characters long",
+                    ConfigError.InvalidGitHubTokenCharacters =>
+                        "GitHub token contains invalid characters",
+                    _ => "Invalid configuration"
+                });
+            }
+
             return configuration;
         }));
 

@@ -15,6 +15,7 @@ public sealed class ListCommand(IHostSystem hostSystem, IPathService pathService
     /// <summary>
     ///     List all installed Godot versions.
     /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when installed versions cannot be read.</exception>
     [Command("list|l")]
     public void List(bool json = false)
     {
@@ -27,7 +28,15 @@ public sealed class ListCommand(IHostSystem hostSystem, IPathService pathService
                 _ => string.Empty
             };
 
-            var installations = hostSystem.ListInstallations()
+            var installationNames = hostSystem.ListInstallations() switch
+            {
+                Result<IReadOnlyList<string>, FileSystemError>.Success(var names) => names,
+                Result<IReadOnlyList<string>, FileSystemError>.Failure =>
+                    throw new InvalidOperationException("Unable to read installed Godot versions."),
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            };
+
+            var installations = installationNames
                 .Select(name => ListView.Create(name, symlinkTarget, pathService.RootPath))
                 .ToList();
 

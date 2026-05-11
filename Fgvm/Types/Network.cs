@@ -9,6 +9,4 @@ public abstract record NetworkError
 
     public record ConnectionFailure(string Message, string? Details = null) : NetworkError;
 
-    /// <summary>All sources exhausted without success</summary>
-    public record AllSourcesFailed(string Resource, IReadOnlyList<NetworkError> Errors) : NetworkError;
 }

@@ -30,17 +30,45 @@ public enum InstallationStage
     SettingDefault
 }
 
+/// <summary>
+///     Installs Godot releases and fetches release names for installation flows.
+/// </summary>
 public interface IInstallationService
 {
+    /// <summary>
+    ///     Installs a specific Godot release.
+    /// </summary>
+    /// <param name="godotRelease">The release to install.</param>
+    /// <param name="progress">Progress reporter for installation updates.</param>
+    /// <param name="setAsDefault">Whether to set this version as the global default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The installation outcome, or an installation error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when installation is canceled.</exception>
     Task<Result<InstallationOutcome, InstallationError>> InstallReleaseAsync(Release godotRelease,
         IProgress<OperationProgress<InstallationStage>> progress, bool setAsDefault = true,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    ///     Resolves a query and installs the matching Godot release.
+    /// </summary>
+    /// <param name="query">Version query arguments.</param>
+    /// <param name="progress">Progress reporter for installation updates.</param>
+    /// <param name="setAsDefault">Whether to set the installed version as the global default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The installation outcome, or an installation error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when installation is canceled.</exception>
     Task<Result<InstallationOutcome, InstallationError>> InstallByQueryAsync(string[] query,
         IProgress<OperationProgress<InstallationStage>> progress, bool setAsDefault = false,
         CancellationToken cancellationToken = default);
 
-    Task<string[]> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache);
+    /// <summary>
+    ///     Fetches available release names from the release catalog.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="fetchMode">Whether to use the local cache or force a remote refresh.</param>
+    /// <returns>Available release names, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when release lookup is canceled.</exception>
+    Task<Result<string[], NetworkError>> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache);
 }
 
 public class InstallationService(
@@ -51,14 +79,7 @@ public class InstallationService(
     ILogger<InstallationService> logger)
     : IInstallationService
 {
-    /// <summary>
-    ///     Tries to install a Godot release.
-    /// </summary>
-    /// <param name="godotRelease">The release to install</param>
-    /// <param name="progress">Progress reporter for installation updates</param>
-    /// <param name="setAsDefault">Whether to set this version as the global default</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The installation result if successful, null if the installation failed.</returns>
+    /// <inheritdoc />
     public async Task<Result<InstallationOutcome, InstallationError>> InstallReleaseAsync(Release godotRelease,
         IProgress<OperationProgress<InstallationStage>> progress, bool setAsDefault = true,
         CancellationToken cancellationToken = default)
@@ -209,63 +230,129 @@ public class InstallationService(
             logger.LogError("User cancelled installation");
             throw;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException or CryptographicException)
         {
             if (Directory.Exists(extractPath))
             {
-                Directory.Delete(extractPath, true);
-                logger.LogError("Removing {ExtractPath} due to error: {Message}", extractPath, e.Message);
+                try
+                {
+                    Directory.Delete(extractPath, true);
+                    logger.LogError("Removing {ExtractPath} due to error: {Message}", extractPath, e.Message);
+                }
+                catch (Exception cleanupException) when (cleanupException is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+                {
+                    logger.LogWarning("Failed to remove {ExtractPath} after installation error: {Message}", extractPath, cleanupException.Message);
+                }
             }
 
             logger.LogError("Error downloading and installing Godot {ReleaseNameWithRuntime}: {Message}", godotRelease.ReleaseNameWithRuntime, e.Message);
-            throw;
+            return new Result<InstallationOutcome, InstallationError>.Failure(
+                new InstallationError.Failed($"Installation failed for {godotRelease.ReleaseNameWithRuntime}."));
         }
     }
 
-    /// <summary>
-    ///     Tries to find and install a version matching the query.
-    /// </summary>
-    /// <param name="query">Version query arguments</param>
-    /// <param name="progress">Progress reporter for installation updates</param>
-    /// <param name="setAsDefault">Whether to set the installed version as the global default</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The installation result if successful, null if installation failed.</returns>
+    /// <inheritdoc />
     public async Task<Result<InstallationOutcome, InstallationError>> InstallByQueryAsync(string[] query,
         IProgress<OperationProgress<InstallationStage>> progress, bool setAsDefault = false,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var releaseNames = await FetchReleaseNames(cancellationToken);
-            var godotRelease = releaseManager.TryFindReleaseByQuery(query, releaseNames);
+            var releaseNamesResult = await FetchReleaseNames(cancellationToken);
+            if (releaseNamesResult is Result<string[], NetworkError>.Failure releaseNamesFailure)
+            {
+                return new Result<InstallationOutcome, InstallationError>.Failure(
+                    new InstallationError.Failed($"Failed to fetch releases: {releaseNamesFailure.Error}"));
+            }
+
+            var releaseNames = ((Result<string[], NetworkError>.Success)releaseNamesResult).Value;
+            Release? godotRelease;
+            switch (releaseManager.ResolveReleaseQuery(query, releaseNames))
+            {
+                case Result<Release, QueryError>.Success(var release):
+                    godotRelease = release;
+                    break;
+                case Result<Release, QueryError>.Failure(QueryError.NotFound):
+                    godotRelease = null;
+                    break;
+                case Result<Release, QueryError>.Failure(var error):
+                    return new Result<InstallationOutcome, InstallationError>.Failure(MapQueryError(error, query));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
 
             // Retry with remote fetch if not found
-            godotRelease ??= releaseManager.TryFindReleaseByQuery(query, await FetchReleaseNames(cancellationToken, ReleaseFetchMode.ForceRemote));
+            if (godotRelease is null)
+            {
+                var remoteReleaseNamesResult = await FetchReleaseNames(cancellationToken, ReleaseFetchMode.ForceRemote);
+                if (remoteReleaseNamesResult is Result<string[], NetworkError>.Failure remoteFailure)
+                {
+                    return new Result<InstallationOutcome, InstallationError>.Failure(
+                        new InstallationError.Failed($"Failed to fetch releases: {remoteFailure.Error}"));
+                }
+
+                var remoteReleaseNames = ((Result<string[], NetworkError>.Success)remoteReleaseNamesResult).Value;
+                switch (releaseManager.ResolveReleaseQuery(query, remoteReleaseNames))
+                {
+                    case Result<Release, QueryError>.Success(var release):
+                        godotRelease = release;
+                        break;
+                    case Result<Release, QueryError>.Failure(QueryError.NotFound):
+                        godotRelease = null;
+                        break;
+                    case Result<Release, QueryError>.Failure(var error):
+                        return new Result<InstallationOutcome, InstallationError>.Failure(MapQueryError(error, query));
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
+                }
+            }
 
             return godotRelease == null
                 ? new Result<InstallationOutcome, InstallationError>.Failure(
                     new InstallationError.NotFound(string.Join(" ", query)))
                 : await InstallReleaseAsync(godotRelease, progress, setAsDefault, cancellationToken);
         }
-        catch (Exception e)
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException or CryptographicException)
+        {
+            logger.LogError("Installation failed for query {Query}: {Message}", string.Join(" ", query), e.Message);
             return new Result<InstallationOutcome, InstallationError>.Failure(
-                new InstallationError.Failed($"Installation failed for query '{string.Join(" ", query)}': {e.Message}"));
+                new InstallationError.Failed($"Installation failed for query '{string.Join(" ", query)}'."));
         }
     }
 
-    public async Task<string[]> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache)
+    private static InstallationError MapQueryError(QueryError error, string[] query) => error switch
     {
-        var releaseIds = await releaseCatalog.ReadReleaseIds(fetchMode, cancellationToken) switch
+        QueryError.EmptyQuery => new InstallationError.InvalidQuery("Version query is required."),
+        QueryError.InvalidQuery invalid => new InstallationError.InvalidQuery(invalid.Message),
+        QueryError.NotFound notFound => new InstallationError.NotFound(notFound.Query),
+        _ => new InstallationError.NotFound(string.Join(" ", query))
+    };
+
+    /// <inheritdoc />
+    public async Task<Result<string[], NetworkError>> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache)
+    {
+        var releaseIdsResult = await releaseCatalog.ReadReleaseIds(fetchMode, cancellationToken);
+        var releaseIds = releaseIdsResult switch
         {
             Result<string[], NetworkError>.Success success => success.Value,
-            Result<string[], NetworkError>.Failure failure => throw new HttpRequestException($"Failed to fetch releases: {failure.Error}"),
+            Result<string[], NetworkError>.Failure failure => null,
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
 
+        if (releaseIds is null)
+        {
+            var failure = (Result<string[], NetworkError>.Failure)releaseIdsResult;
+            return new Result<string[], NetworkError>.Failure(failure.Error);
+        }
+
         var sortedReleases = releaseIds
-            .Select(name => releaseManager.TryCreateRelease($"{name}-standard"))
-            .OfType<Release>()
+            .Select(name => releaseManager.CreateRelease($"{name}-standard"))
+            .OfType<Result<Release, ReleaseParseError>.Success>()
+            .Select(success => success.Value)
             .OrderByDescending(r => r)
             .Select(r => r.ReleaseName)
             .ToArray();
@@ -273,10 +360,10 @@ public class InstallationService(
         if (sortedReleases.Length == 0)
         {
             logger.LogError("Unable to fetch remote releases");
-            return [];
+            return new Result<string[], NetworkError>.Success([]);
         }
 
-        return sortedReleases;
+        return new Result<string[], NetworkError>.Success(sortedReleases);
     }
 
     private static async Task<string> CalculateChecksum(MemoryStream memStream, CancellationToken cancellationToken)

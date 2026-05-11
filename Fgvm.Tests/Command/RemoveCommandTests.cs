@@ -41,7 +41,7 @@ public class RemoveCommandTests
     [Fact]
     public async Task Remove_WithNoInstallations_ShowsNoInstallationsMessage()
     {
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns([]);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
         _mockHostSystem.Setup(x => x.RemoveSymbolicLinks());
 
         await _removeCommand.Remove(CancellationToken.None, "some-query");
@@ -57,7 +57,7 @@ public class RemoveCommandTests
 
         _mockHostSystem.Setup(x => x.ListInstallations()).Returns(installedVersions);
         _mockReleaseManager.Setup(x => x.FilterReleasesByQuery(query, installedVersions, false))
-            .Returns([]);
+            .Returns(Array.Empty<string>());
 
         await _removeCommand.Remove(CancellationToken.None, query);
 
@@ -77,7 +77,7 @@ public class RemoveCommandTests
             .Returns(filteredVersions);
 
         // Setup remaining installations after removal
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(["4.2.0-stable", "4.1.0-stable"]);
+        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.2.0-stable", "4.1.0-stable" });
 
         await _removeCommand.Remove(CancellationToken.None, query);
 
@@ -99,7 +99,7 @@ public class RemoveCommandTests
         // Setup empty installations after removal
         _mockHostSystem.SetupSequence(x => x.ListInstallations())
             .Returns(installedVersions)
-            .Returns([]);
+            .Returns(Array.Empty<string>());
 
         await _removeCommand.Remove(CancellationToken.None, query);
 
@@ -121,7 +121,7 @@ public class RemoveCommandTests
         // Setup for remaining installations after removal
         _mockHostSystem.SetupSequence(x => x.ListInstallations())
             .Returns(installedVersions)
-            .Returns(["4.2.0-stable"]);
+            .Returns(new[] { "4.2.0-stable" });
 
         // Create a new test console for this test
         var testConsole = new TestConsole();
@@ -152,7 +152,7 @@ public class RemoveCommandTests
         // Setup for remaining installations after removal
         _mockHostSystem.SetupSequence(x => x.ListInstallations())
             .Returns(installedVersions)
-            .Returns(["4.3.0-stable"]);
+            .Returns(new[] { "4.3.0-stable" });
 
         // Create a new test console for this test
         var testConsole = new TestConsole();
@@ -185,7 +185,7 @@ public class RemoveCommandTests
         // Setup for remaining installations after removal
         _mockHostSystem.SetupSequence(x => x.ListInstallations())
             .Returns(installedVersions)
-            .Returns(["4.2.0-stable"]);
+            .Returns(new[] { "4.2.0-stable" });
 
         // Create a new test console for this test
         var testConsole = new TestConsole();
@@ -253,7 +253,7 @@ public class RemoveCommandTests
         // Setup empty installations after removal
         _mockHostSystem.SetupSequence(x => x.ListInstallations())
             .Returns(installedVersions)
-            .Returns([]);
+            .Returns(Array.Empty<string>());
 
         // Create a new test console for this test
         var testConsole = new TestConsole();

@@ -1,5 +1,5 @@
 using Fgvm.Environment;
-using Fgvm.Error;
+using Fgvm.Types;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 
@@ -32,8 +32,7 @@ public class ConfigurationTests
             })
             .Build();
 
-        var exception = Record.Exception(() => Configuration.ValidateConfiguration(config));
-        Assert.Null(exception);
+        Assert.IsType<Result<Unit, ConfigError>.Success>(Configuration.ValidateConfiguration(config));
     }
 
     [Fact]
@@ -43,8 +42,7 @@ public class ConfigurationTests
             .AddInMemoryCollection(new Dictionary<string, string?>())
             .Build();
 
-        var exception = Record.Exception(() => Configuration.ValidateConfiguration(config));
-        Assert.Null(exception);
+        Assert.IsType<Result<Unit, ConfigError>.Success>(Configuration.ValidateConfiguration(config));
     }
 
     [Fact]
@@ -57,15 +55,14 @@ public class ConfigurationTests
             })
             .Build();
 
-        var exception = Record.Exception(() => Configuration.ValidateConfiguration(config));
-        Assert.Null(exception);
+        Assert.IsType<Result<Unit, ConfigError>.Success>(Configuration.ValidateConfiguration(config));
     }
 
     [Theory]
     [InlineData("bad")]
     [InlineData("xyz")]
     [InlineData("token")]
-    public void ValidateConfiguration_InvalidPrefix_ThrowsConfigurationException(string prefix)
+    public void ValidateConfiguration_InvalidPrefix_ReturnsConfigError(string prefix)
     {
         var token = GenerateTestToken(prefix);
         var config = new ConfigurationBuilder()
@@ -75,14 +72,14 @@ public class ConfigurationTests
             })
             .Build();
 
-        var ex = Assert.Throws<ConfigurationException>(() => Configuration.ValidateConfiguration(config));
-        Assert.Equal("GitHub token should start with 'ghp_', 'gho_', 'ghu_', 'ghs_', or 'ghr_' prefix", ex.Message);
+        var failure = Assert.IsType<Result<Unit, ConfigError>.Failure>(Configuration.ValidateConfiguration(config));
+        Assert.IsType<ConfigError.InvalidGitHubTokenPrefix>(failure.Error);
     }
 
     [Theory]
     [InlineData("ghp_short")]
     [InlineData("ghp_")]
-    public void ValidateConfiguration_InvalidLength_ThrowsConfigurationException(string token)
+    public void ValidateConfiguration_InvalidLength_ReturnsConfigError(string token)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -91,8 +88,8 @@ public class ConfigurationTests
             })
             .Build();
 
-        var ex = Assert.Throws<ConfigurationException>(() => Configuration.ValidateConfiguration(config));
-        Assert.Equal("GitHub token should be exactly 40 characters long", ex.Message);
+        var failure = Assert.IsType<Result<Unit, ConfigError>.Failure>(Configuration.ValidateConfiguration(config));
+        Assert.IsType<ConfigError.InvalidGitHubTokenLength>(failure.Error);
     }
 
     [Theory]
@@ -100,7 +97,7 @@ public class ConfigurationTests
     [InlineData('#')]
     [InlineData(' ')]
     [InlineData('-')]
-    public void ValidateConfiguration_InvalidCharacters_ThrowsConfigurationException(char invalidChar)
+    public void ValidateConfiguration_InvalidCharacters_ReturnsConfigError(char invalidChar)
     {
         var token = GenerateInvalidToken("ghp", invalidChar);
         var config = new ConfigurationBuilder()
@@ -110,8 +107,8 @@ public class ConfigurationTests
             })
             .Build();
 
-        var ex = Assert.Throws<ConfigurationException>(() => Configuration.ValidateConfiguration(config));
-        Assert.Equal("GitHub token contains invalid characters", ex.Message);
+        var failure = Assert.IsType<Result<Unit, ConfigError>.Failure>(Configuration.ValidateConfiguration(config));
+        Assert.IsType<ConfigError.InvalidGitHubTokenCharacters>(failure.Error);
     }
 
     [Theory]
@@ -129,7 +126,6 @@ public class ConfigurationTests
             })
             .Build();
 
-        var exception = Record.Exception(() => Configuration.ValidateConfiguration(config));
-        Assert.Null(exception);
+        Assert.IsType<Result<Unit, ConfigError>.Success>(Configuration.ValidateConfiguration(config));
     }
 }

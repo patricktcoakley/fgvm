@@ -26,6 +26,8 @@ public sealed class GodotCommand(
     /// <param name="attached">-a, Launches Godot in attached mode, keeping it connected to the terminal for output.</param>
     /// <param name="args">Arguments to pass to the Godot executable (e.g., --args="--version --verbose").</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <exception cref="InvalidOperationException">Thrown when version resolution or project-file lookup cannot continue.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when launch is canceled.</exception>
     [Command("godot|g")]
     public async Task Launch(bool interactive = false, bool attached = false, string args = "", CancellationToken cancellationToken = default)
     {
@@ -106,8 +108,16 @@ public sealed class GodotCommand(
             // Auto-detect project file and add it to arguments if we're in a project directory
             if (string.IsNullOrEmpty(argumentString))
             {
-                var projectFilePath = projectManager.FindProjectFilePath();
-                if (projectFilePath is not null)
+                var projectFilePathResult = projectManager.FindProjectFilePath();
+                if (projectFilePathResult is Result<ProjectLookup<string>, ProjectError>.Failure)
+                {
+                    throw new InvalidOperationException("Unable to read project file information.");
+                }
+
+                if (projectFilePathResult is Result<ProjectLookup<string>, ProjectError>.Success
+                    {
+                        Value: ProjectLookup<string>.Found(var projectFilePath)
+                    })
                 {
                     // Godot expects the directory path, not the file path
                     var projectDirectory = Path.GetDirectoryName(projectFilePath);

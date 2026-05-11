@@ -139,7 +139,8 @@ public sealed record Release : IComparable<Release>
     ///     it out contextually.
     /// </summary>
     /// <param name="versionString"></param>
-    // TODO: Replace with Result<Release, ParseError> ParseRelease(string versionString)
+    // Internal lossy parser for filtering paths where the reason for failure is not needed.
+    // Public callers should use IReleaseManager.CreateRelease for typed parse errors.
     internal static Release? TryParse(string versionString)
     {
         if (string.IsNullOrWhiteSpace(versionString))

@@ -18,4 +18,6 @@ public abstract record Result<T, E>
     public sealed record Success(T Value) : Result<T, E>;
 
     public sealed record Failure(E Error) : Result<T, E>;
+
+    public static implicit operator Result<T, E>(T value) => new Success(value);
 }
