@@ -1,6 +1,5 @@
 using ConsoleAppFramework;
 using Fgvm.Cli.Services;
-using Fgvm.Error;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using ZLogger;
@@ -15,8 +14,10 @@ public sealed class SetCommand(IVersionManagementService versionManagementServic
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="query">Version query arguments</param>
-    /// <exception cref="InvalidOperationException">Thrown when installed versions cannot be read, no version can be selected, or symlink creation cannot continue.</exception>
-    /// <exception cref="InvalidSymlinkException">Thrown when a symlink is created but validation fails.</exception>
+    /// <exception cref="InvalidOperationException">
+    ///     Thrown when installed versions cannot be read or no version can be
+    ///     selected.
+    /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when interactive selection is canceled.</exception>
     [Command("set")]
     public async Task Set(CancellationToken cancellationToken = default, [Argument] params string[] query)
@@ -29,13 +30,6 @@ public sealed class SetCommand(IVersionManagementService versionManagementServic
         {
             logger.ZLogError($"User cancelled setting version.");
             console.MarkupLine(Messages.UserCancelled("setting version"));
-            throw;
-        }
-        catch (InvalidSymlinkException e)
-        {
-            logger.ZLogError($"Symlink created but appears invalid: {e.SymlinkPath}.");
-            console.MarkupLine(Messages.InvalidSymlinkWarn(e.SymlinkPath));
-
             throw;
         }
         catch (Exception e)

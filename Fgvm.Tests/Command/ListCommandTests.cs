@@ -2,6 +2,7 @@ using Fgvm.Cli.Command;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
+using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -15,14 +16,11 @@ public sealed class ListCommandTests
     [Fact]
     public void ListCommand_WritesJsonOutput()
     {
-        var hostSystem = new Mock<IHostSystem>();
-        hostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.5-stable", "3.5-stable" });
-        hostSystem.Setup(x => x.ResolveCurrentSymlinks())
-            .Returns(new Result<SymlinkInfo, SymlinkError>.Failure(new SymlinkError.NoVersionSet()));
+        var registry = CreateRegistryMock(["4.5-stable", "3.5-stable"]);
 
         var pathService = CreatePathServiceMock().Object;
         var console = new TestConsole();
-        var command = new ListCommand(hostSystem.Object, pathService, console, NullLogger<ListCommand>.Instance);
+        var command = new ListCommand(registry.Object, pathService, console, NullLogger<ListCommand>.Instance);
 
         command.List(true);
 
@@ -38,14 +36,11 @@ public sealed class ListCommandTests
     [Fact]
     public void ListCommand_WritesPanelOutput()
     {
-        var hostSystem = new Mock<IHostSystem>();
-        hostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.5-stable" });
-        hostSystem.Setup(x => x.ResolveCurrentSymlinks())
-            .Returns(new Result<SymlinkInfo, SymlinkError>.Failure(new SymlinkError.NoVersionSet()));
+        var registry = CreateRegistryMock(["4.5-stable"]);
 
         var pathService = CreatePathServiceMock().Object;
         var console = new TestConsole();
-        var command = new ListCommand(hostSystem.Object, pathService, console, NullLogger<ListCommand>.Instance);
+        var command = new ListCommand(registry.Object, pathService, console, NullLogger<ListCommand>.Instance);
 
         command.List();
 
@@ -57,17 +52,13 @@ public sealed class ListCommandTests
     [Fact]
     public void ListCommand_MarksOnlyExactDefaultInstallation()
     {
-        var hostSystem = new Mock<IHostSystem>();
-        hostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.5-stable", "4.5-stable-mono" });
+        var registry = CreateRegistryMock(["4.5-stable", "4.5-stable-mono"], "4.5-stable@linux.x86_64");
 
         var pathServiceMock = CreatePathServiceMock();
         var pathService = pathServiceMock.Object;
-        var defaultTarget = Path.Combine(pathService.RootPath, "4.5-stable", "Godot");
-        hostSystem.Setup(x => x.ResolveCurrentSymlinks())
-            .Returns(new Result<SymlinkInfo, SymlinkError>.Success(new SymlinkInfo(defaultTarget)));
 
         var console = new TestConsole();
-        var command = new ListCommand(hostSystem.Object, pathService, console, NullLogger<ListCommand>.Instance);
+        var command = new ListCommand(registry.Object, pathService, console, NullLogger<ListCommand>.Instance);
 
         command.List();
 
@@ -92,9 +83,33 @@ public sealed class ListCommandTests
         mock.SetupGet(x => x.ConfigPath).Returns(Path.Combine(rootPath, "fgvm.ini"));
         mock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
         mock.SetupGet(x => x.BinPath).Returns(binPath);
-        mock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(binPath, "godot"));
-        mock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(binPath, "Godot.app"));
+        mock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(rootPath, "Godot"));
+        mock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(rootPath, "Godot.app"));
         mock.SetupGet(x => x.LogPath).Returns(Path.Combine(rootPath, ".log"));
+        return mock;
+    }
+
+    private static Mock<IInstallationRegistry> CreateRegistryMock(string[] releaseNames, string? defaultKey = null)
+    {
+        var installations = releaseNames
+            .Select(name => new Installation($"{name}@linux.x86_64", name, "linux.x86_64", name, null, null))
+            .ToArray();
+
+        var mock = new Mock<IInstallationRegistry>();
+        mock.Setup(x => x.ListInstallations())
+            .Returns(new Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(installations));
+
+        if (defaultKey is not null && installations.FirstOrDefault(x => x.Key == defaultKey) is { } defaultInstallation)
+        {
+            mock.Setup(x => x.GetDefault())
+                .Returns(new Result<Installation, InstallationRegistryError>.Success(defaultInstallation));
+        }
+        else
+        {
+            mock.Setup(x => x.GetDefault())
+                .Returns(new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound("default")));
+        }
+
         return mock;
     }
 }

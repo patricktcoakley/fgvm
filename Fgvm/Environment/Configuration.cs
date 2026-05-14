@@ -5,6 +5,10 @@ namespace Fgvm.Environment;
 
 public static class Configuration
 {
+    private const string FineGrainedPersonalAccessTokenPrefix = "github_pat_";
+
+    private static readonly string[] ClassicTokenPrefixes = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"];
+
     public static Result<Unit, ConfigError> ValidateConfiguration(IConfiguration configuration)
     {
         var githubToken = configuration["github:token"];
@@ -14,17 +18,21 @@ public static class Configuration
             return new Result<Unit, ConfigError>.Success(Unit.Value);
         }
 
-        // GitHub token format validation per Microsoft Purview specification
-        // Valid prefixes: ghp_, gho_, ghu_, ghs_, ghr_
-        if (!githubToken.StartsWith("ghp_") && !githubToken.StartsWith("gho_") &&
-            !githubToken.StartsWith("ghu_") && !githubToken.StartsWith("ghs_") &&
-            !githubToken.StartsWith("ghr_"))
+        if (!ClassicTokenPrefixes.Any(prefix => githubToken.StartsWith(prefix, StringComparison.Ordinal)) &&
+            !githubToken.StartsWith(FineGrainedPersonalAccessTokenPrefix, StringComparison.Ordinal))
         {
             return new Result<Unit, ConfigError>.Failure(new ConfigError.InvalidGitHubTokenPrefix());
         }
 
         // https://learn.microsoft.com/en-us/purview/sit-defn-github-personal-access-token
-        if (githubToken.Length != 40)
+        if (ClassicTokenPrefixes.Any(prefix => githubToken.StartsWith(prefix, StringComparison.Ordinal)) &&
+            githubToken.Length != 40)
+        {
+            return new Result<Unit, ConfigError>.Failure(new ConfigError.InvalidGitHubTokenLength());
+        }
+
+        if (githubToken.StartsWith(FineGrainedPersonalAccessTokenPrefix, StringComparison.Ordinal) &&
+            githubToken.Length == FineGrainedPersonalAccessTokenPrefix.Length)
         {
             return new Result<Unit, ConfigError>.Failure(new ConfigError.InvalidGitHubTokenLength());
         }

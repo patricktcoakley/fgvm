@@ -104,10 +104,11 @@ public sealed class LogsCommandTests : IDisposable
         File.WriteAllLines(logPath, lines);
 
         var pathService = CreatePathService(logPath);
+        var hostSystem = new HostSystem(new SystemInfo(), pathService, NullLogger<HostSystem>.Instance);
         var console = new TestConsole();
         var logger = NullLogger<LogsCommand>.Instance;
 
-        var command = new LogsCommand(pathService, console, logger);
+        var command = new LogsCommand(pathService, hostSystem, console, logger);
         return (command, console);
     }
 
@@ -122,8 +123,8 @@ public sealed class LogsCommandTests : IDisposable
         mock.SetupGet(x => x.ConfigPath).Returns(Path.Combine(rootPath, "fgvm.ini"));
         mock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
         mock.SetupGet(x => x.BinPath).Returns(binPath);
-        mock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(binPath, "godot"));
-        mock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(binPath, "Godot.app"));
+        mock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(rootPath, "Godot"));
+        mock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(rootPath, "Godot.app"));
         return mock.Object;
     }
 }

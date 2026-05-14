@@ -42,7 +42,7 @@ public sealed class SearchCommand(
 
                 if (json)
                 {
-                    console.WriteLine(releases.ToJson());
+                    console.Profile.Out.Writer.WriteLine(releases.ToJson());
                 }
                 else
                 {
@@ -58,6 +58,10 @@ public sealed class SearchCommand(
                         $"Request to {url} failed with status code {statusCode}",
                     NetworkError.ConnectionFailure(var message, _) =>
                         $"Network error: {message}",
+                    NetworkError.CacheReadFailure(var fileError) =>
+                        $"Release cache read error: {fileError}",
+                    NetworkError.CacheWriteFailure(var fileError) =>
+                        $"Release cache write error: {fileError}",
                     _ => "Unknown network error"
                 };
 

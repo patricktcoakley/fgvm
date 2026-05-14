@@ -66,9 +66,8 @@ public class ReleaseQueryPropertyTests
                 return true;
             }
 
-            // The selected release should be the highest priority one
-            var expectedBest = parsedReleases
-                .OrderByDescending(r => r)
+            // Query selection is an explicit stability-first policy, separate from Release.CompareTo.
+            var expectedBest = OrderBySelectionPreference(parsedReleases)
                 .First();
 
             return result.ReleaseName == expectedBest.ReleaseName;
@@ -188,4 +187,13 @@ public class ReleaseQueryPropertyTests
             return result?.ReleaseName.Contains($"{data.ReleaseType}{data.HigherNum}") == true;
         });
     }
+
+    private static IOrderedEnumerable<Release> OrderBySelectionPreference(IEnumerable<Release> releases) =>
+        releases
+            .OrderByDescending(release => release.Major)
+            .ThenByDescending(release => release.Type)
+            .ThenByDescending(release => release.Minor)
+            .ThenByDescending(release => release.Patch)
+            .ThenByDescending(release => release.RuntimeEnvironment)
+            .ThenByDescending(release => release.ReleaseNameWithRuntime, StringComparer.Ordinal);
 }

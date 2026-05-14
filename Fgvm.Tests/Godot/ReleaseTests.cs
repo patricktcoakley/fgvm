@@ -62,6 +62,8 @@ public class ReleaseTests
     [InlineData("4.2-stable-standard", "4.2.1-stable-standard", -1)]
     [InlineData("4.2.1-stable-standard", "4.2.0-stable-standard", 1)]
     [InlineData("4.2.2-stable-standard", "4.2.1-stable-standard", 1)]
+    [InlineData("4.5.1-rc1-standard", "4.5-stable-standard", 1)]
+    [InlineData("4.5-dev1-standard", "4.4.1-stable-standard", 1)]
     public void CompareTo_VersionNumbers_ComparesCorrectly(string version1, string version2, int expectedSign)
     {
         var release1 = Release.TryParse(version1);
@@ -130,11 +132,10 @@ public class ReleaseTests
             .OrderByDescending(r => r)
             .ToList();
 
-        // Stability is prioritized over version number, so 4.4.1-stable > 4.5-beta5
-        Assert.Equal("4.4.1-stable-mono", releases[0].ReleaseNameWithRuntime);
-        Assert.Equal("4.4.1-stable-standard", releases[1].ReleaseNameWithRuntime);
-        Assert.Equal("4.5-beta5-standard", releases[2].ReleaseNameWithRuntime);
-        Assert.Equal("4.5-dev5-standard", releases[3].ReleaseNameWithRuntime);
+        Assert.Equal("4.5-beta5-standard", releases[0].ReleaseNameWithRuntime);
+        Assert.Equal("4.5-dev5-standard", releases[1].ReleaseNameWithRuntime);
+        Assert.Equal("4.4.1-stable-mono", releases[2].ReleaseNameWithRuntime);
+        Assert.Equal("4.4.1-stable-standard", releases[3].ReleaseNameWithRuntime);
     }
 
     [Fact]
@@ -165,23 +166,17 @@ public class ReleaseTests
 
         var expectedOrder = new[]
         {
-            // Within major 4, stable releases first
             "4.2.2-stable-standard",
             "4.2.1-stable-mono",
             "4.2.1-stable-standard",
             "4.2.0-stable-standard",
             "4.2-stable-standard",
-            "4.0.1-stable-standard",
-            // Then major 4 rc releases
             "4.2-rc3-standard",
-            // Then major 4 beta releases
             "4.2-beta4-standard",
-            // Then major 4 alpha releases
             "4.2-alpha2-standard",
-            // Then major 4 dev releases (higher minor first within same type)
-            "4.1-dev2-standard",
             "4.2-dev1-standard",
-            // Then major 3 stable releases
+            "4.1-dev2-standard",
+            "4.0.1-stable-standard",
             "3.6-stable-standard"
         };
 

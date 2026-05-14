@@ -285,8 +285,8 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
         Assert.True(document.RootElement.TryGetProperty("hasVersion", out var hasVersion));
         if (hasVersion.GetBoolean())
         {
-            Assert.True(document.RootElement.TryGetProperty("symlinkPath", out var symlinkPath));
-            Assert.False(string.IsNullOrWhiteSpace(symlinkPath.GetString()));
+            Assert.True(document.RootElement.TryGetProperty("executablePath", out var executablePath));
+            Assert.False(string.IsNullOrWhiteSpace(executablePath.GetString()));
         }
     }
 
@@ -839,6 +839,10 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
         await fixture.AssertSuccessfulExecutionAsync(godotVersion, "godotVersion");
         Assert.Contains("4.3", godotVersion.Stdout);
 
+        var pathShimVersion = await fixture.ExecuteShellCommand("sh", ["-c", "PATH=/root/fgvm/bin:$PATH godot --version --headless"]);
+        await fixture.AssertSuccessfulExecutionAsync(pathShimVersion, "pathShimVersion");
+        Assert.Contains("4.3", pathShimVersion.Stdout);
+
         await CleanupVersion("4.3-stable");
     }
 
@@ -947,6 +951,22 @@ public class EndToEndTests(TestContainerFixture fixture) : IClassFixture<TestCon
         // Set it as the global default
         var set = await fixture.ExecuteCommand(["set", "4.3"]);
         await fixture.AssertSuccessfulExecutionAsync(set, "set");
+
+        var shimExists = await fixture.ExecuteShellCommand("test", ["-f", "/root/fgvm/bin/godot"]);
+        await fixture.AssertSuccessfulExecutionAsync(shimExists, "shimExists");
+
+        var shimIsExecutable = await fixture.ExecuteShellCommand("test", ["-x", "/root/fgvm/bin/godot"]);
+        await fixture.AssertSuccessfulExecutionAsync(shimIsExecutable, "shimIsExecutable");
+
+        var shimIsSymlink = await fixture.ExecuteShellCommand("test", ["-L", "/root/fgvm/bin/godot"]);
+        Assert.NotEqual(0, shimIsSymlink.ExitCode);
+
+        var symlinkExists = await fixture.ExecuteShellCommand("test", ["-L", "/root/fgvm/Godot"]);
+        await fixture.AssertSuccessfulExecutionAsync(symlinkExists, "symlinkExists");
+
+        var symlinkTarget = await fixture.ExecuteShellCommand("readlink", ["/root/fgvm/Godot"]);
+        await fixture.AssertSuccessfulExecutionAsync(symlinkTarget, "symlinkTarget");
+        Assert.Contains("/root/fgvm/installations/4.3", symlinkTarget.Stdout);
 
         // Verify which shows it as the default
         var which = await fixture.ExecuteCommand(["which"]);

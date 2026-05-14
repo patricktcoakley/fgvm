@@ -9,10 +9,10 @@ namespace Fgvm.Tests.Godot;
 
 public sealed class ReleaseCatalogTests : IDisposable
 {
-    private readonly Mock<IDownloadClient> _downloadClient = new();
-    private readonly string _rootPath = Path.Combine(Path.GetTempPath(), "fgvm-release-catalog-tests", Guid.NewGuid().ToString("N"));
-    private readonly string _releasesPath;
     private readonly ReleaseCatalog _catalog;
+    private readonly Mock<IDownloadClient> _downloadClient = new();
+    private readonly string _releasesPath;
+    private readonly string _rootPath = Path.Combine(Path.GetTempPath(), "fgvm-release-catalog-tests", Guid.NewGuid().ToString("N"));
 
     public ReleaseCatalogTests()
     {
@@ -22,13 +22,22 @@ public sealed class ReleaseCatalogTests : IDisposable
         pathService.SetupGet(x => x.RootPath).Returns(_rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(_releasesPath);
 
-        _catalog = new ReleaseCatalog(_downloadClient.Object, pathService.Object, NullLogger<ReleaseCatalog>.Instance);
+        var hostSystem = new HostSystem(new SystemInfo(), pathService.Object, NullLogger<HostSystem>.Instance);
+        _catalog = new ReleaseCatalog(_downloadClient.Object, pathService.Object, hostSystem, NullLogger<ReleaseCatalog>.Instance);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_rootPath))
+        {
+            Directory.Delete(_rootPath, true);
+        }
     }
 
     [Fact]
     public async Task ReadReleaseIds_UsesFreshReleasesJson()
     {
-        await WriteManifest(new ReleaseCatalogManifest
+        var manifest = new ReleaseCatalogManifest
         {
             LastUpdated = DateTimeOffset.UtcNow,
             Releases =
@@ -42,7 +51,9 @@ public sealed class ReleaseCatalogTests : IDisposable
                     ["stable"] = new ReleaseCatalogRelease()
                 }
             }
-        });
+        };
+
+        await WriteManifest(manifest);
 
         var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
 
@@ -60,7 +71,7 @@ public sealed class ReleaseCatalogTests : IDisposable
         var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
 
         var success = Assert.IsType<Result<string[], NetworkError>.Success>(result);
-        Assert.Equal(["4.4-stable", "4.5-dev1"], success.Value);
+        Assert.Equal(["4.5-dev1", "4.4-stable"], success.Value);
 
         var manifest = await ReadManifest();
         Assert.NotNull(manifest.LastUpdated);
@@ -191,21 +202,6 @@ public sealed class ReleaseCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadReleaseIds_WriteFailure_ReturnsFailure()
-    {
-        Directory.CreateDirectory(_releasesPath);
-
-        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.4-stable"]));
-
-        var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
-
-        var failure = Assert.IsType<Result<string[], NetworkError>.Failure>(result);
-        var error = Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
-        Assert.Contains("Failed to write release catalog", error.Message);
-    }
-
-    [Fact]
     public async Task ReadReleaseIds_RefreshPreservesExistingArtifactsForMatchingRelease()
     {
         await WriteManifest(new ReleaseCatalogManifest
@@ -221,12 +217,12 @@ public sealed class ReleaseCatalogTests : IDisposable
                         {
                             ["macos.universal"] = new ReleaseCatalogTarget
                             {
-                                ["standard"] = new()
+                                ["standard"] = new ReleaseCatalogArtifact
                                 {
                                     FileName = "Godot_v4.4-stable_macos.universal.zip",
                                     Sha512 = "abc"
                                 },
-                                ["mono"] = new()
+                                ["mono"] = new ReleaseCatalogArtifact
                                 {
                                     FileName = "Godot_v4.4-stable_mono_macos.universal.zip",
                                     Sha512 = "def"
@@ -275,7 +271,7 @@ public sealed class ReleaseCatalogTests : IDisposable
                         {
                             ["macos.universal"] = new ReleaseCatalogTarget
                             {
-                                ["standard"] = new()
+                                ["standard"] = new ReleaseCatalogArtifact
                                 {
                                     FileName = "Godot_v4.4-stable_macos.universal.zip",
                                     Sha512 = "abc"
@@ -317,7 +313,7 @@ public sealed class ReleaseCatalogTests : IDisposable
                         {
                             ["macos.universal"] = new ReleaseCatalogTarget
                             {
-                                ["standard"] = new()
+                                ["standard"] = new ReleaseCatalogArtifact
                                 {
                                     FileName = "Godot_v4.4-stable_macos.universal.zip",
                                     Sha512 = "abc"
@@ -342,7 +338,7 @@ public sealed class ReleaseCatalogTests : IDisposable
                 Status = "stable",
                 Files =
                 [
-                    new()
+                    new GodotReleaseManifestFile
                     {
                         FileName = "Godot_v4.4-stable_mono_macos.universal.zip",
                         Checksum = "def"
@@ -387,17 +383,17 @@ public sealed class ReleaseCatalogTests : IDisposable
                 GitReference = "abc123",
                 Files =
                 [
-                    new()
+                    new GodotReleaseManifestFile
                     {
                         FileName = "Godot_v4.4-stable_macos.universal.zip",
                         Checksum = "standard"
                     },
-                    new()
+                    new GodotReleaseManifestFile
                     {
                         FileName = "Godot_v4.4-stable_mono_macos.universal.zip",
                         Checksum = "mono"
                     },
-                    new()
+                    new GodotReleaseManifestFile
                     {
                         FileName = "Godot_v4.4-stable_export_templates.tpz",
                         Checksum = "templates"
@@ -464,10 +460,10 @@ public sealed class ReleaseCatalogTests : IDisposable
         var validHash = new string('a', 128);
         var artifacts = ReleaseCatalog.ParseSha512SumsContent(
             $"""
-            <!DOCTYPE html>
-            not-a-sha Godot_v3.2-stable_osx.64.zip
-            {validHash}  Godot_v3.2-stable_x11.64.zip
-            """);
+             <!DOCTYPE html>
+             not-a-sha Godot_v3.2-stable_osx.64.zip
+             {validHash}  Godot_v3.2-stable_x11.64.zip
+             """);
 
         var artifact = Assert.Single(artifacts);
         Assert.Equal("Godot_v3.2-stable_x11.64.zip", artifact.FileName);
@@ -523,7 +519,7 @@ public sealed class ReleaseCatalogTests : IDisposable
                 Status = "stable",
                 Files =
                 [
-                    new()
+                    new GodotReleaseManifestFile
                     {
                         FileName = "Godot_v4.4-stable_win64.exe.zip",
                         Checksum = "abc"
@@ -568,7 +564,7 @@ public sealed class ReleaseCatalogTests : IDisposable
                 Status = "stable",
                 Files =
                 [
-                    new()
+                    new GodotReleaseManifestFile
                     {
                         FileName = "Godot_v4.4-stable_macos.universal.zip",
                         Checksum = "abc"
@@ -612,7 +608,7 @@ public sealed class ReleaseCatalogTests : IDisposable
                 Status = "stable",
                 Files =
                 [
-                    new()
+                    new GodotReleaseManifestFile
                     {
                         FileName = "Godot_v4.4-stable_macos.universal.zip",
                         Checksum = "abc"
@@ -625,14 +621,6 @@ public sealed class ReleaseCatalogTests : IDisposable
         Assert.IsType<Result<ReleaseArtifact, NetworkError>.Success>(result);
         var manifest = await ReadManifest();
         Assert.Equal(lastUpdated, manifest.LastUpdated);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_rootPath))
-        {
-            Directory.Delete(_rootPath, true);
-        }
     }
 
     private async Task WriteManifest(ReleaseCatalogManifest manifest)

@@ -126,8 +126,7 @@ public class PlatformStringProviderTests
         var platformStringProvider = new PlatformStringProvider(new SystemInfo(os, Architecture.X64));
         var release = new Release(4, 3);
         var result = platformStringProvider.GetPlatformString(release);
-        Assert.IsType<Result<string, PlatformError>.Failure>(result);
-        var failure = (Result<string, PlatformError>.Failure)result;
+        var failure = Assert.IsType<Result<string, PlatformError>.Failure>(result);
         Assert.IsType<PlatformError.Unsupported>(failure.Error);
         var unsupported = (PlatformError.Unsupported)failure.Error;
         Assert.Equal(os, unsupported.OS);

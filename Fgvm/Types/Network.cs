@@ -9,4 +9,13 @@ public abstract record NetworkError
 
     public record ConnectionFailure(string Message, string? Details = null) : NetworkError;
 
+    public record CacheReadFailure(FileOperationError Error) : NetworkError
+    {
+        public override string ToString() => $"Unable to read release cache: {Error}";
+    }
+
+    public record CacheWriteFailure(FileOperationError Error) : NetworkError
+    {
+        public override string ToString() => $"Unable to write release cache: {Error}";
+    }
 }

@@ -5,7 +5,7 @@ namespace Fgvm.Types;
 /// </summary>
 public abstract record VersionResolutionOutcome
 {
-    public record Found(string ExecutablePath, string WorkingDirectory, string VersionName, bool IsProjectVersion)
+    public record Found(string ExecutablePath, string WorkingDirectory, string VersionName, bool IsProjectVersion, string? InstallationKey = null)
         : VersionResolutionOutcome;
 
     public record InteractiveRequired(IReadOnlyList<string> AvailableVersions) : VersionResolutionOutcome;

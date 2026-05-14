@@ -1,6 +1,7 @@
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
+using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Globalization;
@@ -13,6 +14,7 @@ namespace Fgvm.Cli.Command;
 
 public sealed class LogsCommand(
     IPathService pathService,
+    IHostSystem hostSystem,
     IAnsiConsole console,
     ILogger<LogsCommand> logger
 )
@@ -34,7 +36,13 @@ public sealed class LogsCommand(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!Path.Exists(pathService.LogPath))
+            var logExists = hostSystem.FileExists(pathService.LogPath);
+            if (logExists is Result<bool, FileOperationError>.Failure(var existsError))
+            {
+                throw new InvalidOperationException($"Unable to read log path `{pathService.LogPath}`: {existsError}");
+            }
+
+            if (logExists is Result<bool, FileOperationError>.Success { Value: false })
             {
                 throw new FileNotFoundException(Messages.LogPathNotFound(pathService.LogPath));
             }
@@ -44,12 +52,18 @@ public sealed class LogsCommand(
                 throw new ArgumentOutOfRangeException(Messages.LogLevelOutOfRange(level));
             }
 
+            var streamResult = hostSystem.OpenRead(pathService.LogPath, FileShare.ReadWrite);
+            if (streamResult is Result<Stream, FileOperationError>.Failure(var readError))
+            {
+                throw new InvalidOperationException($"Unable to read log file `{pathService.LogPath}`: {readError}");
+            }
 
-            await using var stream = new FileStream(
-                pathService.LogPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite);
+            if (streamResult is not Result<Stream, FileOperationError>.Success(var streamValue))
+            {
+                throw new InvalidOperationException("Unexpected Result type");
+            }
+
+            await using var stream = streamValue;
 
             using var reader = new StreamReader(stream, Encoding.UTF8);
 
@@ -85,7 +99,13 @@ public sealed class LogsCommand(
                 }
             }
 
-            console.WriteLine(json ? entries.ToJson() : entries.ToSlog(malformed));
+            if (json)
+            {
+                console.Profile.Out.Writer.WriteLine(entries.ToJson());
+                return;
+            }
+
+            console.WriteLine(entries.ToSlog(malformed));
         }
         catch (TaskCanceledException)
         {

@@ -1,7 +1,6 @@
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Prompts;
 using Fgvm.Environment;
-using Fgvm.Error;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
@@ -44,14 +43,16 @@ public interface IVersionManagementService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     Sets the global Godot version by creating/updating symlinks.
+    ///     Sets the global Godot version in the installation registry and refreshes launch artifacts.
     /// </summary>
     /// <param name="query">Version query to search for</param>
     /// <param name="forceInteractive">Force interactive selection from installed versions</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The release that was set</returns>
-    /// <exception cref="InvalidOperationException">Thrown when installed versions cannot be read, no version can be selected, or symlink creation cannot continue.</exception>
-    /// <exception cref="InvalidSymlinkException">Thrown when a symlink is created but validation fails.</exception>
+    /// <exception cref="InvalidOperationException">
+    ///     Thrown when installed versions cannot be read or no version can be
+    ///     selected.
+    /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when interactive selection is canceled.</exception>
     Task<Release> SetGlobalVersionAsync(string[] query, bool forceInteractive = false, CancellationToken cancellationToken = default);
 
@@ -71,7 +72,10 @@ public interface IVersionManagementService
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The release that was set</returns>
     /// <exception cref="ArgumentException">Thrown when a requested version query cannot be resolved during installation.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when project information, installed versions, installation state, or `.fgvm-version` writes cannot continue.</exception>
+    /// <exception cref="InvalidOperationException">
+    ///     Thrown when project information, installed versions, installation state, or
+    ///     `.fgvm-version` writes cannot continue.
+    /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when interactive selection or installation is canceled.</exception>
     Task<Release> SetLocalVersionAsync(string[]? query = null, bool forceInteractive = false, CancellationToken cancellationToken = default);
 
@@ -102,6 +106,7 @@ public interface IVersionManagementService
 public class VersionManagementService(
     IHostSystem hostSystem,
     IReleaseManager releaseManager,
+    IInstallationRegistry installationRegistry,
     IInstallationService installationService,
     IInstallationOrchestrator installationOrchestrator,
     IPathService pathService,
@@ -134,7 +139,7 @@ public class VersionManagementService(
                     new VersionResolutionOutcome.InteractiveRequired(installed));
             }
 
-            return ResolveSymlinkVersion();
+            return ResolveDefaultVersion();
         }
         catch (OperationCanceledException)
         {
@@ -171,7 +176,7 @@ public class VersionManagementService(
                     new VersionResolutionOutcome.InteractiveRequired(installed));
             }
 
-            return ResolveSymlinkVersion();
+            return ResolveDefaultVersion();
         }
         catch (OperationCanceledException)
         {
@@ -206,16 +211,26 @@ public class VersionManagementService(
                   ?? throw new InvalidOperationException($"Unable to find Godot release with query `{string.Join(", ", query)}`");
 
             var godotRelease = CreateRelease(versionToSet);
+            var installation = FindInstallation(versionToSet);
 
-            var symlinkTargetPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
-            symlinkTargetPath = Path.Combine(symlinkTargetPath, godotRelease.ExecName);
-            var symlinkResult = hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath);
-
-            if (symlinkResult is Result<Unit, SymlinkError>.Failure failure)
+            if (installationRegistry.SetDefault(installation.Key) is Result<Unit, InstallationRegistryError>.Failure(var defaultError))
             {
-                logger.ZLogError($"Failed to create symlink: {failure.Error}");
+                throw new InvalidOperationException($"Unable to set default installation: {defaultError}");
+            }
 
-                switch (failure.Error)
+            var fgvmExecutablePath = Path.GetFullPath(System.Environment.ProcessPath ?? System.Environment.GetCommandLineArgs().First());
+            if (hostSystem.EnsureShim(fgvmExecutablePath) is Result<Unit, ShimError>.Failure(var shimError))
+            {
+                logger.ZLogWarning($"Failed to update shim: {shimError}");
+            }
+
+            var symlinkTargetPath = Path.Combine(pathService.RootPath, installation.RelativePath);
+            symlinkTargetPath = Path.Combine(symlinkTargetPath, godotRelease.ExecName);
+            if (hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath) is Result<Unit, SymlinkError>.Failure(var symlinkError))
+            {
+                logger.ZLogWarning($"Failed to refresh Godot symlink: {symlinkError}");
+
+                switch (symlinkError)
                 {
                     case SymlinkError.DeveloperModeRequired:
                         console.MarkupLine(Messages.DeveloperModeRequiredForSymlink);
@@ -227,7 +242,11 @@ public class VersionManagementService(
                         console.MarkupLine(Messages.SymlinkUnsupportedOS(os));
                         return godotRelease;
                     case SymlinkError.InvalidSymlink(var path, var target):
-                        throw new InvalidSymlinkException(target, path);
+                        logger.ZLogWarning($"Godot symlink {path} appears invalid: {target}");
+                        return godotRelease;
+                    case SymlinkError.RemoveFailed(var path):
+                        logger.ZLogWarning($"Unable to remove previous Godot symlink: {path}");
+                        return godotRelease;
                 }
             }
 
@@ -309,7 +328,7 @@ public class VersionManagementService(
 
             var installationResult = await installationOrchestrator.InstallAsync(installQuery, cancellationToken: cancellationToken);
 
-            if (installationResult is not Result<InstallationOutcome, InstallationError>.Success installSuccess)
+            if (installationResult is not Result<InstallationOutcome, InstallationError>.Success(var installOutcome))
             {
                 return null;
             }
@@ -321,7 +340,7 @@ public class VersionManagementService(
             // If installation succeeded but compatibility check failed, return the installed version name
             if (compatibleVersion == null)
             {
-                var releaseNameWithRuntime = installSuccess.Value switch
+                var releaseNameWithRuntime = installOutcome switch
                 {
                     InstallationOutcome.NewInstallation(var name, _, _) => name,
                     InstallationOutcome.AlreadyInstalled(var name) => name,
@@ -356,7 +375,7 @@ public class VersionManagementService(
     /// <inheritdoc />
     public Result<VersionResolutionOutcome, VersionResolutionError> ResolveInteractiveVersion(string selection)
     {
-        if (releaseManager.CreateRelease(selection) is not Result<Release, ReleaseParseError>.Success godotReleaseResult)
+        if (releaseManager.CreateRelease(selection) is not Result<Release, ReleaseParseError>.Success(var godotRelease))
         {
             logger.ZLogError($"Invalid Godot version selected: {selection}");
             console.MarkupLine($"[red]Invalid Godot version: {selection}[/]");
@@ -364,10 +383,9 @@ public class VersionManagementService(
                 new VersionResolutionError.InvalidVersion(selection));
         }
 
-        var godotRelease = godotReleaseResult.Value;
-        var (execPath, workingDirectory) = GetExecutionPaths(godotRelease);
+        var (execPath, workingDirectory, installationKey) = GetExecutionPaths(godotRelease);
         return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
-            new VersionResolutionOutcome.Found(execPath, workingDirectory, selection, false));
+            new VersionResolutionOutcome.Found(execPath, workingDirectory, selection, false, installationKey));
     }
 
     private async Task<Result<VersionResolutionOutcome, VersionResolutionError>> ResolveProjectVersionAsync(Release projectRelease,
@@ -410,96 +428,56 @@ public class VersionManagementService(
         var newCompatibleVersion = TryFindCompatibleVersion(projectVersion, projectRelease.IsDotNet, updatedInstalled);
 
         if (newCompatibleVersion is null ||
-            releaseManager.CreateRelease(newCompatibleVersion) is not Result<Release, ReleaseParseError>.Success newProjectGodotReleaseResult)
+            releaseManager.CreateRelease(newCompatibleVersion) is not Result<Release, ReleaseParseError>.Success(var newProjectGodotRelease))
         {
             console.MarkupLine(Messages.InstallationSucceededButNotFound);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Installation succeeded but version {projectVersion} not found in installed list"));
         }
 
-        var newProjectGodotRelease = newProjectGodotReleaseResult.Value;
-        var (execPath, workingDirectory) = GetExecutionPaths(newProjectGodotRelease);
+        var (execPath, workingDirectory, installationKey) = GetExecutionPaths(newProjectGodotRelease);
 
         console.MarkupLine(Messages.SuccessfullyInstalledAndUsing(projectVersion, projectRelease.RuntimeDisplaySuffix, newCompatibleVersion));
 
         return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
-            new VersionResolutionOutcome.Found(execPath, workingDirectory, newCompatibleVersion, true));
+            new VersionResolutionOutcome.Found(execPath, workingDirectory, newCompatibleVersion, true, installationKey));
     }
 
-    private Result<VersionResolutionOutcome, VersionResolutionError> ResolveSymlinkVersion()
+    private Result<VersionResolutionOutcome, VersionResolutionError> ResolveDefaultVersion()
     {
-        if (!Path.Exists(pathService.SymlinkPath))
+        var defaultResult = installationRegistry.GetDefault();
+        if (defaultResult is Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound))
         {
             logger.ZLogError($"Tried to launch when no version is set.");
-            if (hostSystem.AreSymlinksSupported() is Result<Unit, SymlinkError>.Failure supportFailure)
-            {
-                switch (supportFailure.Error)
-                {
-                    case SymlinkError.DeveloperModeRequired:
-                        console.MarkupLine(Messages.DeveloperModeRequiredForGodot);
-                        break;
-                    case SymlinkError.PermissionDenied:
-                        console.MarkupLine(Messages.SymlinkPermissionDenied);
-                        break;
-                    case SymlinkError.UnsupportedOS(var os):
-                        console.MarkupLine(Messages.SymlinkUnsupportedOS(os));
-                        break;
-                    default:
-                        console.MarkupLine(Messages.NoCurrentVersionSet);
-                        break;
-                }
-            }
-            else
-            {
-                console.MarkupLine(Messages.NoCurrentVersionSet);
-            }
+            console.MarkupLine(Messages.NoCurrentVersionSet);
 
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.NotFound("No current version set"));
         }
 
-        var symlinkInfo = new FileInfo(pathService.SymlinkPath);
-        var execPath = symlinkInfo.ResolveLinkTarget(true)!.FullName;
-        var workingDirectory = "";
-        var versionName = "Unknown";
-
-        if (symlinkInfo.LinkTarget is not { } target)
+        if (defaultResult is Result<Installation, InstallationRegistryError>.Failure(var error))
         {
-            return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
-                new VersionResolutionOutcome.Found(execPath, workingDirectory, versionName, false));
+            return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
+                new VersionResolutionError.Failed($"Unable to read default installation: {error}"));
         }
 
-        var split = target.Split(Path.DirectorySeparatorChar)[..^1];
-        workingDirectory = string.Join(Path.DirectorySeparatorChar, split);
-
-        // Extract version name from the symlink target path
-        var targetParts = target.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-
-        // Look for a part that looks like a version (contains numbers and hyphens)
-        foreach (var part in targetParts)
+        if (defaultResult is not Result<Installation, InstallationRegistryError>.Success(var installation))
         {
-            if (string.IsNullOrEmpty(part) ||
-                !part.Contains('-') ||
-                !part.Any(char.IsDigit) ||
-                part.Equals("MacOS", StringComparison.OrdinalIgnoreCase) ||
-                part.Equals("Contents", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            versionName = part;
-            break;
+            throw new InvalidOperationException("Unexpected Result type");
         }
+
+        var release = CreateRelease(installation.ReleaseNameWithRuntime);
+        var (execPath, workingDirectory) = GetExecutionPaths(release, installation);
 
         return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
-            new VersionResolutionOutcome.Found(execPath, workingDirectory, versionName, false));
+            new VersionResolutionOutcome.Found(execPath, workingDirectory, installation.ReleaseNameWithRuntime, false, installation.Key));
     }
 
     private Result<VersionResolutionOutcome, VersionResolutionError> CreateVersionResolutionResult(string compatibleVersion, Release projectRelease,
         string projectVersion,
         bool isProjectVersion = false)
     {
-        if (releaseManager.CreateRelease(compatibleVersion) is not Result<Release, ReleaseParseError>.Success projectGodotReleaseResult)
+        if (releaseManager.CreateRelease(compatibleVersion) is not Result<Release, ReleaseParseError>.Success(var projectGodotRelease))
         {
             logger.ZLogError($"Invalid project version: {compatibleVersion}");
             console.MarkupLine(Messages.InvalidProjectVersion(compatibleVersion));
@@ -507,21 +485,28 @@ public class VersionManagementService(
                 new VersionResolutionError.InvalidVersion(compatibleVersion));
         }
 
-        var projectGodotRelease = projectGodotReleaseResult.Value;
-        var (execPath, workingDirectory) = GetExecutionPaths(projectGodotRelease);
+        var (execPath, workingDirectory, installationKey) = GetExecutionPaths(projectGodotRelease);
 
         console.MarkupLine(Messages.UsingProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix, compatibleVersion));
         return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
-            new VersionResolutionOutcome.Found(execPath, workingDirectory, compatibleVersion, isProjectVersion));
+            new VersionResolutionOutcome.Found(execPath, workingDirectory, compatibleVersion, isProjectVersion, installationKey));
     }
 
-    private (string execPath, string workingDirectory) GetExecutionPaths(Release release)
+    private (string execPath, string workingDirectory, string installationKey) GetExecutionPaths(Release release)
     {
-        var workingDirectory = Path.Combine(pathService.RootPath, release.ReleaseNameWithRuntime);
+        var installation = FindInstallation(release.ReleaseNameWithRuntime);
+        var (execPath, workingDirectory) = GetExecutionPaths(release, installation);
+        return (execPath, workingDirectory, installation.Key);
+    }
+
+    private (string execPath, string workingDirectory) GetExecutionPaths(Release release, Installation installation)
+    {
+        var workingDirectory = Path.Combine(pathService.RootPath, installation.RelativePath);
+        release = release with { PlatformString = installation.Target };
         var execPath = Path.Combine(workingDirectory, release.ExecName);
 
         // Handle macOS app bundles by pointing to the actual executable inside
-        if (execPath.EndsWith(".app"))
+        if (execPath.EndsWith(".app", StringComparison.Ordinal))
         {
             execPath = Path.Combine(execPath, "Contents", "MacOS", "Godot");
         }
@@ -530,11 +515,21 @@ public class VersionManagementService(
     }
 
     private List<string> ListInstallations() =>
-        hostSystem.ListInstallations() switch
+        installationRegistry.ListInstallations() switch
         {
-            Result<IReadOnlyList<string>, FileSystemError>.Success(var installations) => installations.ToList(),
-            Result<IReadOnlyList<string>, FileSystemError>.Failure =>
+            Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(var installations) =>
+                installations.Select(installation => installation.ReleaseNameWithRuntime).ToList(),
+            Result<IReadOnlyList<Installation>, InstallationRegistryError>.Failure =>
                 throw new InvalidOperationException("Unable to read installed Godot versions."),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+    private Installation FindInstallation(string releaseNameWithRuntime) =>
+        installationRegistry.FindByReleaseName(releaseNameWithRuntime) switch
+        {
+            Result<Installation, InstallationRegistryError>.Success(var installation) => installation,
+            Result<Installation, InstallationRegistryError>.Failure =>
+                throw new InvalidOperationException($"Unable to find installed Godot version `{releaseNameWithRuntime}`."),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
 
@@ -643,7 +638,7 @@ public class VersionManagementService(
         var installedRelease =
             await installationService.InstallByQueryAsync(installQuery, new Progress<OperationProgress<InstallationStage>>(), cancellationToken: cancellationToken);
 
-        if (installedRelease is not Result<InstallationOutcome, InstallationError>.Success installSuccess)
+        if (installedRelease is not Result<InstallationOutcome, InstallationError>.Success(var installOutcome))
         {
             console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
 
@@ -656,7 +651,7 @@ public class VersionManagementService(
             return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
         }
 
-        var releaseNameWithRuntime = installSuccess.Value switch
+        var releaseNameWithRuntime = installOutcome switch
         {
             InstallationOutcome.NewInstallation(var name, _, _) => name,
             InstallationOutcome.AlreadyInstalled(var name) => name,
@@ -690,7 +685,7 @@ public class VersionManagementService(
         var installedRelease =
             await installationService.InstallByQueryAsync(query, new Progress<OperationProgress<InstallationStage>>(), cancellationToken: cancellationToken);
 
-        if (installedRelease is not Result<InstallationOutcome, InstallationError>.Success installSuccess)
+        if (installedRelease is not Result<InstallationOutcome, InstallationError>.Success(var installOutcome))
         {
             console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
 
@@ -736,7 +731,7 @@ public class VersionManagementService(
             throw new InvalidOperationException(Messages.InstallationSucceededButNotFound);
         }
 
-        var releaseNameWithRuntime = installSuccess.Value switch
+        var releaseNameWithRuntime = installOutcome switch
         {
             InstallationOutcome.NewInstallation(var name, _, _) => name,
             InstallationOutcome.AlreadyInstalled(var name) => name,

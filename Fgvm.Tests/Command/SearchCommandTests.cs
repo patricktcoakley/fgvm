@@ -76,8 +76,8 @@ public sealed class SearchCommandTests
         pathServiceMock.SetupGet(x => x.ConfigPath).Returns(Path.Combine(rootPath, "fgvm.ini"));
         pathServiceMock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
         pathServiceMock.SetupGet(x => x.BinPath).Returns(Path.Combine(rootPath, "bin"));
-        pathServiceMock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(rootPath, "bin", "godot"));
-        pathServiceMock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(rootPath, "bin", "Godot.app"));
+        pathServiceMock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(rootPath, "Godot"));
+        pathServiceMock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(rootPath, "Godot.app"));
         pathServiceMock.SetupGet(x => x.LogPath).Returns(Path.Combine(rootPath, ".log"));
 
         console = new TestConsole();

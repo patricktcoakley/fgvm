@@ -16,6 +16,7 @@ public sealed class GodotCommand(
     IVersionManagementService versionManagementService,
     IGodotArgumentService argumentService,
     IProjectManager projectManager,
+    IInstallationRegistry installationRegistry,
     IAnsiConsole console,
     ILogger<GodotCommand> logger)
 {
@@ -75,9 +76,9 @@ public sealed class GodotCommand(
                 versionResult = versionManagementService.ResolveInteractiveVersion(selection);
             }
 
-            if (versionResult is Result<VersionResolutionOutcome, VersionResolutionError>.Failure failure)
+            if (versionResult is Result<VersionResolutionOutcome, VersionResolutionError>.Failure(var resolutionError))
             {
-                var errorMessage = failure.Error switch
+                var errorMessage = resolutionError switch
                 {
                     VersionResolutionError.NotFound notFound => Messages.VersionResolutionNotFound(notFound.Version, versionManagementService.HostSystem),
                     VersionResolutionError.Failed failed => Messages.VersionResolutionFailed(failed.Reason),
@@ -90,13 +91,13 @@ public sealed class GodotCommand(
             }
 
             // Extract success result
-            if (versionResult is not Result<VersionResolutionOutcome, VersionResolutionError>.Success success)
+            if (versionResult is not Result<VersionResolutionOutcome, VersionResolutionError>.Success(var resolutionOutcome))
             {
                 console.MarkupLine(Messages.UnexpectedError);
                 return;
             }
 
-            var (execPath, workingDirectory, versionName) = success.Value switch
+            var (execPath, workingDirectory, versionName) = resolutionOutcome switch
             {
                 VersionResolutionOutcome.Found found => (found.ExecutablePath, found.WorkingDirectory, found.VersionName),
                 _ => throw new InvalidOperationException("Expected Found outcome for successful resolution")
@@ -146,6 +147,7 @@ public sealed class GodotCommand(
                 };
 
                 process.Start();
+                RecordLaunch(resolutionOutcome);
 
                 // Close the streams to fully disconnect from terminal
                 process.StandardInput.Close();
@@ -193,6 +195,7 @@ public sealed class GodotCommand(
             };
 
             process.Start();
+            RecordLaunch(resolutionOutcome);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
@@ -244,6 +247,19 @@ public sealed class GodotCommand(
 
                 console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
             }
+        }
+    }
+
+    private void RecordLaunch(VersionResolutionOutcome outcome)
+    {
+        if (outcome is not VersionResolutionOutcome.Found { InstallationKey: { } installationKey })
+        {
+            return;
+        }
+
+        if (installationRegistry.RecordLaunch(installationKey) is Result<Unit, InstallationRegistryError>.Failure(var error))
+        {
+            logger.ZLogWarning($"Failed to record launch for {installationKey}: {error}");
         }
     }
 }

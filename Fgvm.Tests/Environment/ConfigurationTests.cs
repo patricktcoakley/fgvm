@@ -14,6 +14,9 @@ public class ConfigurationTests
         return $"{prefix}_{hexString}";
     }
 
+    private static string GenerateFineGrainedToken() =>
+        $"github_pat_{RandomNumberGenerator.GetHexString(82, true)}";
+
     private static string GenerateInvalidToken(string prefix, char invalidChar, int position = 20)
     {
         var validToken = GenerateTestToken(prefix);
@@ -79,6 +82,7 @@ public class ConfigurationTests
     [Theory]
     [InlineData("ghp_short")]
     [InlineData("ghp_")]
+    [InlineData("github_pat_")]
     public void ValidateConfiguration_InvalidLength_ReturnsConfigError(string token)
     {
         var config = new ConfigurationBuilder()
@@ -123,6 +127,19 @@ public class ConfigurationTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["github:token"] = GenerateTestToken(prefix)
+            })
+            .Build();
+
+        Assert.IsType<Result<Unit, ConfigError>.Success>(Configuration.ValidateConfiguration(config));
+    }
+
+    [Fact]
+    public void ValidateConfiguration_ValidFineGrainedToken_DoesNotThrow()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["github:token"] = GenerateFineGrainedToken()
             })
             .Build();
 

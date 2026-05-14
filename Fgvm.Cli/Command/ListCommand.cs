@@ -2,6 +2,7 @@ using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
+using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -10,7 +11,7 @@ using ZLogger;
 
 namespace Fgvm.Cli.Command;
 
-public sealed class ListCommand(IHostSystem hostSystem, IPathService pathService, IAnsiConsole console, ILogger<ListCommand> logger)
+public sealed class ListCommand(IInstallationRegistry installationRegistry, IPathService pathService, IAnsiConsole console, ILogger<ListCommand> logger)
 {
     /// <summary>
     ///     List all installed Godot versions.
@@ -21,29 +22,28 @@ public sealed class ListCommand(IHostSystem hostSystem, IPathService pathService
     {
         try
         {
-            var symlinkResult = hostSystem.ResolveCurrentSymlinks();
-            var symlinkTarget = symlinkResult switch
+            var defaultInstallation = installationRegistry.GetDefault() switch
             {
-                Result<SymlinkInfo, SymlinkError>.Success(var info) => info.SymlinkPath,
+                Result<Installation, InstallationRegistryError>.Success(var installation) => installation.Key,
                 _ => string.Empty
             };
 
-            var installationNames = hostSystem.ListInstallations() switch
+            var installationRecords = installationRegistry.ListInstallations() switch
             {
-                Result<IReadOnlyList<string>, FileSystemError>.Success(var names) => names,
-                Result<IReadOnlyList<string>, FileSystemError>.Failure =>
+                Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(var records) => records,
+                Result<IReadOnlyList<Installation>, InstallationRegistryError>.Failure =>
                     throw new InvalidOperationException("Unable to read installed Godot versions."),
                 _ => throw new InvalidOperationException("Unexpected Result type")
             };
 
-            var installations = installationNames
-                .Select(name => ListView.Create(name, symlinkTarget, pathService.RootPath))
+            var installations = installationRecords
+                .Select(installation => ListView.Create(installation, defaultInstallation))
                 .ToList();
 
             // Always render JSON if the flag is set
             if (json)
             {
-                console.WriteLine(installations.ToJson());
+                console.Profile.Out.Writer.WriteLine(installations.ToJson());
                 return;
             }
 
@@ -76,46 +76,10 @@ internal readonly record struct ListView(
         ? $"{Messages.DefaultInstallationMarkerMarkup}  {Name}"
         : $"{Messages.NonDefaultInstallationIndent}{Name}";
 
-    public static ListView Create(string name, string symlinkTarget, string rootPath)
-    {
-        var isDefault = IsDefaultInstallation(name, symlinkTarget, rootPath);
-        return new ListView(name, isDefault);
-    }
+    public static ListView Create(Installation installation, string defaultInstallation) =>
+        new(installation.ReleaseNameWithRuntime, string.Equals(installation.Key, defaultInstallation, StringComparison.Ordinal));
 
     public string ToDisplay() => ToDisplayString();
-
-    private static bool IsDefaultInstallation(string name, string symlinkTarget, string rootPath)
-    {
-        if (string.IsNullOrWhiteSpace(name) ||
-            string.IsNullOrWhiteSpace(symlinkTarget) ||
-            string.IsNullOrWhiteSpace(rootPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            var root = Path.GetFullPath(rootPath);
-            var target = Path.GetFullPath(symlinkTarget);
-
-            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            var relative = Path.GetRelativePath(root, target);
-            var firstSegment = relative
-                .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
-                .FirstOrDefault();
-
-            return !string.IsNullOrEmpty(firstSegment) &&
-                   string.Equals(firstSegment, name, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException)
-        {
-            return false;
-        }
-    }
 }
 
 internal static class ListViewExtensions
