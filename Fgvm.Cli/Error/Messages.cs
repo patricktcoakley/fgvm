@@ -1,5 +1,4 @@
 using Fgvm.Environment;
-using Fgvm.Types;
 
 namespace Fgvm.Cli.Error;
 
@@ -24,11 +23,11 @@ public static class Messages
     public static string NoCurrentVersionSet => "[red]No current Godot version set.[/]";
     public static string DeveloperModeRequiredForSymlink =>
         "[yellow]Windows Developer Mode or elevated privileges are required to create symlinks.[/]\n" +
-        "[dim]`fgvm godot` uses the symlink to launch Godot by default. You can also use `fgvm local` to create a `.fgvm-version` file.[/]\n" +
+        "[dim]`fgvm godot` uses the installation registry and will still work; only the optional Godot symlink was skipped.[/]\n" +
         "[dim]Enable Developer Mode or run as Administrator: https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development[/]";
 
     public static string DeveloperModeRequiredForGodot =>
-        "[red]No default symlink is available and Windows Developer Mode appears to be disabled.[/]\n" +
+        "[red]No default Godot installation is available and Windows Developer Mode appears to be disabled.[/]\n" +
         "[dim]Run `fgvm local` to create a `.fgvm-version` file and run `fgvm godot` in the project folder, or enable Developer Mode or run as Administrator:[/]\n" +
         "[dim]https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development[/]";
 
@@ -65,6 +64,9 @@ public static class Messages
     public static string SymlinkUnsupportedOS(string os) =>
         $"[yellow]Symlinks are not supported on this OS: {os}.[/]\n" +
         "[dim]You can still use `fgvm local` to create a `.fgvm-version` file.[/]";
+
+    public static string SymlinkUpdateFailed(string path) =>
+        $"[yellow]Unable to update optional Godot symlink at {path}.[/]";
 
     public static string CurrentVersionSetTo(string symlinkPath) => $"[green]Current version set to:[/] {symlinkPath}";
     public static string CurrentMacOSAppSetTo(string macAppSymlinkPath) => $"\n[green]Current macOS App set to:[/] {macAppSymlinkPath}";

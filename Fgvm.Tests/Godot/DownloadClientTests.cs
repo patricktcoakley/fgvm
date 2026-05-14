@@ -68,6 +68,7 @@ public class DownloadClientTests
                     }
                     """)
             });
+
         var downloadClient = CreateDownloadClient(gitHubMockHandler);
 
         var result = await downloadClient.GetReleaseManifest(release, CancellationToken.None);
@@ -102,10 +103,8 @@ public class DownloadClientTests
         Assert.Equal((int)HttpStatusCode.NotFound, requestFailure.StatusCode);
     }
 
-    private DownloadClient CreateDownloadClient(Mock<HttpMessageHandler> httpHandler)
-    {
-        return new DownloadClient(new HttpClient(httpHandler.Object), CreateMockConfiguration(), _mockLogger.Object);
-    }
+    private DownloadClient CreateDownloadClient(Mock<HttpMessageHandler> httpHandler) =>
+        new DownloadClient(new HttpClient(httpHandler.Object), CreateMockConfiguration(), _mockLogger.Object);
 
     private static Mock<HttpMessageHandler> CreateMockHttpHandler(HttpStatusCode statusCode, string content)
     {

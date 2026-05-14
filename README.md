@@ -28,9 +28,8 @@ terminal, or, the preferred method of installation, using a [package manager](#p
 ## Installation
 
 > [!NOTE]
-> In order to use the symlink feature for **Windows**, you first need to enable [Developer Mode](https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development).
-> Without it, you can still install, remove, etc, but you won't have the added benefit of having a symlink pointing to your desired version, which is what the `fgvm godot` command uses to launch Godot
-> directly from the terminal and you would simply have to navigate to the Godot installation directory to launch it (i.e., `C:\Users\USERNAME\fgvm\4.5.1-stable-standard\Godot_v4.5.1-stable_win64.exe`).
+> In order to use the optional symlink feature for **Windows**, you first need to enable [Developer Mode](https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development).
+> Without it, you can still install, remove, set, and launch versions with `fgvm godot`; only the `Godot.exe` symlink to the selected version is skipped.
 >
 > In addition, Powershell, the default shell for Windows, doesn't support the emojis out of the box. To fix this, you simply need to update the `$PROFILE`/profile.ps1:
 > ```powershell 
@@ -99,11 +98,10 @@ See [Build](#build) for instructions on how to build fgvm from source.
 ### Getting Started
 
 fgvm downloads and installs Godot into folders inside of `~/fgvm/` for macOS and Linux, and `$env:USERPROFILE\fgvm\` for Windows. You can customize this location using the `FGVM_HOME` environment variable (see [Environment Variables](#environment-variables)).
-Each installation will be in a folder with the `<VERSION>-<TYPE>-<RUNTIME>`; which equates to version number, the release type (stable, dev, etc), and the runtime (standard or .NET). For example, 
-if you installed the 4.3 stable with .NET support, it would be in a folder marked `4.3-stable-mono`. 
+New installations are stored under `installations/<VERSION>-<TYPE>-<RUNTIME>/<TARGET>/`, and fgvm tracks them in `installations.json`. For example, a 4.3 stable .NET install on Linux x64 is tracked as `installations/4.3-stable-mono/linux.x86_64/`.
 
-By default, when you install a version a [symlink](https://en.wikipedia.org/wiki/Symbolic_link) is created in a folder called `bin`. This is what the `fgvm godot` command is running when you don't pass any arguments,
-but you can also just run `fgvm godot -i` to pick another installation to launch, or you can simply use `fgvm set` to pick the version you want to launch by default.
+By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root symlink named `Godot` on Linux, `Godot.app` on macOS, or `Godot.exe` on Windows for GUI launch compatibility.
+You can run `fgvm godot -i` to pick another installation to launch, or use `fgvm set` to pick the version you want to launch by default.
 
 Right now fvgm supports installing whatever your computer supports by CPU and OS, so if you're running Windows on a standard x86_64 CPU you are able to install
 and run versions of Godot all the way back to 1.x. macOS went through multiple architecture transitions since Godot 1 and so most modern Macs will only support releases
@@ -147,7 +145,7 @@ but here is a detailed summary of the available commands:
 - `fgvm local [<...strings>]` sets the Godot version for the current project by creating or updating a `.fgvm-version` file in the current directory. If no `.fgvm-version` file
   exists and no arguments are provided, it will automatically detect the project version from `project.godot` and install the most recent compatible version if not already installed.
     - If a list of arguments are provided, it will find the best matching version based on the query (including runtime preferences like `mono` or `standard`) and install it if necessary.
-- `fgvm which` [`--json`] displays the location that the current Godot symlink points to. Use `--json` to output in JSON format.
+- `fgvm which` [`--json`] displays the executable path for the current default Godot installation. Use `--json` to output in JSON format.
 - `fgvm remove` or `fgvm r` `[<...strings>]` prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if remove a specific version, like

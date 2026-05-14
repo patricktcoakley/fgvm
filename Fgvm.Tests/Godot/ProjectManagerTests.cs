@@ -1,6 +1,9 @@
+using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Tests.Godot.ReleaseManager;
 using Fgvm.Types;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Fgvm.Tests.Godot;
 
@@ -14,7 +17,9 @@ public sealed class ProjectManagerTests : IDisposable
         _tempDirectory = Path.Combine(Path.GetTempPath(), $"fgvm-test-{Guid.NewGuid()}");
         Directory.CreateDirectory(_tempDirectory);
         var releaseManager = new ReleaseManagerBuilder().Build();
-        _projectManager = new ProjectManager(releaseManager);
+        var pathService = new Mock<IPathService>();
+        var hostSystem = new HostSystem(new SystemInfo(), pathService.Object, NullLogger<HostSystem>.Instance);
+        _projectManager = new ProjectManager(releaseManager, hostSystem);
     }
 
     public void Dispose()

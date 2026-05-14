@@ -14,10 +14,7 @@ public class SpectreProgressHandler<TStage>(IAnsiConsole console) : IProgressHan
     public async Task<T> TrackProgressAsync<T>(Func<IProgress<OperationProgress<TStage>>, Task<T>> operation)
     {
         return await console.Status()
-            .StartAsync("Starting operation...", async ctx =>
-            {
-                return await operation(new StatusProgress(ctx));
-            });
+            .StartAsync("Starting operation...", async ctx => { return await operation(new StatusProgress(ctx)); });
     }
 
     private sealed class StatusProgress(StatusContext context) : IProgress<OperationProgress<TStage>>

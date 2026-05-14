@@ -207,7 +207,7 @@ public class QueryTests
     }
 
     [Fact]
-    public async Task SearchReleases_ShouldSortByStabilityFirst()
+    public async Task SearchReleases_ShouldSortByVersionFirst()
     {
         var releaseNames = new[]
         {
@@ -227,10 +227,9 @@ public class QueryTests
         var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(chronologicalResult);
         var chronologicalArray = success.Value.ToArray();
 
-        // Should be ordered: major > minor > stability > patch
-        // So within 4.5: stable before rc (regardless of patch), then dev
-        Assert.Equal("4.5-stable", chronologicalArray[0]);
-        Assert.Equal("4.5.1-rc1", chronologicalArray[1]);
+        // Should be ordered by version first, then release type within the same version.
+        Assert.Equal("4.5.1-rc1", chronologicalArray[0]);
+        Assert.Equal("4.5-stable", chronologicalArray[1]);
         Assert.Equal("4.5-dev1", chronologicalArray[2]);
         Assert.Equal("4.4-stable", chronologicalArray[3]);
         Assert.Equal("4.3-beta1", chronologicalArray[4]);

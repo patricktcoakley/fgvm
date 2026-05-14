@@ -30,12 +30,18 @@ public class TestContainerFixture : IAsyncLifetime
             throw new InvalidOperationException("Could not find Fgvm.sln to determine solution root");
         }
 
-        _container = new ContainerBuilder("mcr.microsoft.com/dotnet/sdk:10.0")
+        var containerBuilder = new ContainerBuilder("mcr.microsoft.com/dotnet/sdk:10.0")
             .WithWorkingDirectory("/workspace")
             .WithBindMount(solutionDir, "/workspace")
             .WithCommand("tail", "-f", "/dev/null") // Keep container running
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("dotnet", "--version"))
-            .Build();
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("dotnet", "--version"));
+
+        if (System.Environment.GetEnvironmentVariable("FGVM_E2E_GITHUB_TOKEN") is { Length: > 0 } githubToken)
+        {
+            containerBuilder = containerBuilder.WithEnvironment("FGVM_GITHUB__TOKEN", githubToken);
+        }
+
+        _container = containerBuilder.Build();
 
         await _container.StartAsync();
 

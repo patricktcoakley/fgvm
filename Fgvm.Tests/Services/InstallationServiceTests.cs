@@ -46,6 +46,23 @@ public class InstallationServiceTests
     }
 
     [Fact]
+    public async Task FetchReleaseNames_SortsByVersionBeforeReleaseType()
+    {
+        var releaseIds = new[] { "4.5-dev1", "4.4-stable", "4.5.1-rc1", "4.5-stable" };
+        var releaseManager = CreateReleaseManagerMock(releaseIds);
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Success(releaseIds));
+
+        var service = CreateService(releaseManager.Object, releaseCatalog.Object);
+
+        var releaseNamesResult = await service.FetchReleaseNames(CancellationToken.None);
+
+        var releaseNames = Assert.IsType<Result<string[], NetworkError>.Success>(releaseNamesResult).Value;
+        Assert.Equal(["4.5.1-rc1", "4.5-stable", "4.5-dev1", "4.4-stable"], releaseNames);
+    }
+
+    [Fact]
     public async Task InstallByQueryAsync_InvalidQuery_ReturnsInvalidQueryWithoutRemoteRefresh()
     {
         var query = new[] { "bad-query" };
@@ -53,6 +70,7 @@ public class InstallationServiceTests
         var releaseCatalog = new Mock<IReleaseCatalog>();
         releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<string[], NetworkError>.Success(["4.4-stable"]));
+
         releaseManager.Setup(x => x.ResolveReleaseQuery(query, It.IsAny<string[]>()))
             .Returns(new Result<Release, QueryError>.Failure(new QueryError.InvalidQuery("Invalid query.")));
 
@@ -94,12 +112,22 @@ public class InstallationServiceTests
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
+        pathService.SetupGet(x => x.InstallationsPath).Returns(Path.Combine(rootPath, "installations.json"));
+        pathService.SetupGet(x => x.InstallationsDirectoryPath).Returns(Path.Combine(rootPath, "installations"));
+
+        var installationRegistry = new Mock<IInstallationRegistry>();
+        installationRegistry.Setup(x => x.FindByReleaseName(release.ReleaseNameWithRuntime))
+            .Returns(new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(release.ReleaseNameWithRuntime)));
+
+        installationRegistry.Setup(x => x.UpsertInstalled(release, It.IsAny<string>(), It.IsAny<DateTimeOffset?>()))
+            .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
 
         var service = new InstallationService(
             hostSystem.Object,
             releaseManager.Object,
             releaseCatalog.Object,
             pathService.Object,
+            installationRegistry.Object,
             NullLogger<InstallationService>.Instance);
 
         try
@@ -107,7 +135,7 @@ public class InstallationServiceTests
             var result = await service.InstallReleaseAsync(
                 release,
                 new Progress<OperationProgress<InstallationStage>>(),
-                setAsDefault: false,
+                false,
                 CancellationToken.None);
 
             var success = Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
@@ -325,13 +353,27 @@ public class InstallationServiceTests
     {
         var hostSystem = new Mock<IHostSystem>();
         var pathService = new Mock<IPathService>();
+        var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
+        pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(Path.GetTempPath(), "releases.json"));
+        pathService.SetupGet(x => x.InstallationsPath).Returns(Path.Combine(rootPath, "installations.json"));
+        pathService.SetupGet(x => x.InstallationsDirectoryPath).Returns(Path.Combine(rootPath, "installations"));
+        var installationRegistry = new Mock<IInstallationRegistry>();
+        installationRegistry.Setup(x => x.FindByReleaseName(It.IsAny<string>()))
+            .Returns(new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound("test")));
+
+        installationRegistry.Setup(x => x.UpsertInstalled(It.IsAny<Release>(), It.IsAny<string>(), It.IsAny<DateTimeOffset?>()))
+            .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
+
+        installationRegistry.Setup(x => x.SetDefault(It.IsAny<string>()))
+            .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
 
         return new InstallationService(
             hostSystem.Object,
             releaseManager,
             releaseCatalog,
             pathService.Object,
+            installationRegistry.Object,
             NullLogger<InstallationService>.Instance);
     }
 
@@ -352,7 +394,7 @@ public class InstallationServiceTests
     private static byte[] CreateZipArchive()
     {
         using var stream = new MemoryStream();
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
         {
             var entry = archive.CreateEntry("Godot");
             using var writer = new StreamWriter(entry.Open());

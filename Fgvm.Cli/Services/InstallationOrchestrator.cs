@@ -1,6 +1,5 @@
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Prompts;
-using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
@@ -23,17 +22,19 @@ public interface IInstallationOrchestrator
     /// <param name="setAsDefault">Whether to set the installed version as default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The installation result.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when release names, installed versions, or release parsing cannot continue.</exception>
+    /// <exception cref="InvalidOperationException">
+    ///     Thrown when release names, installed versions, or release parsing cannot
+    ///     continue.
+    /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when interactive selection or installation is canceled.</exception>
     Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query, bool setAsDefault = false,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class InstallationOrchestrator(
-    IHostSystem hostSystem,
     IReleaseManager releaseManager,
+    IInstallationRegistry installationRegistry,
     IInstallationService installationService,
-    IPathService pathService,
     IProgressHandler<InstallationStage> progressHandler,
     IAnsiConsole console) : IInstallationOrchestrator
 {
@@ -50,8 +51,7 @@ public sealed class InstallationOrchestrator(
             var version = await Install.ShowVersionSelectionPrompt(releaseNames, console, cancellationToken);
             var godotRelease = CreateRelease(version);
 
-            var existingPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
-            if (Directory.Exists(existingPath))
+            if (IsInstalled(godotRelease.ReleaseNameWithRuntime))
             {
                 installationResult = new Result<InstallationOutcome, InstallationError>.Success(
                     new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
@@ -73,8 +73,7 @@ public sealed class InstallationOrchestrator(
             {
                 case Result<Release, QueryError>.Success(var godotRelease):
                 {
-                    var existingPath = Path.Combine(pathService.RootPath, godotRelease.ReleaseNameWithRuntime);
-                    if (Directory.Exists(existingPath))
+                    if (IsInstalled(godotRelease.ReleaseNameWithRuntime))
                     {
                         installationResult = new Result<InstallationOutcome, InstallationError>.Success(
                             new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
@@ -100,6 +99,7 @@ public sealed class InstallationOrchestrator(
 
                     installationResult = await progressHandler.TrackProgressAsync(progress =>
                         installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, cancellationToken));
+
                     break;
                 }
 
@@ -139,6 +139,9 @@ public sealed class InstallationOrchestrator(
                         case SymlinkError.InvalidSymlink(var path, _):
                             console.MarkupLine(Messages.InvalidSymlinkWarn(path));
                             break;
+                        case SymlinkError.RemoveFailed(var removePath):
+                            console.MarkupLine(Messages.SymlinkUpdateFailed(removePath));
+                            break;
                     }
                 }
 
@@ -164,13 +167,17 @@ public sealed class InstallationOrchestrator(
     }
 
     private IReadOnlyList<string> ListInstallations() =>
-        hostSystem.ListInstallations() switch
+        installationRegistry.ListInstallations() switch
         {
-            Result<IReadOnlyList<string>, FileSystemError>.Success(var installations) => installations,
-            Result<IReadOnlyList<string>, FileSystemError>.Failure =>
+            Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(var installations) =>
+                installations.Select(installation => installation.ReleaseNameWithRuntime).ToArray(),
+            Result<IReadOnlyList<Installation>, InstallationRegistryError>.Failure =>
                 throw new InvalidOperationException("Unable to read installed Godot versions."),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
+
+    private bool IsInstalled(string releaseNameWithRuntime) =>
+        installationRegistry.FindByReleaseName(releaseNameWithRuntime) is Result<Installation, InstallationRegistryError>.Success;
 
     private Release CreateRelease(string version) =>
         releaseManager.CreateRelease(version) switch

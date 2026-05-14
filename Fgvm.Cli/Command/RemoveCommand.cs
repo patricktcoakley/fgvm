@@ -2,6 +2,7 @@ using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Environment;
 using Fgvm.Godot;
+using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -12,6 +13,7 @@ namespace Fgvm.Cli.Command;
 public sealed class RemoveCommand(
     IHostSystem hostSystem,
     IReleaseManager releaseManager,
+    IInstallationRegistry installationRegistry,
     IPathService pathService,
     IAnsiConsole console,
     ILogger<RemoveCommand> logger)
@@ -21,7 +23,10 @@ public sealed class RemoveCommand(
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <param name="query"></param>
-    /// <exception cref="InvalidOperationException">Thrown when installed versions or symlinks cannot be read or removed.</exception>
+    /// <exception cref="InvalidOperationException">
+    ///     Thrown when installed versions, registry state, or symlinks cannot be read
+    ///     or removed.
+    /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when removal is canceled.</exception>
     [Command("remove|r")]
     public async Task Remove(CancellationToken cancellationToken = default, [Argument] params string[] query)
@@ -33,6 +38,7 @@ public sealed class RemoveCommand(
 
             if (installed.Length == 0)
             {
+                ClearDefault();
                 RemoveSymbolicLinks();
                 console.MarkupLine(Messages.NoInstallationsToRemove);
                 return;
@@ -60,12 +66,25 @@ public sealed class RemoveCommand(
                 versionsToDelete = await Prompts.Remove.ShowVersionRemovalPrompt(filteredInstallations, console, cancellationToken);
             }
 
+            var removedSymlinks = false;
             foreach (var version in versionsToDelete)
             {
-                var selectionPath = Path.Combine(pathService.RootPath, version);
-                if (Directory.Exists(selectionPath))
+                var installation = FindInstallation(version);
+                var removingDefault = IsDefaultInstallation(installation.Key);
+                var selectionPath = Path.Combine(pathService.RootPath, installation.RelativePath);
+                var directoryExists = hostSystem.DirectoryExists(selectionPath);
+                if (directoryExists is Result<bool, FileOperationError>.Failure(var existsError))
                 {
-                    Directory.Delete(selectionPath, true);
+                    throw new InvalidOperationException($"Unable to read installation path `{selectionPath}`: {existsError}");
+                }
+
+                if (directoryExists is Result<bool, FileOperationError>.Success { Value: true })
+                {
+                    if (hostSystem.DeleteDirectoryIfExists(selectionPath, true) is Result<Unit, FileOperationError>.Failure(var deleteError))
+                    {
+                        throw new InvalidOperationException($"Unable to remove installation `{selectionPath}`: {deleteError}");
+                    }
+
                     logger.ZLogInformation($"Removed installation: {version}");
                     console.MarkupLine(Messages.SuccessfullyRemoved(selectionPath));
                 }
@@ -73,17 +92,28 @@ public sealed class RemoveCommand(
                 {
                     logger.ZLogWarning($"Installation {version} does not exist at {selectionPath}, skipping removal.");
                 }
+
+                if (installationRegistry.Remove(installation.Key) is Result<Unit, InstallationRegistryError>.Failure(var removeError))
+                {
+                    throw new InvalidOperationException($"Unable to update installation registry: {removeError}");
+                }
+
+                if (removingDefault)
+                {
+                    RemoveSymbolicLinks();
+                    removedSymlinks = true;
+                }
             }
 
-            if (ListInstallations().Length == 0)
+            if (!removedSymlinks && ListInstallations().Length == 0)
             {
-                logger.ZLogInformation($"No installations remaining, removing symbolic links.");
+                logger.LogInformation("No installations remaining, removing Godot symlinks.");
                 RemoveSymbolicLinks();
             }
         }
         catch (TaskCanceledException)
         {
-            logger.ZLogError($"User cancelled removal.");
+            logger.LogError("User cancelled removal.");
             console.MarkupLine(Messages.UserCancelled("removal"));
 
             throw;
@@ -100,13 +130,42 @@ public sealed class RemoveCommand(
     }
 
     private string[] ListInstallations() =>
-        hostSystem.ListInstallations() switch
+        installationRegistry.ListInstallations() switch
         {
-            Result<IReadOnlyList<string>, FileSystemError>.Success(var installations) => installations.ToArray(),
-            Result<IReadOnlyList<string>, FileSystemError>.Failure =>
+            Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(var installations) =>
+                installations.Select(installation => installation.ReleaseNameWithRuntime).ToArray(),
+            Result<IReadOnlyList<Installation>, InstallationRegistryError>.Failure =>
                 throw new InvalidOperationException("Unable to read installed Godot versions."),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
+
+    private Installation FindInstallation(string releaseNameWithRuntime) =>
+        installationRegistry.FindByReleaseName(releaseNameWithRuntime) switch
+        {
+            Result<Installation, InstallationRegistryError>.Success(var installation) => installation,
+            Result<Installation, InstallationRegistryError>.Failure =>
+                throw new InvalidOperationException($"Unable to find installed Godot version `{releaseNameWithRuntime}`."),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+    private bool IsDefaultInstallation(string key) =>
+        installationRegistry.GetDefault() switch
+        {
+            Result<Installation, InstallationRegistryError>.Success(var installation) =>
+                string.Equals(installation.Key, key, StringComparison.Ordinal),
+            Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound) => false,
+            Result<Installation, InstallationRegistryError>.Failure =>
+                throw new InvalidOperationException("Unable to read default Godot installation."),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+    private void ClearDefault()
+    {
+        if (installationRegistry.ClearDefault() is Result<Unit, InstallationRegistryError>.Failure)
+        {
+            throw new InvalidOperationException("Unable to clear default Godot installation.");
+        }
+    }
 
     private void RemoveSymbolicLinks()
     {

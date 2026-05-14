@@ -27,6 +27,7 @@ public class ReleaseManagerBuilder
             .Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult<Result<IEnumerable<string>, NetworkError>>(
                 new Result<IEnumerable<string>, NetworkError>.Success(_releases)));
+
         _mockReleaseCatalog
             .Setup(x => x.ReadReleaseIds(It.IsAny<ReleaseFetchMode>(), It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult<Result<string[], NetworkError>>(
@@ -46,6 +47,7 @@ public class ReleaseManagerBuilder
             .Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult<Result<IEnumerable<string>, NetworkError>>(
                 new Result<IEnumerable<string>, NetworkError>.Success(_releases)));
+
         _mockReleaseCatalog
             .Setup(x => x.ReadReleaseIds(It.IsAny<ReleaseFetchMode>(), It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult<Result<string[], NetworkError>>(

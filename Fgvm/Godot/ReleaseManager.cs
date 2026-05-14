@@ -61,7 +61,7 @@ public interface IReleaseManager
     /// </summary>
     /// <param name="query">Version query arguments.</param>
     /// <param name="releaseNames">Release identifiers to filter.</param>
-    /// <param name="chronological">Whether to sort chronologically instead of by selection preference.</param>
+    /// <param name="chronological">Whether to sort by version-first display order instead of selection preference.</param>
     /// <returns>Matching release identifiers.</returns>
     IEnumerable<string> FilterReleasesByQuery(string[] query, string[] releaseNames, bool chronological = false);
 
@@ -128,17 +128,6 @@ public sealed class ReleaseManager(
     public async Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
         await downloadClient.GetZipFile(filename, release, cancellationToken);
 
-    internal Release? TryFindReleaseByQuery(string[] query, string[] releaseNames)
-    {
-        var result = ResolveReleaseQuery(query, releaseNames);
-        return result switch
-        {
-            Result<Release, QueryError>.Success(var release) => release,
-            Result<Release, QueryError>.Failure => null,
-            _ => throw new InvalidOperationException("Unexpected Result type")
-        };
-    }
-
     /// <inheritdoc />
     public Result<Release, QueryError> ResolveReleaseQuery(string[] query, string[] releaseIds)
     {
@@ -189,14 +178,10 @@ public sealed class ReleaseManager(
             .Where(x => x.Release != null)
             .Select(x => new { x.OriginalName, Release = x.Release! });
 
-        // Sort chronologically for display (version-first) or by stability for selection (stability-first)
+        // Display/search paths use the natural Release ordering. Selection paths use explicit preference ordering.
         var sorted = chronological
-            ? filtered
-                .OrderByDescending(x => x.Release.Major)
-                .ThenByDescending(x => x.Release.Minor)
-                .ThenByDescending(x => x.Release.Type) // Stability within same minor version
-                .ThenByDescending(x => x.Release.Patch) // Then patch number
-            : filtered.OrderByDescending(x => x.Release);
+            ? filtered.OrderByDescending(x => x.Release)
+            : OrderBySelectionPreference(filtered, x => x.Release);
 
         return sorted.Select(x => x.OriginalName);
     }
@@ -229,12 +214,6 @@ public sealed class ReleaseManager(
                 new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.UnsupportedPlatform(unsupportedRelease, os, arch)),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
-    }
-
-    internal Release? TryCreateRelease(string versionString)
-    {
-        var result = CreateRelease(versionString);
-        return result is Result<Release, ReleaseParseError>.Success success ? success.Value : null;
     }
 
     /// <inheritdoc />
@@ -288,15 +267,28 @@ public sealed class ReleaseManager(
             return new Result<string, CompatibilityError>.Failure(new CompatibilityError.NotFound(projectVersion, isDotNet));
         }
 
-        // Use OrderByDescending with the built-in Release.CompareTo for preference ordering
-        // Now that ReleaseType.CompareTo prefers higher RC numbers, this gives us:
-        // 1. Higher version numbers first (4.3 > 4.2)
-        // 2. More stable releases first (stable > rc2 > rc1 > dev)
-        var bestRelease = compatibleReleases
-            .OrderByDescending(r => r)
+        // Compatibility keeps project resolution stability-first instead of treating prereleases as upgrades.
+        var bestRelease = OrderBySelectionPreference(compatibleReleases, release => release)
             .First();
 
         return new Result<string, CompatibilityError>.Success(bestRelease.ReleaseNameWithRuntime);
+    }
+
+    internal Release? TryFindReleaseByQuery(string[] query, string[] releaseNames)
+    {
+        var result = ResolveReleaseQuery(query, releaseNames);
+        return result switch
+        {
+            Result<Release, QueryError>.Success(var release) => release,
+            Result<Release, QueryError>.Failure => null,
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
+    internal Release? TryCreateRelease(string versionString)
+    {
+        var result = CreateRelease(versionString);
+        return result is Result<Release, ReleaseParseError>.Success(var release) ? release : null;
     }
 
     internal string? FindCompatibleVersion(string projectVersion, bool isDotNet, IEnumerable<string> installedVersions)
@@ -312,7 +304,7 @@ public sealed class ReleaseManager(
 
     private Result<Release?, QueryError> FindReleaseByQuery(string[] query, string[] releaseNames)
     {
-        Release? release = query switch
+        var release = query switch
         {
             // Handle latest stable standard
             ["latest"] => TryFilterLatest("stable", "standard", releaseNames),
@@ -381,13 +373,13 @@ public sealed class ReleaseManager(
         }
 
         // Try to find the first release that matches the criteria
-        var release = releaseNames
+        var candidates = releaseNames
             .Where(x => x.StartsWith(possibleVersion))
             .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType))
             .Select(releaseName => TryCreateRelease($"{releaseName}-{runtime.Name()}"))
-            .OfType<Release>()
-            .OrderByDescending(release => release)
-            .FirstOrDefault();
+            .OfType<Release>();
+
+        var release = OrderBySelectionPreference(candidates, candidate => candidate).FirstOrDefault();
 
         return new Result<Release?, QueryError>.Success(release);
     }
@@ -401,4 +393,13 @@ public sealed class ReleaseManager(
 
         return TryCreateRelease($"{version}-{runtime}");
     }
+
+    private static IOrderedEnumerable<T> OrderBySelectionPreference<T>(IEnumerable<T> source, Func<T, Release> releaseSelector) =>
+        source
+            .OrderByDescending(item => releaseSelector(item).Major)
+            .ThenByDescending(item => releaseSelector(item).Type)
+            .ThenByDescending(item => releaseSelector(item).Minor)
+            .ThenByDescending(item => releaseSelector(item).Patch)
+            .ThenByDescending(item => releaseSelector(item).RuntimeEnvironment)
+            .ThenByDescending(item => releaseSelector(item).ReleaseNameWithRuntime, StringComparer.Ordinal);
 }

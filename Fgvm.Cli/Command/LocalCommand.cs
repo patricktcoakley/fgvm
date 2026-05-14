@@ -15,7 +15,10 @@ public sealed class LocalCommand(IVersionManagementService versionManagementServ
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="query">Version query arguments</param>
     /// <exception cref="ArgumentException">Thrown when a requested version query cannot be resolved during installation.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when project information, installed versions, installation state, or `.fgvm-version` writes cannot continue.</exception>
+    /// <exception cref="InvalidOperationException">
+    ///     Thrown when project information, installed versions, installation state, or
+    ///     `.fgvm-version` writes cannot continue.
+    /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when interactive selection or installation is canceled.</exception>
     [Command("local")]
     public async Task Local(CancellationToken cancellationToken = default, [Argument] params string[] query)

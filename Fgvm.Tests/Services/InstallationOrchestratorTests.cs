@@ -13,6 +13,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
 {
     private readonly TestConsole _console;
     private readonly Mock<IHostSystem> _mockHostSystem;
+    private readonly Mock<IInstallationRegistry> _mockInstallationRegistry;
     private readonly Mock<IInstallationService> _mockInstallationService;
     private readonly Mock<IReleaseManager> _mockReleaseManager;
     private readonly InstallationOrchestrator _orchestrator;
@@ -22,6 +23,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
     {
         _console = new TestConsole();
         _mockHostSystem = new Mock<IHostSystem>();
+        _mockInstallationRegistry = new Mock<IInstallationRegistry>();
         _mockInstallationService = new Mock<IInstallationService>();
         _mockReleaseManager = new Mock<IReleaseManager>();
         var mockPathService = new Mock<IPathService>();
@@ -30,11 +32,11 @@ public sealed class InstallationOrchestratorTests : IDisposable
         Directory.CreateDirectory(_tempRoot);
 
         mockPathService.Setup(x => x.RootPath).Returns(_tempRoot);
-        mockPathService.Setup(x => x.SymlinkPath).Returns(Path.Combine(_tempRoot, "bin", "godot"));
+        mockPathService.Setup(x => x.SymlinkPath).Returns(Path.Combine(_tempRoot, "Godot"));
         mockPathService.Setup(x => x.ConfigPath).Returns(Path.Combine(_tempRoot, "fgvm.ini"));
         mockPathService.Setup(x => x.ReleasesPath).Returns(Path.Combine(_tempRoot, "releases.json"));
         mockPathService.Setup(x => x.BinPath).Returns(Path.Combine(_tempRoot, "bin"));
-        mockPathService.Setup(x => x.MacAppSymlinkPath).Returns(Path.Combine(_tempRoot, "bin", "Godot.app"));
+        mockPathService.Setup(x => x.MacAppSymlinkPath).Returns(Path.Combine(_tempRoot, "Godot.app"));
         mockPathService.Setup(x => x.LogPath).Returns(Path.Combine(_tempRoot, "fgvm.log"));
 
         _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
@@ -43,15 +45,22 @@ public sealed class InstallationOrchestratorTests : IDisposable
         _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()))
             .Returns(new Result<Release, QueryError>.Failure(new QueryError.NotFound("test")));
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
+        SetupInstallations([]);
 
         _orchestrator = new InstallationOrchestrator(
-            _mockHostSystem.Object,
             _mockReleaseManager.Object,
+            _mockInstallationRegistry.Object,
             _mockInstallationService.Object,
-            mockPathService.Object,
             new TestProgressHandler<InstallationStage>(),
             _console);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempRoot))
+        {
+            Directory.Delete(_tempRoot, true);
+        }
     }
 
     [Fact]
@@ -63,10 +72,11 @@ public sealed class InstallationOrchestratorTests : IDisposable
 
         _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
             .ReturnsAsync(releaseNames);
+
         _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, releaseNames))
             .Returns(new Result<Release, QueryError>.Success(release));
 
-        Directory.CreateDirectory(Path.Combine(_tempRoot, release.ReleaseNameWithRuntime));
+        SetupInstallations([release.ReleaseNameWithRuntime]);
 
         var result = await _orchestrator.InstallAsync(query);
 
@@ -79,6 +89,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
             x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
         _mockInstallationService.Verify(
             x => x.InstallReleaseAsync(It.IsAny<Release>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()),
@@ -91,7 +102,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
         var query = new[] { "4.3.0" };
         const string releaseName = "4.3.0-stable";
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.2.0-stable" });
+        SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
                     It.Is<string[]>(q => q.SequenceEqual(query)),
@@ -112,7 +123,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
     {
         var query = new[] { "4.3.0" };
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(Array.Empty<string>());
+        SetupInstallations([]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
                     It.Is<string[]>(q => q.SequenceEqual(query)),
@@ -133,7 +144,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
     {
         var query = new[] { "4.3.0" };
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.2.0-stable" });
+        SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
                     It.Is<string[]>(q => q.SequenceEqual(query)),
@@ -143,7 +154,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
                 new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Verified())));
 
-        var result = await _orchestrator.InstallAsync(query, setAsDefault: true);
+        var result = await _orchestrator.InstallAsync(query, true);
 
         Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
         Assert.Contains("Set as default version", _console.Output);
@@ -154,7 +165,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
     {
         var query = new[] { "4.3.0" };
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.2.0-stable" });
+        SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
                     It.Is<string[]>(q => q.SequenceEqual(query)),
@@ -176,7 +187,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
     {
         var query = new[] { "3.2.1" };
 
-        _mockHostSystem.Setup(x => x.ListInstallations()).Returns(new[] { "4.2.0-stable" });
+        SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
                     It.Is<string[]>(q => q.SequenceEqual(query)),
@@ -193,11 +204,19 @@ public sealed class InstallationOrchestratorTests : IDisposable
         Assert.Contains("verification", _console.Output);
     }
 
-    public void Dispose()
+    private void SetupInstallations(string[] releaseNames)
     {
-        if (Directory.Exists(_tempRoot))
+        var installations = releaseNames
+            .Select(name => new Installation($"{name}@linux.x86_64", name, "linux.x86_64", name, null, null))
+            .ToArray();
+
+        _mockInstallationRegistry.Setup(x => x.ListInstallations())
+            .Returns(new Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(installations));
+
+        foreach (var installation in installations)
         {
-            Directory.Delete(_tempRoot, true);
+            _mockInstallationRegistry.Setup(x => x.FindByReleaseName(installation.ReleaseNameWithRuntime))
+                .Returns(new Result<Installation, InstallationRegistryError>.Success(installation));
         }
     }
 

@@ -76,6 +76,7 @@ public class InstallationService(
     IReleaseManager releaseManager,
     IReleaseCatalog releaseCatalog,
     IPathService pathService,
+    IInstallationRegistry installationRegistry,
     ILogger<InstallationService> logger)
     : IInstallationService
 {
@@ -89,16 +90,23 @@ public class InstallationService(
         try
         {
             var installPathBase = godotRelease.ReleaseNameWithRuntime;
+            var relativeInstallPath = InstallationRegistry.CreateRelativeInstallPath(godotRelease);
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Initializing, $"Initializing installation of {installPathBase}..."));
 
             // Check if already installed
-            var existingPath = Path.Combine(pathService.RootPath, installPathBase);
-            if (Directory.Exists(existingPath))
+            var existingInstallation = installationRegistry.FindByReleaseName(installPathBase);
+            if (existingInstallation is Result<Installation, InstallationRegistryError>.Success)
             {
                 logger.LogInformation("Version {InstallPathBase} is already installed", installPathBase);
                 return new Result<InstallationOutcome, InstallationError>.Success(
                     new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
+            }
+
+            if (existingInstallation is Result<Installation, InstallationRegistryError>.Failure(not InstallationRegistryError.NotFound))
+            {
+                return new Result<InstallationOutcome, InstallationError>.Failure(
+                    new InstallationError.Failed($"Unable to read installation registry for {installPathBase}."));
             }
 
             // Show progress immediately before HTTP request
@@ -108,12 +116,12 @@ public class InstallationService(
             ReleaseArtifact artifact;
             switch (await releaseCatalog.FindOrHydrateArtifact(godotRelease, cancellationToken))
             {
-                case Result<ReleaseArtifact, NetworkError>.Success success:
-                    artifact = success.Value;
+                case Result<ReleaseArtifact, NetworkError>.Success(var releaseArtifact):
+                    artifact = releaseArtifact;
                     break;
-                case Result<ReleaseArtifact, NetworkError>.Failure failure:
+                case Result<ReleaseArtifact, NetworkError>.Failure(var error):
                     return new Result<InstallationOutcome, InstallationError>.Failure(
-                        new InstallationError.Failed($"Release catalog hydration failed for {godotRelease.ReleaseName}: {failure.Error}"));
+                        new InstallationError.Failed($"Release catalog hydration failed for {godotRelease.ReleaseName}: {error}"));
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
@@ -124,12 +132,12 @@ public class InstallationService(
             HttpResponseMessage response;
             switch (responseResult)
             {
-                case Result<HttpResponseMessage, NetworkError>.Success downloadSuccess:
-                    response = downloadSuccess.Value;
+                case Result<HttpResponseMessage, NetworkError>.Success(var downloadResponse):
+                    response = downloadResponse;
                     break;
-                case Result<HttpResponseMessage, NetworkError>.Failure downloadFailure:
+                case Result<HttpResponseMessage, NetworkError>.Failure(var downloadError):
                     return new Result<InstallationOutcome, InstallationError>.Failure(
-                        new InstallationError.Failed($"Download failed for {zipFileName}: {downloadFailure.Error}"));
+                        new InstallationError.Failed($"Download failed for {zipFileName}: {downloadError}"));
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
@@ -184,37 +192,57 @@ public class InstallationService(
             ChecksumVerification checksumStatus;
             switch (checksumResult)
             {
-                case Result<ChecksumVerification, InstallationError>.Success checksumSuccess:
-                    checksumStatus = checksumSuccess.Value;
+                case Result<ChecksumVerification, InstallationError>.Success(var checksumVerification):
+                    checksumStatus = checksumVerification;
                     break;
-                case Result<ChecksumVerification, InstallationError>.Failure checksumFailure:
-                    return new Result<InstallationOutcome, InstallationError>.Failure(checksumFailure.Error);
+                case Result<ChecksumVerification, InstallationError>.Failure(var error):
+                    return new Result<InstallationOutcome, InstallationError>.Failure(error);
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Extracting, "Extracting files..."));
             memStream.Position = 0;
-            extractPath = Path.Combine(pathService.RootPath, installPathBase);
+            extractPath = Path.Combine(pathService.RootPath, relativeInstallPath);
 
             await using var archive = new ZipArchive(memStream, ZipArchiveMode.Read);
             archive.ExtractWithFlatteningSupport(extractPath, true);
+
+            if (installationRegistry.UpsertInstalled(godotRelease, relativeInstallPath) is Result<Unit, InstallationRegistryError>.Failure(var upsertError))
+            {
+                logger.LogError("Failed to update installation registry after installing {ReleaseNameWithRuntime}: {Error}",
+                    godotRelease.ReleaseNameWithRuntime, upsertError);
+
+                return new Result<InstallationOutcome, InstallationError>.Failure(
+                    new InstallationError.Failed($"Unable to update installation registry for {godotRelease.ReleaseNameWithRuntime}."));
+            }
 
             SymlinkError? symlinkWarning = null;
             if (setAsDefault)
             {
                 progress.Report(new OperationProgress<InstallationStage>(InstallationStage.SettingDefault, "Setting as default version..."));
-                var symlinkTargetPath = Path.Combine(extractPath, godotRelease.ExecName);
-                var symlinkResult = hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath);
+                var installationKey = InstallationRegistry.CreateKey(godotRelease.ReleaseNameWithRuntime, godotRelease.PlatformString);
+                if (installationRegistry.SetDefault(installationKey) is Result<Unit, InstallationRegistryError>.Failure(var defaultError))
+                {
+                    logger.LogError("Failed to set default installation {InstallationKey}: {Error}", installationKey, defaultError);
+                    return new Result<InstallationOutcome, InstallationError>.Failure(
+                        new InstallationError.Failed($"Unable to set default installation for {godotRelease.ReleaseNameWithRuntime}."));
+                }
 
-                switch (symlinkResult)
+                var fgvmExecutablePath = Path.GetFullPath(System.Environment.ProcessPath ?? System.Environment.GetCommandLineArgs().First());
+                if (hostSystem.EnsureShim(fgvmExecutablePath) is Result<Unit, ShimError>.Failure(var shimError))
+                {
+                    logger.LogWarning("Failed to update shim: {Error}", shimError);
+                }
+
+                var symlinkTargetPath = Path.Combine(extractPath, godotRelease.ExecName);
+                switch (hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath))
                 {
                     case Result<Unit, SymlinkError>.Success:
                         break;
-                    case Result<Unit, SymlinkError>.Failure failure:
-                        logger.LogError("Failed to create symlink: {Error}", failure.Error);
-                        hostSystem.RemoveSymbolicLinks();
-                        symlinkWarning = failure.Error;
+                    case Result<Unit, SymlinkError>.Failure(var symlinkError):
+                        logger.LogWarning("Failed to refresh Godot symlink: {Error}", symlinkError);
+                        symlinkWarning = symlinkError;
                         break;
                     default:
                         throw new InvalidOperationException("Unexpected Result type");
@@ -230,19 +258,17 @@ public class InstallationService(
             logger.LogError("User cancelled installation");
             throw;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException or CryptographicException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException
+                                      or CryptographicException)
         {
-            if (Directory.Exists(extractPath))
+            if (!string.IsNullOrWhiteSpace(extractPath) &&
+                hostSystem.DeleteDirectoryIfExists(extractPath, true) is Result<Unit, FileOperationError>.Failure(var cleanupError))
             {
-                try
-                {
-                    Directory.Delete(extractPath, true);
-                    logger.LogError("Removing {ExtractPath} due to error: {Message}", extractPath, e.Message);
-                }
-                catch (Exception cleanupException) when (cleanupException is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-                {
-                    logger.LogWarning("Failed to remove {ExtractPath} after installation error: {Message}", extractPath, cleanupException.Message);
-                }
+                logger.LogWarning("Failed to remove {ExtractPath} after installation error: {Error}", extractPath, cleanupError);
+            }
+            else if (!string.IsNullOrWhiteSpace(extractPath))
+            {
+                logger.LogError("Removing {ExtractPath} due to error: {Message}", extractPath, e.Message);
             }
 
             logger.LogError("Error downloading and installing Godot {ReleaseNameWithRuntime}: {Message}", godotRelease.ReleaseNameWithRuntime, e.Message);
@@ -259,13 +285,17 @@ public class InstallationService(
         try
         {
             var releaseNamesResult = await FetchReleaseNames(cancellationToken);
-            if (releaseNamesResult is Result<string[], NetworkError>.Failure releaseNamesFailure)
+            if (releaseNamesResult is Result<string[], NetworkError>.Failure(var releaseNamesError))
             {
                 return new Result<InstallationOutcome, InstallationError>.Failure(
-                    new InstallationError.Failed($"Failed to fetch releases: {releaseNamesFailure.Error}"));
+                    new InstallationError.Failed($"Failed to fetch releases: {releaseNamesError}"));
             }
 
-            var releaseNames = ((Result<string[], NetworkError>.Success)releaseNamesResult).Value;
+            if (releaseNamesResult is not Result<string[], NetworkError>.Success(var releaseNames))
+            {
+                throw new InvalidOperationException("Unexpected Result type");
+            }
+
             Release? godotRelease;
             switch (releaseManager.ResolveReleaseQuery(query, releaseNames))
             {
@@ -285,13 +315,17 @@ public class InstallationService(
             if (godotRelease is null)
             {
                 var remoteReleaseNamesResult = await FetchReleaseNames(cancellationToken, ReleaseFetchMode.ForceRemote);
-                if (remoteReleaseNamesResult is Result<string[], NetworkError>.Failure remoteFailure)
+                if (remoteReleaseNamesResult is Result<string[], NetworkError>.Failure(var remoteError))
                 {
                     return new Result<InstallationOutcome, InstallationError>.Failure(
-                        new InstallationError.Failed($"Failed to fetch releases: {remoteFailure.Error}"));
+                        new InstallationError.Failed($"Failed to fetch releases: {remoteError}"));
                 }
 
-                var remoteReleaseNames = ((Result<string[], NetworkError>.Success)remoteReleaseNamesResult).Value;
+                if (remoteReleaseNamesResult is not Result<string[], NetworkError>.Success(var remoteReleaseNames))
+                {
+                    throw new InvalidOperationException("Unexpected Result type");
+                }
+
                 switch (releaseManager.ResolveReleaseQuery(query, remoteReleaseNames))
                 {
                     case Result<Release, QueryError>.Success(var release):
@@ -316,7 +350,8 @@ public class InstallationService(
         {
             throw;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException or CryptographicException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or ArgumentException
+                                      or CryptographicException)
         {
             logger.LogError("Installation failed for query {Query}: {Message}", string.Join(" ", query), e.Message);
             return new Result<InstallationOutcome, InstallationError>.Failure(
@@ -324,36 +359,30 @@ public class InstallationService(
         }
     }
 
-    private static InstallationError MapQueryError(QueryError error, string[] query) => error switch
-    {
-        QueryError.EmptyQuery => new InstallationError.InvalidQuery("Version query is required."),
-        QueryError.InvalidQuery invalid => new InstallationError.InvalidQuery(invalid.Message),
-        QueryError.NotFound notFound => new InstallationError.NotFound(notFound.Query),
-        _ => new InstallationError.NotFound(string.Join(" ", query))
-    };
-
     /// <inheritdoc />
     public async Task<Result<string[], NetworkError>> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache)
     {
         var releaseIdsResult = await releaseCatalog.ReadReleaseIds(fetchMode, cancellationToken);
-        var releaseIds = releaseIdsResult switch
+        if (releaseIdsResult is Result<string[], NetworkError>.Failure(var error))
         {
-            Result<string[], NetworkError>.Success success => success.Value,
-            Result<string[], NetworkError>.Failure failure => null,
-            _ => throw new InvalidOperationException("Unexpected Result type")
-        };
+            return new Result<string[], NetworkError>.Failure(error);
+        }
 
-        if (releaseIds is null)
+        if (releaseIdsResult is not Result<string[], NetworkError>.Success(var releaseIds))
         {
-            var failure = (Result<string[], NetworkError>.Failure)releaseIdsResult;
-            return new Result<string[], NetworkError>.Failure(failure.Error);
+            throw new InvalidOperationException("Unexpected Result type");
         }
 
         var sortedReleases = releaseIds
             .Select(name => releaseManager.CreateRelease($"{name}-standard"))
-            .OfType<Result<Release, ReleaseParseError>.Success>()
-            .Select(success => success.Value)
-            .OrderByDescending(r => r)
+            .Select(result => result switch
+            {
+                Result<Release, ReleaseParseError>.Success(var release) => release,
+                Result<Release, ReleaseParseError>.Failure => null,
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            })
+            .OfType<Release>()
+            .OrderByDescending(release => release)
             .Select(r => r.ReleaseName)
             .ToArray();
 
@@ -365,6 +394,14 @@ public class InstallationService(
 
         return new Result<string[], NetworkError>.Success(sortedReleases);
     }
+
+    private static InstallationError MapQueryError(QueryError error, string[] query) => error switch
+    {
+        QueryError.EmptyQuery => new InstallationError.InvalidQuery("Version query is required."),
+        QueryError.InvalidQuery invalid => new InstallationError.InvalidQuery(invalid.Message),
+        QueryError.NotFound notFound => new InstallationError.NotFound(notFound.Query),
+        _ => new InstallationError.NotFound(string.Join(" ", query))
+    };
 
     private static async Task<string> CalculateChecksum(MemoryStream memStream, CancellationToken cancellationToken)
     {
@@ -403,5 +440,4 @@ public class InstallationService(
         logger.LogInformation("Checksum verified successfully for {FileName}", zipFileName);
         return new Result<ChecksumVerification, InstallationError>.Success(new ChecksumVerification.Verified());
     }
-
 }

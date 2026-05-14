@@ -1,4 +1,3 @@
-using Fgvm.Godot;
 using Fgvm.Types;
 
 namespace Fgvm.Tests.Godot.ReleaseManager;

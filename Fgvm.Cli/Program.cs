@@ -16,7 +16,6 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Net.Http.Headers;
 using ZLogger;
-using static ConsoleAppFramework.ConsoleApp;
 
 namespace Fgvm.Cli;
 
@@ -68,6 +67,7 @@ public class Program
         // Register core services
         services.AddSingleton<IReleaseCatalog, ReleaseCatalog>();
         services.AddSingleton<IReleaseManager, ReleaseManager>();
+        services.AddSingleton<IInstallationRegistry, InstallationRegistry>();
         services.AddSingleton<IInstallationService, InstallationService>();
         services.AddSingleton<IProjectManager, ProjectManager>();
         services.AddSingleton<IInstallationOrchestrator, InstallationOrchestrator>();
@@ -78,32 +78,46 @@ public class Program
         // Progress handling
         services.AddSingleton<IProgressHandler<InstallationStage>, SpectreProgressHandler<InstallationStage>>();
 
-        // Ensure we have a writeable directory
-        Directory.CreateDirectory(pathService.BinPath);
-
         // Lazy configuration - only load and validate when first accessed
-        services.AddSingleton<Lazy<IConfiguration>>(_ => new Lazy<IConfiguration>(() =>
+        services.AddSingleton<Lazy<IConfiguration>>(sp => new Lazy<IConfiguration>(() =>
         {
+            var hostSystem = sp.GetRequiredService<IHostSystem>();
+
             // Ensure config file exists before loading
-            if (!File.Exists(pathService.ConfigPath))
+            var configExists = hostSystem.FileExists(pathService.ConfigPath);
+            if (configExists is Result<bool, FileOperationError>.Failure(var existsError))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(pathService.ConfigPath)!);
-                File.WriteAllText(pathService.ConfigPath, "# FGVM Configuration File\n");
+                throw new ConfigurationException($"Unable to read configuration path: {existsError}");
+            }
+
+            if (configExists is Result<bool, FileOperationError>.Success { Value: false })
+            {
+                if (Path.GetDirectoryName(pathService.ConfigPath) is { } directory &&
+                    hostSystem.CreateDirectory(directory) is Result<Unit, FileOperationError>.Failure(var createDirectoryError))
+                {
+                    throw new ConfigurationException($"Unable to create configuration directory: {createDirectoryError}");
+                }
+
+                if (hostSystem.WriteAllText(pathService.ConfigPath, "# FGVM Configuration File\n") is Result<Unit, FileOperationError>.Failure(var writeError))
+                {
+                    throw new ConfigurationException($"Unable to create configuration file: {writeError}");
+                }
             }
 
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddIniFile(pathService.ConfigPath, false, true)
+                .AddEnvironmentVariables(prefix: "FGVM_")
                 .Build();
 
-            if (Configuration.ValidateConfiguration(configuration) is Result<Unit, ConfigError>.Failure failure)
+            if (Configuration.ValidateConfiguration(configuration) is Result<Unit, ConfigError>.Failure(var error))
             {
-                throw new ConfigurationException(failure.Error switch
+                throw new ConfigurationException(error switch
                 {
                     ConfigError.InvalidGitHubTokenPrefix =>
-                        "GitHub token should start with 'ghp_', 'gho_', 'ghu_', 'ghs_', or 'ghr_' prefix",
+                        "GitHub token should start with 'github_pat_', 'ghp_', 'gho_', 'ghu_', 'ghs_', or 'ghr_' prefix",
                     ConfigError.InvalidGitHubTokenLength =>
-                        "GitHub token should be exactly 40 characters long",
+                        "GitHub token length does not match a supported token format",
                     ConfigError.InvalidGitHubTokenCharacters =>
                         "GitHub token contains invalid characters",
                     _ => "Invalid configuration"
@@ -115,9 +129,14 @@ public class Program
 
         using var serviceProvider = services.BuildServiceProvider();
 
+        if (serviceProvider.GetRequiredService<IHostSystem>().CreateDirectory(pathService.BinPath) is Result<Unit, FileOperationError>.Failure(var binError))
+        {
+            throw new InvalidOperationException($"Unable to create fgvm bin directory: {binError}");
+        }
+
         ConsoleApp.ServiceProvider = serviceProvider;
 
-        var app = Create();
+        var app = ConsoleApp.Create();
 
         app.Add<GodotCommand>();
         app.Add<SetCommand>();

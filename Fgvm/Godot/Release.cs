@@ -104,14 +104,6 @@ public sealed record Release : IComparable<Release>
             return majorComparison;
         }
 
-        // Prefer stable release types before higher minor/patch versions
-        // This ensures: 4.2-stable > 4.3-beta1 and 4.5-stable > 4.5.1-rc1
-        var typeComparison = Comparer<ReleaseType?>.Default.Compare(Type, other.Type);
-        if (typeComparison != 0)
-        {
-            return typeComparison;
-        }
-
         var minorComparison = Minor.CompareTo(other.Minor);
         if (minorComparison != 0)
         {
@@ -122,6 +114,12 @@ public sealed record Release : IComparable<Release>
         if (patchComparison != 0)
         {
             return patchComparison;
+        }
+
+        var typeComparison = Comparer<ReleaseType?>.Default.Compare(Type, other.Type);
+        if (typeComparison != 0)
+        {
+            return typeComparison;
         }
 
         var runtimeEnvironmentComparison = RuntimeEnvironment.CompareTo(other.RuntimeEnvironment);

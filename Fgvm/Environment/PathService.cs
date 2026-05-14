@@ -21,17 +21,32 @@ public interface IPathService
     string ReleasesPath { get; }
 
     /// <summary>
+    ///     Path to the installation registry file.
+    /// </summary>
+    string InstallationsPath { get; }
+
+    /// <summary>
+    ///     Path to the target-aware installations directory.
+    /// </summary>
+    string InstallationsDirectoryPath { get; }
+
+    /// <summary>
     ///     Path to the bin directory.
     /// </summary>
     string BinPath { get; }
 
     /// <summary>
-    ///     Path to the Godot symlink.
+    ///     Path to the stable command shim.
+    /// </summary>
+    string ShimPath { get; }
+
+    /// <summary>
+    ///     Path to the selected executable symlink used outside macOS.
     /// </summary>
     string SymlinkPath { get; }
 
     /// <summary>
-    ///     Path to the macOS Godot.app symlink.
+    ///     Path to the selected macOS Godot.app symlink.
     /// </summary>
     string MacAppSymlinkPath { get; }
 
@@ -58,13 +73,26 @@ public sealed class PathService : IPathService
     public string ReleasesPath => Path.Combine(RootPath, "releases.json");
 
     /// <inheritdoc />
+    public string InstallationsPath => Path.Combine(RootPath, "installations.json");
+
+    /// <inheritdoc />
+    public string InstallationsDirectoryPath => Path.Combine(RootPath, "installations");
+
+    /// <inheritdoc />
     public string BinPath => Path.Combine(RootPath, "bin");
 
     /// <inheritdoc />
-    public string SymlinkPath => Path.Combine(BinPath, "godot");
+    public string ShimPath => OperatingSystem.IsWindows()
+        ? Path.Combine(BinPath, "godot.cmd")
+        : Path.Combine(BinPath, "godot");
 
     /// <inheritdoc />
-    public string MacAppSymlinkPath => Path.Combine(BinPath, "Godot.app");
+    public string SymlinkPath => OperatingSystem.IsWindows()
+        ? Path.Combine(RootPath, "Godot.exe")
+        : Path.Combine(RootPath, "Godot");
+
+    /// <inheritdoc />
+    public string MacAppSymlinkPath => Path.Combine(RootPath, "Godot.app");
 
     /// <inheritdoc />
     public string LogPath => Path.Combine(RootPath, "fgvm.log");
