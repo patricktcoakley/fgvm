@@ -1,9 +1,14 @@
-name: Test All Platforms
+name: Native E2E
 permissions:
   contents: read
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    types:
+      - auto_merge_enabled
   merge_group:
     types: [checks_requested]
 
@@ -36,3 +41,16 @@ jobs:
 
       - name: Run Native E2E Tests
         run: dotnet test Fgvm.Tests.EndToEnd --configuration Release --no-build --verbosity normal --logger "console;verbosity=detailed"
+
+  required:
+    name: Native E2E
+    runs-on: ubuntu-24.04
+    needs: test
+    if: ${{ always() }}
+    steps:
+      - name: Verify E2E Matrix Result
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "::error::Native E2E matrix finished with result '${{ needs.test.result }}'."
+            exit 1
+          fi
