@@ -51,67 +51,45 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
 
         // 1. Check for `.fgvm-version` file first (user override)
         var versionFile = Path.Combine(targetDir, VersionFile);
-        var versionFileExists = hostSystem.FileExists(versionFile);
-        if (versionFileExists is Result<bool, FileOperationError>.Failure(var versionExistsError))
+        switch (hostSystem.FileExists(versionFile))
         {
-            return new Result<ProjectLookup<Release>, ProjectError>.Failure(versionExistsError switch
-            {
-                FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.IoFailure error => new ProjectError.ReadFailed(error.Path),
-                var error => new ProjectError.ReadFailed(error.Path)
-            });
-        }
-
-        if (versionFileExists is Result<bool, FileOperationError>.Success { Value: true })
-        {
-            var contentResult = hostSystem.ReadAllText(versionFile);
-            if (contentResult is Result<string, FileOperationError>.Failure(var readError))
-            {
-                return new Result<ProjectLookup<Release>, ProjectError>.Failure(readError switch
+            case Result<bool, FileOperationError>.Failure(var versionExistsError):
+                return new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(versionExistsError, targetDir));
+            case Result<bool, FileOperationError>.Success { Value: true }:
+                switch (hostSystem.ReadAllText(versionFile))
                 {
-                    FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                    FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                    FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                    FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                    FileOperationError.IoFailure error => new ProjectError.ReadFailed(error.Path),
-                    var error => new ProjectError.ReadFailed(error.Path)
-                });
-            }
+                    case Result<string, FileOperationError>.Failure(var readError):
+                        return new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(readError, targetDir));
+                    case Result<string, FileOperationError>.Success(var contentValue):
+                        var content = contentValue.Trim();
+                        if (!string.IsNullOrEmpty(content))
+                        {
+                            return CreateReleaseLookup(content);
+                        }
 
-            if (contentResult is not Result<string, FileOperationError>.Success(var contentValue))
-            {
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
+                }
+
+                break;
+            case Result<bool, FileOperationError>.Success:
+                break;
+            default:
                 throw new InvalidOperationException("Unexpected Result type");
-            }
-
-            var content = contentValue.Trim();
-            if (!string.IsNullOrEmpty(content))
-            {
-                return CreateReleaseLookup(content);
-            }
         }
 
         // 2. Check `project.godot` file for automatic detection
         var projectFile = Path.Combine(targetDir, ProjectFile);
-        var projectFileExists = hostSystem.FileExists(projectFile);
-        if (projectFileExists is Result<bool, FileOperationError>.Failure(var projectExistsError))
+        return hostSystem.FileExists(projectFile) switch
         {
-            return new Result<ProjectLookup<Release>, ProjectError>.Failure(projectExistsError switch
-            {
-                FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.IoFailure error => new ProjectError.ReadFailed(error.Path),
-                var error => new ProjectError.ReadFailed(error.Path)
-            });
-        }
-
-        return projectFileExists is Result<bool, FileOperationError>.Success { Value: true }
-            ? ParseProjectGodot(projectFile)
-            : new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
+            Result<bool, FileOperationError>.Failure(var projectExistsError) =>
+                new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(projectExistsError, targetDir)),
+            Result<bool, FileOperationError>.Success { Value: true } => ParseProjectGodot(projectFile),
+            Result<bool, FileOperationError>.Success =>
+                new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing()),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
     }
 
     /// <inheritdoc />
@@ -119,23 +97,16 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
     {
         var targetDir = directory ?? Directory.GetCurrentDirectory();
         var projectFile = Path.Combine(targetDir, ProjectFile);
-        var projectFileExists = hostSystem.FileExists(projectFile);
-        if (projectFileExists is Result<bool, FileOperationError>.Failure(var projectExistsError))
+        return hostSystem.FileExists(projectFile) switch
         {
-            return new Result<ProjectLookup<string>, ProjectError>.Failure(projectExistsError switch
-            {
-                FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.IoFailure error => new ProjectError.ReadFailed(error.Path),
-                var error => new ProjectError.ReadFailed(error.Path)
-            });
-        }
-
-        return projectFileExists is Result<bool, FileOperationError>.Success { Value: true }
-            ? new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Found(projectFile))
-            : new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Missing());
+            Result<bool, FileOperationError>.Failure(var projectExistsError) =>
+                new Result<ProjectLookup<string>, ProjectError>.Failure(ToProjectReadError(projectExistsError, targetDir)),
+            Result<bool, FileOperationError>.Success { Value: true } =>
+                new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Found(projectFile)),
+            Result<bool, FileOperationError>.Success =>
+                new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Missing()),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
     }
 
     /// <inheritdoc />
@@ -149,15 +120,7 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
             Result<Unit, FileOperationError>.Success =>
                 new Result<Unit, ProjectError>.Success(Unit.Value),
             Result<Unit, FileOperationError>.Failure(var fileError) =>
-                new Result<Unit, ProjectError>.Failure(fileError switch
-                {
-                    FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                    FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                    FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                    FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                    FileOperationError.IoFailure error => new ProjectError.WriteFailed(error.Path),
-                    var error => new ProjectError.WriteFailed(error.Path)
-                }),
+                new Result<Unit, ProjectError>.Failure(ToProjectWriteError(fileError, targetDir)),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
     }
@@ -169,48 +132,30 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
 
         // Only check for `.fgvm-version` file (user override)
         var versionFile = Path.Combine(targetDir, VersionFile);
-        var versionFileExists = hostSystem.FileExists(versionFile);
-        if (versionFileExists is Result<bool, FileOperationError>.Failure(var existsError))
+        switch (hostSystem.FileExists(versionFile))
         {
-            return new Result<ProjectLookup<Release>, ProjectError>.Failure(existsError switch
-            {
-                FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.IoFailure error => new ProjectError.ReadFailed(error.Path),
-                var error => new ProjectError.ReadFailed(error.Path)
-            });
+            case Result<bool, FileOperationError>.Failure(var existsError):
+                return new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(existsError, targetDir));
+            case Result<bool, FileOperationError>.Success { Value: false }:
+                return new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
+            case Result<bool, FileOperationError>.Success:
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
-        if (versionFileExists is not Result<bool, FileOperationError>.Success { Value: true })
+        switch (hostSystem.ReadAllText(versionFile))
         {
-            return new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
+            case Result<string, FileOperationError>.Failure(var readError):
+                return new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(readError, targetDir));
+            case Result<string, FileOperationError>.Success(var contentValue):
+                var content = contentValue.Trim();
+                return string.IsNullOrEmpty(content)
+                    ? new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing())
+                    : CreateReleaseLookup(content);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-
-        var contentResult = hostSystem.ReadAllText(versionFile);
-        if (contentResult is Result<string, FileOperationError>.Failure(var readError))
-        {
-            return new Result<ProjectLookup<Release>, ProjectError>.Failure(readError switch
-            {
-                FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.IoFailure error => new ProjectError.ReadFailed(error.Path),
-                var error => new ProjectError.ReadFailed(error.Path)
-            });
-        }
-
-        if (contentResult is not Result<string, FileOperationError>.Success(var contentValue))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
-
-        var content = contentValue.Trim();
-        return string.IsNullOrEmpty(content)
-            ? new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing())
-            : CreateReleaseLookup(content);
     }
 
     /// <summary>
@@ -237,24 +182,17 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
 
     private Result<ProjectLookup<Release>, ProjectError> ParseProjectGodot(string projectFilePath)
     {
-        var contentResult = hostSystem.ReadAllText(projectFilePath);
-        if (contentResult is Result<string, FileOperationError>.Failure(var readError))
+        string content;
+        switch (hostSystem.ReadAllText(projectFilePath))
         {
-            var targetDir = Path.GetDirectoryName(projectFilePath) ?? projectFilePath;
-            return new Result<ProjectLookup<Release>, ProjectError>.Failure(readError switch
-            {
-                FileOperationError.PermissionDenied error => new ProjectError.PermissionDenied(error.Path),
-                FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
-                FileOperationError.InvalidPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.UnsupportedPath error => new ProjectError.InvalidPath(error.Path),
-                FileOperationError.IoFailure error => new ProjectError.ReadFailed(error.Path),
-                var error => new ProjectError.ReadFailed(error.Path)
-            });
-        }
-
-        if (contentResult is not Result<string, FileOperationError>.Success(var content))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<string, FileOperationError>.Failure(var readError):
+                var targetDir = Path.GetDirectoryName(projectFilePath) ?? projectFilePath;
+                return new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(readError, targetDir));
+            case Result<string, FileOperationError>.Success(var contentValue):
+                content = contentValue;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -311,6 +249,26 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
                 new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.InvalidVersion(version)),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
+
+    private static ProjectError ToProjectReadError(FileOperationError error, string targetDir) => error switch
+    {
+        FileOperationError.PermissionDenied permissionDenied => new ProjectError.PermissionDenied(permissionDenied.Path),
+        FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
+        FileOperationError.InvalidPath invalidPath => new ProjectError.InvalidPath(invalidPath.Path),
+        FileOperationError.UnsupportedPath unsupportedPath => new ProjectError.InvalidPath(unsupportedPath.Path),
+        FileOperationError.IoFailure ioFailure => new ProjectError.ReadFailed(ioFailure.Path),
+        _ => new ProjectError.ReadFailed(error.Path)
+    };
+
+    private static ProjectError ToProjectWriteError(FileOperationError error, string targetDir) => error switch
+    {
+        FileOperationError.PermissionDenied permissionDenied => new ProjectError.PermissionDenied(permissionDenied.Path),
+        FileOperationError.NotFound => new ProjectError.DirectoryNotFound(targetDir),
+        FileOperationError.InvalidPath invalidPath => new ProjectError.InvalidPath(invalidPath.Path),
+        FileOperationError.UnsupportedPath unsupportedPath => new ProjectError.InvalidPath(unsupportedPath.Path),
+        FileOperationError.IoFailure ioFailure => new ProjectError.WriteFailed(ioFailure.Path),
+        _ => new ProjectError.WriteFailed(error.Path)
+    };
 
     /// <summary>
     ///     Extracts the Godot version from a config/features line.

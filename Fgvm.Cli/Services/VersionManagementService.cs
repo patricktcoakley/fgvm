@@ -328,9 +328,16 @@ public class VersionManagementService(
 
             var installationResult = await installationOrchestrator.InstallAsync(installQuery, cancellationToken: cancellationToken);
 
-            if (installationResult is not Result<InstallationOutcome, InstallationError>.Success(var installOutcome))
+            InstallationOutcome installOutcome;
+            switch (installationResult)
             {
-                return null;
+                case Result<InstallationOutcome, InstallationError>.Success(var outcome):
+                    installOutcome = outcome;
+                    break;
+                case Result<InstallationOutcome, InstallationError>.Failure:
+                    return null;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             // Re-check for a compatible version after installation
@@ -445,25 +452,23 @@ public class VersionManagementService(
 
     private Result<VersionResolutionOutcome, VersionResolutionError> ResolveDefaultVersion()
     {
-        var defaultResult = installationRegistry.GetDefault();
-        if (defaultResult is Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound))
+        Installation installation;
+        switch (installationRegistry.GetDefault())
         {
-            logger.ZLogError($"Tried to launch when no version is set.");
-            console.MarkupLine(Messages.NoCurrentVersionSet);
+            case Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound):
+                logger.ZLogError($"Tried to launch when no version is set.");
+                console.MarkupLine(Messages.NoCurrentVersionSet);
 
-            return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
-                new VersionResolutionError.NotFound("No current version set"));
-        }
-
-        if (defaultResult is Result<Installation, InstallationRegistryError>.Failure(var error))
-        {
-            return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
-                new VersionResolutionError.Failed($"Unable to read default installation: {error}"));
-        }
-
-        if (defaultResult is not Result<Installation, InstallationRegistryError>.Success(var installation))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+                return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
+                    new VersionResolutionError.NotFound("No current version set"));
+            case Result<Installation, InstallationRegistryError>.Failure(var error):
+                return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
+                    new VersionResolutionError.Failed($"Unable to read default installation: {error}"));
+            case Result<Installation, InstallationRegistryError>.Success(var value):
+                installation = value;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         var release = CreateRelease(installation.ReleaseNameWithRuntime);
@@ -635,20 +640,25 @@ public class VersionManagementService(
 
         // Use the exact version with runtime as the install query
         string[] installQuery = [projectRelease.ReleaseNameWithRuntime];
-        var installedRelease =
-            await installationService.InstallByQueryAsync(installQuery, new Progress<OperationProgress<InstallationStage>>(), cancellationToken: cancellationToken);
-
-        if (installedRelease is not Result<InstallationOutcome, InstallationError>.Success(var installOutcome))
+        InstallationOutcome installOutcome;
+        switch (await installationService.InstallByQueryAsync(installQuery, new Progress<OperationProgress<InstallationStage>>(),
+                    cancellationToken: cancellationToken))
         {
-            console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
+            case Result<InstallationOutcome, InstallationError>.Success(var outcome):
+                installOutcome = outcome;
+                break;
+            case Result<InstallationOutcome, InstallationError>.Failure:
+                console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
 
-            if (installed.Length <= 0)
-            {
-                throw new InvalidOperationException("No versions installed. Install a version first with: fgvm install <version>");
-            }
+                if (installed.Length <= 0)
+                {
+                    throw new InvalidOperationException("No versions installed. Install a version first with: fgvm install <version>");
+                }
 
-            console.MarkupLine(Messages.ChooseFromInstalled);
-            return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+                console.MarkupLine(Messages.ChooseFromInstalled);
+                return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         var releaseNameWithRuntime = installOutcome switch
@@ -682,48 +692,42 @@ public class VersionManagementService(
         console.MarkupLine(Messages.Installing(string.Join(" ", query)));
 
         // Try to install
-        var installedRelease =
-            await installationService.InstallByQueryAsync(query, new Progress<OperationProgress<InstallationStage>>(), cancellationToken: cancellationToken);
-
-        if (installedRelease is not Result<InstallationOutcome, InstallationError>.Success(var installOutcome))
+        InstallationOutcome installOutcome;
+        switch (await installationService.InstallByQueryAsync(query, new Progress<OperationProgress<InstallationStage>>(),
+                    cancellationToken: cancellationToken))
         {
-            console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
-
-            if (installedRelease is Result<InstallationOutcome, InstallationError>.Failure(InstallationError.NotFound notFound))
-            {
+            case Result<InstallationOutcome, InstallationError>.Success(var outcome):
+                installOutcome = outcome;
+                break;
+            case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.NotFound notFound):
+                console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
                 throw new ArgumentException(Messages.InstallationNotFound(notFound.Version, hostSystem));
-            }
-
-            if (installedRelease is Result<InstallationOutcome, InstallationError>.Failure(InstallationError.InvalidQuery invalidQuery))
-            {
+            case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.InvalidQuery invalidQuery):
+                console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
                 throw new ArgumentException(invalidQuery.Message);
-            }
+            case Result<InstallationOutcome, InstallationError>.Failure:
+                console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
 
-            if (installed.Length <= 0)
-            {
-                throw new InvalidOperationException(Messages.InstallationFailedNoVersions);
-            }
+                if (installed.Length <= 0)
+                {
+                    throw new InvalidOperationException(Messages.InstallationFailedNoVersions);
+                }
 
-            console.MarkupLine(Messages.ChooseFromInstalled);
-            return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+                console.MarkupLine(Messages.ChooseFromInstalled);
+                return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         // Re-check installed versions after installation
         var updatedInstalled = ListInstallations().ToArray();
-        string? foundVersion;
-        switch (releaseManager.ResolveReleaseQuery(query, updatedInstalled))
+        var foundVersion = releaseManager.ResolveReleaseQuery(query, updatedInstalled) switch
         {
-            case Result<Release, QueryError>.Success(var release):
-                foundVersion = release.ReleaseNameWithRuntime;
-                break;
-            case Result<Release, QueryError>.Failure(QueryError.NotFound):
-                foundVersion = null;
-                break;
-            case Result<Release, QueryError>.Failure(var error):
-                throw new ArgumentException(GetQueryErrorMessage(error, query));
-            default:
-                throw new InvalidOperationException("Unexpected Result type");
-        }
+            Result<Release, QueryError>.Success(var release) => release.ReleaseNameWithRuntime,
+            Result<Release, QueryError>.Failure(QueryError.NotFound) => null,
+            Result<Release, QueryError>.Failure(var error) => throw new ArgumentException(GetQueryErrorMessage(error, query)),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
 
         if (foundVersion == null)
         {

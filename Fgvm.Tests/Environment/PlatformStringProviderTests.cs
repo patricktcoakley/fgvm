@@ -132,4 +132,30 @@ public class PlatformStringProviderTests
         Assert.Equal(os, unsupported.OS);
         Assert.Equal(Architecture.X64, unsupported.Architecture);
     }
+
+    [Theory]
+    [InlineData(null, "unknown")]
+    [InlineData("mono_macos.universal", "macos.universal")]
+    [InlineData("mono_osx.universal", "osx.universal")]
+    [InlineData("mono_osx.64", "osx.64")]
+    [InlineData("mono_osx64", "osx.64")]
+    [InlineData("mono_linux_x86_64", "linux.x86_64")]
+    [InlineData("mono_linux_x86_32", "linux.x86_32")]
+    [InlineData("mono_linux_arm32", "linux.arm32")]
+    [InlineData("mono_linux_arm64", "linux.arm64")]
+    [InlineData("mono_x11_64", "x11.64")]
+    [InlineData("mono_x11_32", "x11.32")]
+    [InlineData("mono_windows_arm64", "windows_arm64")]
+    [InlineData("mono_win64", "win64")]
+    [InlineData("mono_win32", "win32")]
+    [InlineData("windows_arm64.exe", "windows_arm64")]
+    [InlineData("win64.exe", "win64")]
+    [InlineData("linux_x86_64", "linux.x86_64")]
+    [InlineData("macos.universal", "macos.universal")]
+    public void GetCatalogTargetId_NormalizesPlatformString(string? platformString, string expected)
+    {
+        var targetId = PlatformStringProvider.GetCatalogTargetId(platformString);
+
+        Assert.Equal(expected, targetId);
+    }
 }

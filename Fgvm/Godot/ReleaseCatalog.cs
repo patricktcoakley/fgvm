@@ -85,43 +85,42 @@ public sealed class ReleaseCatalog(
     public async Task<Result<ReleaseArtifact, NetworkError>> FindOrHydrateArtifact(Release release, CancellationToken cancellationToken)
     {
         var manifestResult = await ReadCatalogOrRebuild(cancellationToken);
-        if (manifestResult is Result<ReleaseCatalogManifest, NetworkError>.Failure(var catalogError))
+        switch (manifestResult)
         {
-            return new Result<ReleaseArtifact, NetworkError>.Failure(catalogError);
-        }
+            case Result<ReleaseCatalogManifest, NetworkError>.Failure(var catalogError):
+                return new Result<ReleaseArtifact, NetworkError>.Failure(catalogError);
 
-        if (manifestResult is not Result<ReleaseCatalogManifest, NetworkError>.Success(var manifest))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
+            case Result<ReleaseCatalogManifest, NetworkError>.Success(var manifest)
+                when FindArtifact(manifest, release) is { } cached:
+                return new Result<ReleaseArtifact, NetworkError>.Success(cached);
 
-        if (FindArtifact(manifest, release) is { } cached)
-        {
-            return new Result<ReleaseArtifact, NetworkError>.Success(cached);
-        }
-
-        var remoteManifestResult = await downloadClient.GetReleaseManifest(release, cancellationToken);
-        switch (remoteManifestResult)
-        {
-            case Result<GodotReleaseManifest, NetworkError>.Success(var godotManifest) when godotManifest.Files.Count > 0:
-                var recordResult = await RecordReleaseManifest(manifest, godotManifest, release, cancellationToken);
-                return recordResult switch
+            case Result<ReleaseCatalogManifest, NetworkError>.Success(var manifest):
+                var remoteManifestResult = await downloadClient.GetReleaseManifest(release, cancellationToken);
+                switch (remoteManifestResult)
                 {
-                    Result<ReleaseCatalogManifest, NetworkError>.Success(var recorded) =>
-                        FindArtifact(recorded, release) is { } artifact
-                            ? new Result<ReleaseArtifact, NetworkError>.Success(artifact)
-                            : new Result<ReleaseArtifact, NetworkError>.Failure(new NetworkError.ConnectionFailure(
-                                $"No artifact found for {release.ReleaseNameWithRuntime} on target {GetCatalogTargetId(release)}")),
-                    Result<ReleaseCatalogManifest, NetworkError>.Failure(var error) =>
-                        new Result<ReleaseArtifact, NetworkError>.Failure(error),
-                    _ => throw new InvalidOperationException("Unexpected Result type")
-                };
+                    case Result<GodotReleaseManifest, NetworkError>.Success(var godotManifest) when godotManifest.Files.Count > 0:
+                        var recordResult = await RecordReleaseManifest(manifest, godotManifest, release, cancellationToken);
+                        return recordResult switch
+                        {
+                            Result<ReleaseCatalogManifest, NetworkError>.Success(var recorded) =>
+                                FindArtifact(recorded, release) is { } artifact
+                                    ? new Result<ReleaseArtifact, NetworkError>.Success(artifact)
+                                    : new Result<ReleaseArtifact, NetworkError>.Failure(new NetworkError.ConnectionFailure(
+                                        $"No artifact found for {release.ReleaseNameWithRuntime} on target {GetCatalogTargetId(release)}")),
+                            Result<ReleaseCatalogManifest, NetworkError>.Failure(var error) =>
+                                new Result<ReleaseArtifact, NetworkError>.Failure(error),
+                            _ => throw new InvalidOperationException("Unexpected Result type")
+                        };
 
-            case Result<GodotReleaseManifest, NetworkError>.Success:
-                return await HydrateFromSha512Sums(manifest, release, cancellationToken);
+                    case Result<GodotReleaseManifest, NetworkError>.Success:
+                        return await HydrateFromSha512Sums(manifest, release, cancellationToken);
 
-            case Result<GodotReleaseManifest, NetworkError>.Failure(var error):
-                return new Result<ReleaseArtifact, NetworkError>.Failure(error);
+                    case Result<GodotReleaseManifest, NetworkError>.Failure(var error):
+                        return new Result<ReleaseArtifact, NetworkError>.Failure(error);
+
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
+                }
 
             default:
                 throw new InvalidOperationException("Unexpected Result type");
@@ -168,13 +167,56 @@ public sealed class ReleaseCatalog(
         CancellationToken cancellationToken)
     {
         var release = Release.TryParse(godotManifest.Name) ?? fallbackRelease;
+        var artifacts = godotManifest.Files
+            .Select(file => new ReleaseCatalogArtifactEntry(file.FileName, file.Checksum))
+            .ToArray();
+
+        var shaResult = await downloadClient.GetSha512(fallbackRelease, cancellationToken);
+        switch (shaResult)
+        {
+            case Result<string, NetworkError>.Success(var sha512Sums):
+                artifacts = OverlaySha512Sums(artifacts, ParseSha512SumsContent(sha512Sums));
+                break;
+
+            case Result<string, NetworkError>.Failure(NetworkError.RequestFailure { StatusCode: 404 }):
+                logger.LogInformation(
+                    "No SHA512-SUMS.txt found for {ReleaseName}. Using release manifest checksums",
+                    fallbackRelease.ReleaseName);
+                break;
+
+            case Result<string, NetworkError>.Failure(var error):
+                logger.LogWarning(
+                    "Failed to overlay {ReleaseName} checksums from SHA512-SUMS.txt: {Error}. Using release manifest checksums",
+                    fallbackRelease.ReleaseName,
+                    error);
+                break;
+
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
+        }
+
         return await RecordArtifacts(
             manifest,
             release,
-            godotManifest.Files.Select(file => new ReleaseCatalogArtifactEntry(file.FileName, file.Checksum)),
+            artifacts,
             cancellationToken,
             godotManifest.ReleaseDate,
             godotManifest.GitReference);
+    }
+
+    private static ReleaseCatalogArtifactEntry[] OverlaySha512Sums(
+        IReadOnlyList<ReleaseCatalogArtifactEntry> artifacts,
+        IEnumerable<ReleaseCatalogArtifactEntry> sha512Sums)
+    {
+        var checksums = sha512Sums
+            .GroupBy(entry => entry.FileName, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last().Sha512, StringComparer.Ordinal);
+
+        return artifacts
+            .Select(entry => checksums.TryGetValue(entry.FileName, out var sha512)
+                ? entry with { Sha512 = sha512 }
+                : entry)
+            .ToArray();
     }
 
     private async Task<Result<ReleaseCatalogManifest, NetworkError>> RecordArtifacts(
@@ -228,45 +270,54 @@ public sealed class ReleaseCatalog(
         manifest.LastUpdated is { } lastUpdated &&
         DateTimeOffset.UtcNow - lastUpdated <= CacheTtl;
 
-    private async Task<Result<ReleaseCatalogRead, NetworkError>> ReadCatalogState(CancellationToken cancellationToken)
+    private Task<Result<ReleaseCatalogRead, NetworkError>> ReadCatalogState(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var existsResult = hostSystem.FileExists(pathService.ReleasesPath);
-        if (existsResult is Result<bool, FileOperationError>.Failure(var existsError))
+        switch (hostSystem.FileExists(pathService.ReleasesPath))
         {
-            return new Result<ReleaseCatalogRead, NetworkError>.Failure(
-                new NetworkError.CacheReadFailure(existsError));
+            case Result<bool, FileOperationError>.Failure(var existsError):
+                return Task.FromResult<Result<ReleaseCatalogRead, NetworkError>>(
+                    new Result<ReleaseCatalogRead, NetworkError>.Failure(
+                        new NetworkError.CacheReadFailure(existsError)));
+
+            case Result<bool, FileOperationError>.Success { Value: false }:
+                return Task.FromResult<Result<ReleaseCatalogRead, NetworkError>>(
+                    new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.MissingOrInvalid()));
+
+            case Result<bool, FileOperationError>.Success:
+                break;
+
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
-        if (existsResult is Result<bool, FileOperationError>.Success { Value: false })
+        switch (hostSystem.ReadAllText(pathService.ReleasesPath))
         {
-            return new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.MissingOrInvalid());
-        }
+            case Result<string, FileOperationError>.Failure(var readError):
+                return Task.FromResult<Result<ReleaseCatalogRead, NetworkError>>(
+                    new Result<ReleaseCatalogRead, NetworkError>.Failure(
+                        new NetworkError.CacheReadFailure(readError)));
 
-        var readResult = hostSystem.ReadAllText(pathService.ReleasesPath);
-        if (readResult is Result<string, FileOperationError>.Failure(var readError))
-        {
-            return new Result<ReleaseCatalogRead, NetworkError>.Failure(
-                new NetworkError.CacheReadFailure(readError));
-        }
+            case Result<string, FileOperationError>.Success(var json):
+                try
+                {
+                    var manifest = JsonSerializer.Deserialize(json, ReleaseCatalogJsonContext.Default.ReleaseCatalogManifest);
+                    var result = manifest is { LastUpdated: not null, Releases: not null }
+                        ? new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.Found(manifest))
+                        : new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.MissingOrInvalid());
 
-        if (readResult is not Result<string, FileOperationError>.Success(var json))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
+                    return Task.FromResult<Result<ReleaseCatalogRead, NetworkError>>(result);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Release catalog at {ReleasesPath} is invalid; rebuilding from remote", pathService.ReleasesPath);
+                    return Task.FromResult<Result<ReleaseCatalogRead, NetworkError>>(
+                        new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.MissingOrInvalid()));
+                }
 
-        try
-        {
-            var manifest = JsonSerializer.Deserialize(json, ReleaseCatalogJsonContext.Default.ReleaseCatalogManifest);
-            return manifest is { LastUpdated: not null, Releases: not null }
-                ? new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.Found(manifest))
-                : new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.MissingOrInvalid());
-        }
-        catch (JsonException ex)
-        {
-            logger.LogWarning(ex, "Release catalog at {ReleasesPath} is invalid; rebuilding from remote", pathService.ReleasesPath);
-            return new Result<ReleaseCatalogRead, NetworkError>.Success(new ReleaseCatalogRead.MissingOrInvalid());
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
     }
 
@@ -478,32 +529,12 @@ public sealed class ReleaseCatalog(
             ? RuntimeEnvironment.Mono.Name()
             : RuntimeEnvironment.Standard.Name();
 
-        targetId = NormalizeCatalogTargetId(rawTarget);
+        targetId = PlatformStringProvider.GetCatalogTargetId(rawTarget);
         return true;
     }
 
     private static string GetCatalogTargetId(Release release) =>
-        NormalizeCatalogTargetId(release.PlatformString);
-
-    private static string NormalizeCatalogTargetId(string? targetId) =>
-        targetId switch
-        {
-            null => "unknown",
-            "mono_macos.universal" => "macos.universal",
-            "mono_osx.universal" => "osx.universal",
-            "mono_osx.64" or "mono_osx64" => "osx.64",
-            "mono_linux_x86_64" => "linux.x86_64",
-            "mono_linux_x86_32" => "linux.x86_32",
-            "mono_linux_arm32" => "linux.arm32",
-            "mono_linux_arm64" => "linux.arm64",
-            "mono_x11_64" => "x11.64",
-            "mono_x11_32" => "x11.32",
-            "mono_windows_arm64" => "windows_arm64",
-            "mono_win64" => "win64",
-            "mono_win32" => "win32",
-            _ when targetId.EndsWith(".exe", StringComparison.Ordinal) => targetId[..^4],
-            _ => targetId
-        };
+        PlatformStringProvider.GetCatalogTargetId(release.PlatformString);
 }
 
 public sealed record ReleaseCatalogArtifactEntry(string FileName, string Sha512);

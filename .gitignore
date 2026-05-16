@@ -93,3 +93,5 @@ coverage/
 coverage.json
 .gdvm-publish/
 .fgvm-publish
+.fgvm-e2e-cli/
+.fgvm-e2e-fixtures/

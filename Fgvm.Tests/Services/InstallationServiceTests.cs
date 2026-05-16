@@ -91,18 +91,17 @@ public class InstallationServiceTests
     public async Task InstallReleaseAsync_MissingCatalogArtifact_ContinuesWithUnavailableChecksum()
     {
         var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
-        var release = Release.TryParse("3.2.1-stable-standard")! with
+        if (Release.TryParse("3.2.1-stable-standard") is not { } release)
         {
-            OS = OS.MacOS,
-            PlatformString = "osx.64"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { OS = OS.MacOS, PlatformString = "osx.64" };
 
         var releaseManager = new Mock<IReleaseManager>();
         releaseManager.Setup(x => x.GetZipFile(It.IsAny<string>(), release, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Result<HttpResponseMessage, NetworkError>.Success(new HttpResponseMessage
-            {
-                Content = new ByteArrayContent(CreateZipArchive())
-            }));
+            .ReturnsAsync(new Result<ZipDownload, NetworkError>.Success(
+                new ZipDownload(new MemoryStream(CreateZipArchive()))));
 
         var releaseCatalog = new Mock<IReleaseCatalog>();
         releaseCatalog.Setup(x => x.FindOrHydrateArtifact(release, It.IsAny<CancellationToken>()))
@@ -141,6 +140,10 @@ public class InstallationServiceTests
             var success = Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
             var installation = Assert.IsType<InstallationOutcome.NewInstallation>(success.Value);
             Assert.IsType<ChecksumVerification.Unavailable>(installation.ChecksumStatus);
+
+            var installedFile = Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release), "Godot");
+            Assert.Equal("fake executable", await File.ReadAllTextAsync(installedFile, CancellationToken.None));
+            releaseManager.Verify(x => x.GetZipFile(release.ZipFileName, release, It.IsAny<CancellationToken>()), Times.Once);
         }
         finally
         {
@@ -383,7 +386,11 @@ public class InstallationServiceTests
 
         foreach (var releaseId in releaseIds)
         {
-            var release = Release.TryParse($"{releaseId}-standard")!;
+            if (Release.TryParse($"{releaseId}-standard") is not { } release)
+            {
+                throw new InvalidOperationException("Expected release to parse.");
+            }
+
             releaseManager.Setup(x => x.CreateRelease($"{releaseId}-standard"))
                 .Returns(new Result<Release, ReleaseParseError>.Success(release));
         }

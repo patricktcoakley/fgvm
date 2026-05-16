@@ -24,6 +24,9 @@ public sealed class ReleaseCatalogTests : IDisposable
 
         var hostSystem = new HostSystem(new SystemInfo(), pathService.Object, NullLogger<HostSystem>.Instance);
         _catalog = new ReleaseCatalog(_downloadClient.Object, pathService.Object, hostSystem, NullLogger<ReleaseCatalog>.Instance);
+
+        _downloadClient.Setup(x => x.GetSha512(It.IsAny<Release>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string, NetworkError>.Failure(new NetworkError.RequestFailure("SHA512-SUMS.txt", 404)));
     }
 
     public void Dispose()
@@ -283,10 +286,12 @@ public sealed class ReleaseCatalogTests : IDisposable
             }
         });
 
-        var release = Release.TryParse("4.4-stable-standard")! with
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
         {
-            PlatformString = "macos.universal"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "macos.universal" };
 
         var result = await _catalog.FindOrHydrateArtifact(release, CancellationToken.None);
 
@@ -325,10 +330,12 @@ public sealed class ReleaseCatalogTests : IDisposable
             }
         });
 
-        var release = Release.TryParse("4.4-stable-mono")! with
+        if (Release.TryParse("4.4-stable-mono") is not { } release)
         {
-            PlatformString = "mono_macos.universal"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "mono_macos.universal" };
 
         _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
@@ -368,10 +375,12 @@ public sealed class ReleaseCatalogTests : IDisposable
             }
         });
 
-        var release = Release.TryParse("4.4-stable-mono")! with
+        if (Release.TryParse("4.4-stable-mono") is not { } release)
         {
-            PlatformString = "mono_macos.universal"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "mono_macos.universal" };
 
         _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
@@ -414,7 +423,67 @@ public sealed class ReleaseCatalogTests : IDisposable
         Assert.Equal(123, catalogRelease.ReleaseDate);
         Assert.Equal("abc123", catalogRelease.GitReference);
         Assert.Equal("templates", catalogRelease.Files["Godot_v4.4-stable_export_templates.tpz"].Sha512);
-        _downloadClient.Verify(x => x.GetSha512(It.IsAny<Release>(), It.IsAny<CancellationToken>()), Times.Never);
+        _downloadClient.Verify(x => x.GetSha512(release, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task FindOrHydrateArtifact_OverlaysManifestChecksumsFromSha512Sums()
+    {
+        var manifestHash = new string('a', 128);
+        var overlayHash = new string('b', 128);
+        var templateManifestHash = new string('c', 128);
+        var templateOverlayHash = new string('d', 128);
+        var extraHash = new string('e', 128);
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "macos.universal" };
+
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.4-stable"]));
+
+        _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
+            {
+                Name = "4.4-stable",
+                Version = "4.4",
+                Status = "stable",
+                Files =
+                [
+                    new GodotReleaseManifestFile
+                    {
+                        FileName = "Godot_v4.4-stable_macos.universal.zip",
+                        Checksum = manifestHash
+                    },
+                    new GodotReleaseManifestFile
+                    {
+                        FileName = "Godot_v4.4-stable_export_templates.tpz",
+                        Checksum = templateManifestHash
+                    }
+                ]
+            }));
+
+        _downloadClient.Setup(x => x.GetSha512(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string, NetworkError>.Success(
+                $"""
+                 {overlayHash}  Godot_v4.4-stable_macos.universal.zip
+                 {templateOverlayHash}  Godot_v4.4-stable_export_templates.tpz
+                 {extraHash}  Godot_v4.4-stable_x11.64.zip
+                 """));
+
+        var result = await _catalog.FindOrHydrateArtifact(release, CancellationToken.None);
+
+        var success = Assert.IsType<Result<ReleaseArtifact, NetworkError>.Success>(result);
+        Assert.Equal("Godot_v4.4-stable_macos.universal.zip", success.Value.FileName);
+        Assert.Equal(overlayHash, success.Value.Sha512);
+
+        var manifest = await ReadManifest();
+        var catalogRelease = manifest.Releases["4.4"]["stable"];
+        Assert.Equal(overlayHash, catalogRelease.Targets["macos.universal"]["standard"].Sha512);
+        Assert.Equal(templateOverlayHash, catalogRelease.Files["Godot_v4.4-stable_export_templates.tpz"].Sha512);
+        Assert.DoesNotContain("Godot_v4.4-stable_x11.64.zip", catalogRelease.Files.Keys);
     }
 
     [Fact]
@@ -422,10 +491,12 @@ public sealed class ReleaseCatalogTests : IDisposable
     {
         var hostHash = new string('a', 128);
         var otherHash = new string('b', 128);
-        var release = Release.TryParse("3.2-stable-standard")! with
+        if (Release.TryParse("3.2-stable-standard") is not { } release)
         {
-            PlatformString = "osx.64"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "osx.64" };
 
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["3.2-stable"]));
@@ -473,10 +544,12 @@ public sealed class ReleaseCatalogTests : IDisposable
     [Fact]
     public async Task FindOrHydrateArtifact_ReturnsInferredArtifactWhenEmptyManifestChecksumFallbackFails()
     {
-        var release = Release.TryParse("3.2.1-stable-standard")! with
+        if (Release.TryParse("3.2.1-stable-standard") is not { } release)
         {
-            PlatformString = "osx.64"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "osx.64" };
 
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["3.2.1-stable"]));
@@ -503,10 +576,12 @@ public sealed class ReleaseCatalogTests : IDisposable
     [Fact]
     public async Task FindOrHydrateArtifact_IngestsManifestFilesAndNormalizesWindowsExecutableTarget()
     {
-        var release = Release.TryParse("4.4-stable-standard")! with
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
         {
-            PlatformString = "win64.exe"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "win64.exe" };
 
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.4-stable"]));
@@ -551,10 +626,12 @@ public sealed class ReleaseCatalogTests : IDisposable
             }
         });
 
-        var release = Release.TryParse("4.4-stable-standard")! with
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
         {
-            PlatformString = "linux.x86_64"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "linux.x86_64" };
 
         _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
@@ -595,10 +672,12 @@ public sealed class ReleaseCatalogTests : IDisposable
             }
         });
 
-        var release = Release.TryParse("4.4-stable-standard")! with
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
         {
-            PlatformString = "macos.universal"
-        };
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "macos.universal" };
 
         _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest

@@ -50,7 +50,7 @@ public interface IHostSystem
     ///     Lists locally installed Godot versions.
     /// </summary>
     /// <returns>Installed release names, or a filesystem error.</returns>
-    Result<IReadOnlyList<string>, FileSystemError> ListInstallations();
+    Result<string[], FileSystemError> ListInstallations();
 
     /// <summary>
     ///     Checks whether fgvm can create symlinks on the current host.
@@ -616,8 +616,8 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
         var newLine = System.Environment.NewLine;
         var escapedFgvmPath = fgvmExecutablePath.Replace("\"", SystemInfo.CurrentOS == OS.Windows ? "\"\"" : "\\\"");
         var shimContent = SystemInfo.CurrentOS == OS.Windows
-            ? $"@echo off{newLine}REM {ShimMarker}{newLine}\"{escapedFgvmPath}\" godot -- %*{newLine}exit /b %ERRORLEVEL%{newLine}"
-            : $"#!/usr/bin/env sh{newLine}# {ShimMarker}{newLine}exec \"{escapedFgvmPath}\" godot -- \"$@\"{newLine}";
+            ? $"@echo off{newLine}REM {ShimMarker}{newLine}if \"%~1\"==\"\" ({newLine}  \"{escapedFgvmPath}\" godot{newLine}) else ({newLine}  \"{escapedFgvmPath}\" godot --args \"%*\"{newLine}){newLine}exit /b %ERRORLEVEL%{newLine}"
+            : $"#!/usr/bin/env sh{newLine}# {ShimMarker}{newLine}if [ \"$#\" -eq 0 ]; then{newLine}  exec \"{escapedFgvmPath}\" godot{newLine}else{newLine}  exec \"{escapedFgvmPath}\" godot --args \"$*\"{newLine}fi{newLine}";
 
         try
         {
@@ -891,7 +891,7 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
     }
 
     /// <inheritdoc />
-    public Result<IReadOnlyList<string>, FileSystemError> ListInstallations()
+    public Result<string[], FileSystemError> ListInstallations()
     {
         try
         {
@@ -910,23 +910,23 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
                 .Select(release => release.ReleaseNameWithRuntime)
                 .ToArray();
 
-            return new Result<IReadOnlyList<string>, FileSystemError>.Success(releases);
+            return new Result<string[], FileSystemError>.Success(releases);
         }
         catch (UnauthorizedAccessException)
         {
-            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.PermissionDenied(pathService.RootPath));
+            return new Result<string[], FileSystemError>.Failure(new FileSystemError.PermissionDenied(pathService.RootPath));
         }
         catch (DirectoryNotFoundException)
         {
-            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.DirectoryNotFound(pathService.RootPath));
+            return new Result<string[], FileSystemError>.Failure(new FileSystemError.DirectoryNotFound(pathService.RootPath));
         }
         catch (Exception ex) when (ex is IOException)
         {
-            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.EnumerationFailed(pathService.RootPath));
+            return new Result<string[], FileSystemError>.Failure(new FileSystemError.EnumerationFailed(pathService.RootPath));
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
         {
-            return new Result<IReadOnlyList<string>, FileSystemError>.Failure(new FileSystemError.InvalidPath(pathService.RootPath));
+            return new Result<string[], FileSystemError>.Failure(new FileSystemError.InvalidPath(pathService.RootPath));
         }
     }
 

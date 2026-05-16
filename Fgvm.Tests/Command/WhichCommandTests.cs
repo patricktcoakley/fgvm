@@ -19,7 +19,12 @@ public sealed class WhichCommandTests
         var registry = new Mock<IInstallationRegistry>();
         registry.Setup(x => x.GetDefault()).Returns(new Result<Installation, InstallationRegistryError>.Success(installation));
 
-        var release = Release.TryParse("4.5-stable-standard")! with { OS = OS.Linux, PlatformString = "linux.x86_64" };
+        if (Release.TryParse("4.5-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { OS = OS.Linux, PlatformString = "linux.x86_64" };
         var releaseManager = new Mock<IReleaseManager>();
         releaseManager.Setup(x => x.CreateRelease("4.5-stable-standard"))
             .Returns(new Result<Release, ReleaseParseError>.Success(release));

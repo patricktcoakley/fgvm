@@ -72,25 +72,25 @@ public sealed class RemoveCommand(
                 var installation = FindInstallation(version);
                 var removingDefault = IsDefaultInstallation(installation.Key);
                 var selectionPath = Path.Combine(pathService.RootPath, installation.RelativePath);
-                var directoryExists = hostSystem.DirectoryExists(selectionPath);
-                if (directoryExists is Result<bool, FileOperationError>.Failure(var existsError))
+                switch (hostSystem.DirectoryExists(selectionPath))
                 {
-                    throw new InvalidOperationException($"Unable to read installation path `{selectionPath}`: {existsError}");
-                }
+                    case Result<bool, FileOperationError>.Failure(var existsError):
+                        throw new InvalidOperationException($"Unable to read installation path `{selectionPath}`: {existsError}");
+                    case Result<bool, FileOperationError>.Success { Value: true }:
+                        if (hostSystem.DeleteDirectoryIfExists(selectionPath, true) is Result<Unit, FileOperationError>.Failure(var deleteError))
+                        {
+                            throw new InvalidOperationException($"Unable to remove installation `{selectionPath}`: {deleteError}");
+                        }
 
-                if (directoryExists is Result<bool, FileOperationError>.Success { Value: true })
-                {
-                    if (hostSystem.DeleteDirectoryIfExists(selectionPath, true) is Result<Unit, FileOperationError>.Failure(var deleteError))
-                    {
-                        throw new InvalidOperationException($"Unable to remove installation `{selectionPath}`: {deleteError}");
-                    }
-
-                    logger.ZLogInformation($"Removed installation: {version}");
-                    console.MarkupLine(Messages.SuccessfullyRemoved(selectionPath));
-                }
-                else
-                {
-                    logger.ZLogWarning($"Installation {version} does not exist at {selectionPath}, skipping removal.");
+                        logger.ZLogInformation($"Removed installation: {version}");
+                        console.MarkupLine(Messages.SuccessfullyRemoved(selectionPath));
+                        break;
+                    case Result<bool, FileOperationError>.Success { Value: false }:
+                    case null:
+                        logger.ZLogWarning($"Installation {version} does not exist at {selectionPath}, skipping removal.");
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
                 }
 
                 if (installationRegistry.Remove(installation.Key) is Result<Unit, InstallationRegistryError>.Failure(var removeError))

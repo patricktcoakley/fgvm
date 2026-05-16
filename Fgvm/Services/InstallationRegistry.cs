@@ -119,140 +119,116 @@ public sealed class InstallationRegistry(
     }
 
     /// <inheritdoc />
-    public Result<Installation, InstallationRegistryError> GetDefault()
-    {
-        var documentResult = LoadDocument();
-        if (documentResult is Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error))
+    public Result<Installation, InstallationRegistryError> GetDefault() =>
+        LoadDocument() switch
         {
-            return new Result<Installation, InstallationRegistryError>.Failure(error);
-        }
-
-        if (documentResult is not Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
-
-        return document.Default is { } key && document.Installations.TryGetValue(key, out var entry)
-            ? new Result<Installation, InstallationRegistryError>.Success(ToInstalledGodot(key, entry))
-            : new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound("default"));
-    }
+            Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document)
+                when document.Default is { } key && document.Installations.TryGetValue(key, out var entry) =>
+                new Result<Installation, InstallationRegistryError>.Success(ToInstalledGodot(key, entry)),
+            Result<InstallationRegistryDocument, InstallationRegistryError>.Success =>
+                new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound("default")),
+            Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error) =>
+                new Result<Installation, InstallationRegistryError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
 
     /// <inheritdoc />
     public Result<Unit, InstallationRegistryError> UpsertInstalled(Release release, string relativePath, DateTimeOffset? installedAt = null)
     {
         var key = CreateKey(release.ReleaseNameWithRuntime, release.PlatformString);
-        var documentResult = LoadDocument();
-        if (documentResult is Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error))
+        switch (LoadDocument())
         {
-            return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error):
+                return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document):
+                if (!IsSafeRelativePath(relativePath))
+                {
+                    return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.InvalidPath(relativePath));
+                }
+
+                var previous = document.Installations.GetValueOrDefault(key);
+                document.Installations[key] = new InstallationRegistryEntry
+                {
+                    Path = NormalizeRelativePath(relativePath),
+                    InstalledAt = previous?.InstalledAt ?? installedAt ?? DateTimeOffset.UtcNow,
+                    LastLaunchedAt = previous?.LastLaunchedAt
+                };
+
+                return WriteDocument(document);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-
-        if (documentResult is not Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
-
-        if (!IsSafeRelativePath(relativePath))
-        {
-            return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.InvalidPath(relativePath));
-        }
-
-        var previous = document.Installations.GetValueOrDefault(key);
-        document.Installations[key] = new InstallationRegistryEntry
-        {
-            Path = NormalizeRelativePath(relativePath),
-            InstalledAt = previous?.InstalledAt ?? installedAt ?? DateTimeOffset.UtcNow,
-            LastLaunchedAt = previous?.LastLaunchedAt
-        };
-
-        return WriteDocument(document);
     }
 
     /// <inheritdoc />
     public Result<Unit, InstallationRegistryError> SetDefault(string key)
     {
-        var documentResult = LoadDocument();
-        if (documentResult is Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error))
+        switch (LoadDocument())
         {
-            return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error):
+                return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document)
+                when !document.Installations.ContainsKey(key):
+                return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(key));
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document):
+                document.Default = key;
+                return WriteDocument(document);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-
-        if (documentResult is not Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
-
-        if (!document.Installations.ContainsKey(key))
-        {
-            return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(key));
-        }
-
-        document.Default = key;
-        return WriteDocument(document);
     }
 
     /// <inheritdoc />
     public Result<Unit, InstallationRegistryError> ClearDefault()
     {
-        var documentResult = LoadDocument();
-        if (documentResult is Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error))
+        switch (LoadDocument())
         {
-            return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error):
+                return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document):
+                document.Default = null;
+                return WriteDocument(document);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-
-        if (documentResult is not Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
-
-        document.Default = null;
-        return WriteDocument(document);
     }
 
     /// <inheritdoc />
     public Result<Unit, InstallationRegistryError> Remove(string key)
     {
-        var documentResult = LoadDocument();
-        if (documentResult is Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error))
+        switch (LoadDocument())
         {
-            return new Result<Unit, InstallationRegistryError>.Failure(error);
-        }
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error):
+                return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document):
+                document.Installations.Remove(key);
+                if (string.Equals(document.Default, key, StringComparison.Ordinal))
+                {
+                    document.Default = null;
+                }
 
-        if (documentResult is not Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+                return WriteDocument(document);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-
-        document.Installations.Remove(key);
-        if (string.Equals(document.Default, key, StringComparison.Ordinal))
-        {
-            document.Default = null;
-        }
-
-        return WriteDocument(document);
     }
 
     /// <inheritdoc />
     public Result<Unit, InstallationRegistryError> RecordLaunch(string key, DateTimeOffset? launchedAt = null)
     {
-        var documentResult = LoadDocument();
-        if (documentResult is Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error))
+        switch (LoadDocument())
         {
-            return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error):
+                return new Result<Unit, InstallationRegistryError>.Failure(error);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document)
+                when document.Installations.TryGetValue(key, out var entry):
+                entry.LastLaunchedAt = launchedAt ?? DateTimeOffset.UtcNow;
+                return WriteDocument(document);
+            case Result<InstallationRegistryDocument, InstallationRegistryError>.Success:
+                return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(key));
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-
-        if (documentResult is not Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
-
-        if (!document.Installations.TryGetValue(key, out var entry))
-        {
-            return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(key));
-        }
-
-        entry.LastLaunchedAt = launchedAt ?? DateTimeOffset.UtcNow;
-        return WriteDocument(document);
     }
 
     private Result<Installation, InstallationRegistryError> FindGeneratedInstallation(string key, InstallationRegistryDocument document) =>
@@ -270,26 +246,30 @@ public sealed class InstallationRegistry(
 
     private Result<InstallationRegistryDocument, InstallationRegistryError> LoadDocument()
     {
-        var existsResult = hostSystem.FileExists(pathService.InstallationsPath);
-        switch (existsResult)
+        switch (hostSystem.FileExists(pathService.InstallationsPath))
         {
             case Result<bool, FileOperationError>.Failure(var existsError):
                 return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
                     new InstallationRegistryError.ReadFailed(existsError));
             case Result<bool, FileOperationError>.Success { Value: false }:
                 return GenerateFromFileSystem(null);
+            case Result<bool, FileOperationError>.Success:
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
-        var readResult = hostSystem.ReadAllText(pathService.InstallationsPath);
-        if (readResult is Result<string, FileOperationError>.Failure(var readError))
+        string json;
+        switch (hostSystem.ReadAllText(pathService.InstallationsPath))
         {
-            return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
-                new InstallationRegistryError.ReadFailed(readError));
-        }
-
-        if (readResult is not Result<string, FileOperationError>.Success(var json))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<string, FileOperationError>.Failure(var readError):
+                return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
+                    new InstallationRegistryError.ReadFailed(readError));
+            case Result<string, FileOperationError>.Success(var content):
+                json = content;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         try
@@ -300,16 +280,17 @@ public sealed class InstallationRegistry(
                 return GenerateFromFileSystem(null);
             }
 
-            var validation = ValidateDocument(document);
-            if (validation is Result<RegistryValidation, FileOperationError>.Failure(var validationError))
+            RegistryValidation registryValidation;
+            switch (ValidateDocument(document))
             {
-                return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
-                    new InstallationRegistryError.ReadFailed(validationError));
-            }
-
-            if (validation is not Result<RegistryValidation, FileOperationError>.Success(var registryValidation))
-            {
-                throw new InvalidOperationException("Unexpected Result type");
+                case Result<RegistryValidation, FileOperationError>.Failure(var validationError):
+                    return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
+                        new InstallationRegistryError.ReadFailed(validationError));
+                case Result<RegistryValidation, FileOperationError>.Success(var validation):
+                    registryValidation = validation;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             if (registryValidation.NeedsFileSystemGeneration)
@@ -322,12 +303,14 @@ public sealed class InstallationRegistry(
                 return new Result<InstallationRegistryDocument, InstallationRegistryError>.Success(registryValidation.Document);
             }
 
-            if (WriteDocument(registryValidation.Document) is Result<Unit, InstallationRegistryError>.Failure(var writeError))
+            return WriteDocument(registryValidation.Document) switch
             {
-                return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(writeError);
-            }
-
-            return new Result<InstallationRegistryDocument, InstallationRegistryError>.Success(registryValidation.Document);
+                Result<Unit, InstallationRegistryError>.Failure(var writeError) =>
+                    new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(writeError),
+                Result<Unit, InstallationRegistryError>.Success =>
+                    new Result<InstallationRegistryDocument, InstallationRegistryError>.Success(registryValidation.Document),
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            };
         }
         catch (JsonException ex)
         {
@@ -353,15 +336,21 @@ public sealed class InstallationRegistry(
             }
 
             var fullPath = ResolvePath(entry.Path);
-            var directoryExists = hostSystem.DirectoryExists(fullPath);
-            if (directoryExists is Result<bool, FileOperationError>.Failure(var directoryError))
+            switch (hostSystem.DirectoryExists(fullPath))
             {
-                return new Result<RegistryValidation, FileOperationError>.Failure(directoryError);
+                case Result<bool, FileOperationError>.Failure(var directoryError):
+                    return new Result<RegistryValidation, FileOperationError>.Failure(directoryError);
+                case Result<bool, FileOperationError>.Success { Value: false }:
+                    needsGeneration = true;
+                    break;
+                case Result<bool, FileOperationError>.Success:
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
-            if (directoryExists is Result<bool, FileOperationError>.Success { Value: false })
+            if (needsGeneration)
             {
-                needsGeneration = true;
                 break;
             }
 
@@ -390,16 +379,17 @@ public sealed class InstallationRegistry(
     private Result<InstallationRegistryDocument, InstallationRegistryError> GenerateFromFileSystem(
         InstallationRegistryDocument? existingDocument)
     {
-        var scanResult = ScanInstallations(existingDocument);
-        if (scanResult is Result<InstallationRegistryDocument, FileOperationError>.Failure(var scanError))
+        InstallationRegistryDocument generated;
+        switch (ScanInstallations(existingDocument))
         {
-            return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
-                new InstallationRegistryError.GenerationFailed(scanError));
-        }
-
-        if (scanResult is not Result<InstallationRegistryDocument, FileOperationError>.Success(var generated))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<InstallationRegistryDocument, FileOperationError>.Failure(var scanError):
+                return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
+                    new InstallationRegistryError.GenerationFailed(scanError));
+            case Result<InstallationRegistryDocument, FileOperationError>.Success(var document):
+                generated = document;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         if (existingDocument?.Default is { } existingDefault && generated.Installations.ContainsKey(existingDefault))
@@ -411,15 +401,14 @@ public sealed class InstallationRegistry(
             generated.Default = InferDefaultFromSymlink(generated);
         }
 
-        var writeResult = WriteDocument(generated);
-        if (writeResult is Result<Unit, InstallationRegistryError>.Failure(var writeError))
+        switch (WriteDocument(generated))
         {
-            return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(writeError);
-        }
-
-        if (writeResult is not Result<Unit, InstallationRegistryError>.Success)
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<Unit, InstallationRegistryError>.Failure(var writeError):
+                return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(writeError);
+            case Result<Unit, InstallationRegistryError>.Success:
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         RefreshDefaultArtifacts(generated);
@@ -432,15 +421,16 @@ public sealed class InstallationRegistry(
 
         // LEGACY COMPATIBILITY: Remove this block with ScanLegacyInstallations when legacy <root>/<release>
         // installs are no longer supported.
-        var legacyInstallations = ScanLegacyInstallations(existingDocument);
-        if (legacyInstallations is Result<IReadOnlyList<Installation>, FileOperationError>.Failure(var legacyError))
+        IReadOnlyList<Installation> legacy;
+        switch (ScanLegacyInstallations(existingDocument))
         {
-            return new Result<InstallationRegistryDocument, FileOperationError>.Failure(legacyError);
-        }
-
-        if (legacyInstallations is not Result<IReadOnlyList<Installation>, FileOperationError>.Success(var legacy))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<IReadOnlyList<Installation>, FileOperationError>.Failure(var legacyError):
+                return new Result<InstallationRegistryDocument, FileOperationError>.Failure(legacyError);
+            case Result<IReadOnlyList<Installation>, FileOperationError>.Success(var installations):
+                legacy = installations;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         foreach (var installation in legacy)
@@ -448,15 +438,16 @@ public sealed class InstallationRegistry(
             document.Installations[installation.Key] = ToEntry(installation);
         }
 
-        var targetAwareInstallations = ScanTargetAwareInstallations(existingDocument);
-        if (targetAwareInstallations is Result<IReadOnlyList<Installation>, FileOperationError>.Failure(var targetAwareError))
+        IReadOnlyList<Installation> targetAware;
+        switch (ScanTargetAwareInstallations(existingDocument))
         {
-            return new Result<InstallationRegistryDocument, FileOperationError>.Failure(targetAwareError);
-        }
-
-        if (targetAwareInstallations is not Result<IReadOnlyList<Installation>, FileOperationError>.Success(var targetAware))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<IReadOnlyList<Installation>, FileOperationError>.Failure(var targetAwareError):
+                return new Result<InstallationRegistryDocument, FileOperationError>.Failure(targetAwareError);
+            case Result<IReadOnlyList<Installation>, FileOperationError>.Success(var installations):
+                targetAware = installations;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         foreach (var installation in targetAware)
@@ -471,26 +462,28 @@ public sealed class InstallationRegistry(
     {
         // LEGACY COMPATIBILITY: This imports pre-registry installs from <root>/<release>.
         // Keep new installs target-aware; delete this method when dropping legacy layout support.
-        var rootExists = hostSystem.DirectoryExists(pathService.RootPath);
-        if (rootExists is Result<bool, FileOperationError>.Failure(var rootError))
+        switch (hostSystem.DirectoryExists(pathService.RootPath))
         {
-            return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(rootError);
+            case Result<bool, FileOperationError>.Failure(var rootError):
+                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(rootError);
+            case Result<bool, FileOperationError>.Success { Value: false }:
+                return new Result<IReadOnlyList<Installation>, FileOperationError>.Success([]);
+            case Result<bool, FileOperationError>.Success:
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
-        if (rootExists is Result<bool, FileOperationError>.Success { Value: false })
+        IReadOnlyList<HostDirectoryEntry> directories;
+        switch (hostSystem.EnumerateDirectories(pathService.RootPath))
         {
-            return new Result<IReadOnlyList<Installation>, FileOperationError>.Success([]);
-        }
-
-        var directoriesResult = hostSystem.EnumerateDirectories(pathService.RootPath);
-        if (directoriesResult is Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var directoriesError))
-        {
-            return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(directoriesError);
-        }
-
-        if (directoriesResult is not Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var directories))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var directoriesError):
+                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(directoriesError);
+            case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var entries):
+                directories = entries;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         var installations = new List<Installation>();
@@ -528,26 +521,28 @@ public sealed class InstallationRegistry(
 
     private Result<IReadOnlyList<Installation>, FileOperationError> ScanTargetAwareInstallations(InstallationRegistryDocument? existingDocument)
     {
-        var installationsDirectoryExists = hostSystem.DirectoryExists(pathService.InstallationsDirectoryPath);
-        if (installationsDirectoryExists is Result<bool, FileOperationError>.Failure(var existsError))
+        switch (hostSystem.DirectoryExists(pathService.InstallationsDirectoryPath))
         {
-            return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(existsError);
+            case Result<bool, FileOperationError>.Failure(var existsError):
+                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(existsError);
+            case Result<bool, FileOperationError>.Success { Value: false }:
+                return new Result<IReadOnlyList<Installation>, FileOperationError>.Success([]);
+            case Result<bool, FileOperationError>.Success:
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
-        if (installationsDirectoryExists is Result<bool, FileOperationError>.Success { Value: false })
+        IReadOnlyList<HostDirectoryEntry> releases;
+        switch (hostSystem.EnumerateDirectories(pathService.InstallationsDirectoryPath))
         {
-            return new Result<IReadOnlyList<Installation>, FileOperationError>.Success([]);
-        }
-
-        var releaseDirectories = hostSystem.EnumerateDirectories(pathService.InstallationsDirectoryPath);
-        if (releaseDirectories is Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var releaseDirectoriesError))
-        {
-            return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(releaseDirectoriesError);
-        }
-
-        if (releaseDirectories is not Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var releases))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
+            case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var releaseDirectoriesError):
+                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(releaseDirectoriesError);
+            case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var entries):
+                releases = entries;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         var installations = new List<Installation>();
@@ -558,15 +553,16 @@ public sealed class InstallationRegistry(
                 continue;
             }
 
-            var targetDirectories = hostSystem.EnumerateDirectories(releaseInfo.FullName);
-            if (targetDirectories is Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var targetDirectoriesError))
+            IReadOnlyList<HostDirectoryEntry> targets;
+            switch (hostSystem.EnumerateDirectories(releaseInfo.FullName))
             {
-                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(targetDirectoriesError);
-            }
-
-            if (targetDirectories is not Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var targets))
-            {
-                throw new InvalidOperationException("Unexpected Result type");
+                case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var targetDirectoriesError):
+                    return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(targetDirectoriesError);
+                case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var entries):
+                    targets = entries;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             foreach (var targetInfo in targets)
@@ -651,27 +647,16 @@ public sealed class InstallationRegistry(
         try
         {
             var normalizedPath = Path.GetFullPath(path);
-            var fileExists = hostSystem.FileExists(normalizedPath);
-            if (fileExists is Result<bool, FileOperationError>.Failure)
+            return (hostSystem.FileExists(normalizedPath), hostSystem.DirectoryExists(normalizedPath)) switch
             {
-                return null;
-            }
-
-            var directoryExists = hostSystem.DirectoryExists(normalizedPath);
-            if (directoryExists is Result<bool, FileOperationError>.Failure)
-            {
-                return null;
-            }
-
-            if (fileExists is Result<bool, FileOperationError>.Success { Value: false } &&
-                directoryExists is Result<bool, FileOperationError>.Success { Value: false })
-            {
-                return normalizedPath;
-            }
-
-            return hostSystem.ResolveLinkTarget(normalizedPath, true) is Result<string?, FileOperationError>.Success(var target)
-                ? target ?? normalizedPath
-                : null;
+                (Result<bool, FileOperationError>.Failure, _) or (_, Result<bool, FileOperationError>.Failure) => null,
+                (Result<bool, FileOperationError>.Success { Value: false }, Result<bool, FileOperationError>.Success { Value: false }) => normalizedPath,
+                (Result<bool, FileOperationError>.Success, Result<bool, FileOperationError>.Success) =>
+                    hostSystem.ResolveLinkTarget(normalizedPath, true) is Result<string?, FileOperationError>.Success(var target)
+                        ? target ?? normalizedPath
+                        : null,
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {

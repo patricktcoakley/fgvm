@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using ZLogger;
 
 namespace Fgvm.Cli;
@@ -24,6 +25,8 @@ public class Program
     public static int Main(string[] args)
     {
         var pathService = new PathService();
+        var fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_E2E_FIXTURE_MANIFEST");
+        var fixtureMode = !string.IsNullOrWhiteSpace(fixtureManifestPath);
 
         var services = new ServiceCollection();
 
@@ -49,20 +52,28 @@ public class Program
 
         // Register services
         services.AddSingleton<IPathService>(pathService);
-        services.AddSingleton<SystemInfo>();
+        services.AddSingleton(_ => CreateSystemInfo(fixtureMode));
         services.AddSingleton<PlatformStringProvider>();
         services.AddSingleton<IHostSystem, HostSystem>();
 
-        // Register HTTP clients
-        services.AddHttpClient<IDownloadClient, DownloadClient>("godot-builds")
-            .ConfigureHttpClient((_, client) =>
-            {
-                var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
-                client.DefaultRequestHeaders.UserAgent.Clear();
-                client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("fgvm", version));
-                client.Timeout = TimeSpan.FromSeconds(30);
-            })
-            .AddHttpMessageHandler(() => new ExponentialBackoffHandler(TimeSpan.FromSeconds(2), 3));
+        if (fixtureMode)
+        {
+            services.AddSingleton<IDownloadClient>(sp =>
+                new FixtureDownloadClient(fixtureManifestPath!, sp.GetRequiredService<ILogger<FixtureDownloadClient>>()));
+        }
+        else
+        {
+            // Register HTTP clients
+            services.AddHttpClient<IDownloadClient, DownloadClient>("godot-builds")
+                .ConfigureHttpClient((_, client) =>
+                {
+                    var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+                    client.DefaultRequestHeaders.UserAgent.Clear();
+                    client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("fgvm", version));
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                })
+                .AddHttpMessageHandler(() => new ExponentialBackoffHandler(TimeSpan.FromSeconds(2), 3));
+        }
 
         // Register core services
         services.AddSingleton<IReleaseCatalog, ReleaseCatalog>();
@@ -84,24 +95,27 @@ public class Program
             var hostSystem = sp.GetRequiredService<IHostSystem>();
 
             // Ensure config file exists before loading
-            var configExists = hostSystem.FileExists(pathService.ConfigPath);
-            if (configExists is Result<bool, FileOperationError>.Failure(var existsError))
+            switch (hostSystem.FileExists(pathService.ConfigPath))
             {
-                throw new ConfigurationException($"Unable to read configuration path: {existsError}");
-            }
+                case Result<bool, FileOperationError>.Failure(var existsError):
+                    throw new ConfigurationException($"Unable to read configuration path: {existsError}");
+                case Result<bool, FileOperationError>.Success { Value: false }:
+                    if (Path.GetDirectoryName(pathService.ConfigPath) is { } directory &&
+                        hostSystem.CreateDirectory(directory) is Result<Unit, FileOperationError>.Failure(var createDirectoryError))
+                    {
+                        throw new ConfigurationException($"Unable to create configuration directory: {createDirectoryError}");
+                    }
 
-            if (configExists is Result<bool, FileOperationError>.Success { Value: false })
-            {
-                if (Path.GetDirectoryName(pathService.ConfigPath) is { } directory &&
-                    hostSystem.CreateDirectory(directory) is Result<Unit, FileOperationError>.Failure(var createDirectoryError))
-                {
-                    throw new ConfigurationException($"Unable to create configuration directory: {createDirectoryError}");
-                }
+                    if (hostSystem.WriteAllText(pathService.ConfigPath, "# FGVM Configuration File\n") is Result<Unit, FileOperationError>.Failure(var writeError))
+                    {
+                        throw new ConfigurationException($"Unable to create configuration file: {writeError}");
+                    }
 
-                if (hostSystem.WriteAllText(pathService.ConfigPath, "# FGVM Configuration File\n") is Result<Unit, FileOperationError>.Failure(var writeError))
-                {
-                    throw new ConfigurationException($"Unable to create configuration file: {writeError}");
-                }
+                    break;
+                case Result<bool, FileOperationError>.Success:
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             var configuration = new ConfigurationBuilder()
@@ -153,5 +167,23 @@ public class Program
         app.Run(args);
 
         return 0;
+    }
+
+    private static SystemInfo CreateSystemInfo(bool fixtureMode)
+    {
+        var systemInfo = new SystemInfo();
+        if (!fixtureMode || System.Environment.GetEnvironmentVariable("FGVM_E2E_ARCH_OVERRIDE") is not { Length: > 0 } archOverride)
+        {
+            return systemInfo;
+        }
+
+        var architecture = archOverride.ToLowerInvariant() switch
+        {
+            "x64" => Architecture.X64,
+            "arm64" => Architecture.Arm64,
+            _ => throw new ConfigurationException("FGVM_E2E_ARCH_OVERRIDE must be either 'x64' or 'arm64'.")
+        };
+
+        return new SystemInfo(systemInfo.CurrentOS, architecture);
     }
 }
