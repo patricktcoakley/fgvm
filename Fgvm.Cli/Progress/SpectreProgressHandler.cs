@@ -14,12 +14,12 @@ public class SpectreProgressHandler<TStage>(IAnsiConsole console) : IProgressHan
     public async Task<T> TrackProgressAsync<T>(Func<IProgress<OperationProgress<TStage>>, Task<T>> operation)
     {
         return await console.Status()
-            .StartAsync("Starting operation...", async ctx => { return await operation(new StatusProgress(ctx)); });
+            .StartAsync("Starting operation...", async ctx => await operation(new StatusProgress(ctx)));
     }
 
     private sealed class StatusProgress(StatusContext context) : IProgress<OperationProgress<TStage>>
     {
-        private readonly object _lock = new();
+        private readonly Lock _lock = new();
 
         public void Report(OperationProgress<TStage> value)
         {

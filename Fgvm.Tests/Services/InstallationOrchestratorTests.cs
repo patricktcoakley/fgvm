@@ -68,7 +68,10 @@ public sealed class InstallationOrchestratorTests : IDisposable
     {
         var query = new[] { "4.3.0" };
         var releaseNames = new[] { "4.3.0-stable" };
-        var release = Release.TryParse("4.3.0-stable-standard")!;
+        if (Release.TryParse("4.3.0-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
 
         _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
             .ReturnsAsync(releaseNames);
@@ -105,7 +108,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
         SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
-                    It.Is<string[]>(q => q.SequenceEqual(query)),
+                    It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     false,
                     It.IsAny<CancellationToken>()))
@@ -126,7 +129,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
         SetupInstallations([]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
-                    It.Is<string[]>(q => q.SequenceEqual(query)),
+                    It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     true,
                     It.IsAny<CancellationToken>()))
@@ -147,7 +150,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
         SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
-                    It.Is<string[]>(q => q.SequenceEqual(query)),
+                    It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     true,
                     It.IsAny<CancellationToken>()))
@@ -168,7 +171,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
         SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
-                    It.Is<string[]>(q => q.SequenceEqual(query)),
+                    It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     false,
                     It.IsAny<CancellationToken>()))
@@ -190,7 +193,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
         SetupInstallations(["4.2.0-stable"]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(
-                    It.Is<string[]>(q => q.SequenceEqual(query)),
+                    It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     false,
                     It.IsAny<CancellationToken>()))

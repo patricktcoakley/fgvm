@@ -95,18 +95,19 @@ public class InstallationService(
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Initializing, $"Initializing installation of {installPathBase}..."));
 
             // Check if already installed
-            var existingInstallation = installationRegistry.FindByReleaseName(installPathBase);
-            if (existingInstallation is Result<Installation, InstallationRegistryError>.Success)
+            switch (installationRegistry.FindByReleaseName(installPathBase))
             {
-                logger.LogInformation("Version {InstallPathBase} is already installed", installPathBase);
-                return new Result<InstallationOutcome, InstallationError>.Success(
-                    new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
-            }
-
-            if (existingInstallation is Result<Installation, InstallationRegistryError>.Failure(not InstallationRegistryError.NotFound))
-            {
-                return new Result<InstallationOutcome, InstallationError>.Failure(
-                    new InstallationError.Failed($"Unable to read installation registry for {installPathBase}."));
+                case Result<Installation, InstallationRegistryError>.Success:
+                    logger.LogInformation("Version {InstallPathBase} is already installed", installPathBase);
+                    return new Result<InstallationOutcome, InstallationError>.Success(
+                        new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
+                case Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound):
+                    break;
+                case Result<Installation, InstallationRegistryError>.Failure:
+                    return new Result<InstallationOutcome, InstallationError>.Failure(
+                        new InstallationError.Failed($"Unable to read installation registry for {installPathBase}."));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             // Show progress immediately before HTTP request
@@ -127,31 +128,31 @@ public class InstallationService(
             }
 
             var zipFileName = artifact.FileName;
-            var responseResult = await releaseManager.GetZipFile(zipFileName, godotRelease, cancellationToken);
+            var zipResult = await releaseManager.GetZipFile(zipFileName, godotRelease, cancellationToken);
 
-            HttpResponseMessage response;
-            switch (responseResult)
+            ZipDownload download;
+            switch (zipResult)
             {
-                case Result<HttpResponseMessage, NetworkError>.Success(var downloadResponse):
-                    response = downloadResponse;
+                case Result<ZipDownload, NetworkError>.Success(var downloadZip):
+                    download = downloadZip;
                     break;
-                case Result<HttpResponseMessage, NetworkError>.Failure(var downloadError):
+                case Result<ZipDownload, NetworkError>.Failure(var downloadError):
                     return new Result<InstallationOutcome, InstallationError>.Failure(
                         new InstallationError.Failed($"Download failed for {zipFileName}: {downloadError}"));
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
 
-            using var responseOwner = response;
+            await using var downloadOwner = download;
 
-            var contentLength = response.Content.Headers.ContentLength ?? 0;
+            var contentLength = download.ContentLength ?? (download.Stream.CanSeek ? download.Stream.Length : 0);
 
-            await using var memStream = new MemoryStream(checked((int)contentLength));
+            await using var memStream = contentLength > 0 && contentLength <= int.MaxValue
+                ? new MemoryStream(checked((int)contentLength))
+                : new MemoryStream();
 
             // Download the release with dedicated progress context
             cancellationToken.ThrowIfCancellationRequested();
-
-            await using var networkStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
             var buffer = new byte[bufferSize];
             int bytesRead;
@@ -159,7 +160,7 @@ public class InstallationService(
             var lastProgressUpdate = 0L;
             var startTime = DateTime.UtcNow;
 
-            while ((bytesRead = await networkStream.ReadAsync(buffer, cancellationToken)) > 0)
+            while ((bytesRead = await download.Stream.ReadAsync(buffer, cancellationToken)) > 0)
             {
                 await memStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
                 totalDownloaded += bytesRead;
@@ -284,67 +285,23 @@ public class InstallationService(
     {
         try
         {
-            var releaseNamesResult = await FetchReleaseNames(cancellationToken);
-            if (releaseNamesResult is Result<string[], NetworkError>.Failure(var releaseNamesError))
+            var resolveResult = await ResolveReleaseFromCatalog(query, ReleaseFetchMode.UseCache, cancellationToken);
+            if (resolveResult is Result<Release?, InstallationError>.Success { Value: null })
             {
-                return new Result<InstallationOutcome, InstallationError>.Failure(
-                    new InstallationError.Failed($"Failed to fetch releases: {releaseNamesError}"));
+                resolveResult = await ResolveReleaseFromCatalog(query, ReleaseFetchMode.ForceRemote, cancellationToken);
             }
 
-            if (releaseNamesResult is not Result<string[], NetworkError>.Success(var releaseNames))
+            return resolveResult switch
             {
-                throw new InvalidOperationException("Unexpected Result type");
-            }
-
-            Release? godotRelease;
-            switch (releaseManager.ResolveReleaseQuery(query, releaseNames))
-            {
-                case Result<Release, QueryError>.Success(var release):
-                    godotRelease = release;
-                    break;
-                case Result<Release, QueryError>.Failure(QueryError.NotFound):
-                    godotRelease = null;
-                    break;
-                case Result<Release, QueryError>.Failure(var error):
-                    return new Result<InstallationOutcome, InstallationError>.Failure(MapQueryError(error, query));
-                default:
-                    throw new InvalidOperationException("Unexpected Result type");
-            }
-
-            // Retry with remote fetch if not found
-            if (godotRelease is null)
-            {
-                var remoteReleaseNamesResult = await FetchReleaseNames(cancellationToken, ReleaseFetchMode.ForceRemote);
-                if (remoteReleaseNamesResult is Result<string[], NetworkError>.Failure(var remoteError))
-                {
-                    return new Result<InstallationOutcome, InstallationError>.Failure(
-                        new InstallationError.Failed($"Failed to fetch releases: {remoteError}"));
-                }
-
-                if (remoteReleaseNamesResult is not Result<string[], NetworkError>.Success(var remoteReleaseNames))
-                {
-                    throw new InvalidOperationException("Unexpected Result type");
-                }
-
-                switch (releaseManager.ResolveReleaseQuery(query, remoteReleaseNames))
-                {
-                    case Result<Release, QueryError>.Success(var release):
-                        godotRelease = release;
-                        break;
-                    case Result<Release, QueryError>.Failure(QueryError.NotFound):
-                        godotRelease = null;
-                        break;
-                    case Result<Release, QueryError>.Failure(var error):
-                        return new Result<InstallationOutcome, InstallationError>.Failure(MapQueryError(error, query));
-                    default:
-                        throw new InvalidOperationException("Unexpected Result type");
-                }
-            }
-
-            return godotRelease == null
-                ? new Result<InstallationOutcome, InstallationError>.Failure(
-                    new InstallationError.NotFound(string.Join(" ", query)))
-                : await InstallReleaseAsync(godotRelease, progress, setAsDefault, cancellationToken);
+                Result<Release?, InstallationError>.Success(var release) when release is not null =>
+                    await InstallReleaseAsync(release, progress, setAsDefault, cancellationToken),
+                Result<Release?, InstallationError>.Success =>
+                    new Result<InstallationOutcome, InstallationError>.Failure(
+                        new InstallationError.NotFound(string.Join(" ", query))),
+                Result<Release?, InstallationError>.Failure(var error) =>
+                    new Result<InstallationOutcome, InstallationError>.Failure(error),
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            };
         }
         catch (OperationCanceledException)
         {
@@ -359,40 +316,67 @@ public class InstallationService(
         }
     }
 
+    private async Task<Result<Release?, InstallationError>> ResolveReleaseFromCatalog(
+        string[] query,
+        ReleaseFetchMode fetchMode,
+        CancellationToken cancellationToken)
+    {
+        var releaseNamesResult = await FetchReleaseNames(cancellationToken, fetchMode);
+        return releaseNamesResult switch
+        {
+            Result<string[], NetworkError>.Success(var releaseNames) =>
+                releaseManager.ResolveReleaseQuery(query, releaseNames) switch
+                {
+                    Result<Release, QueryError>.Success(var release) =>
+                        new Result<Release?, InstallationError>.Success(release),
+                    Result<Release, QueryError>.Failure(QueryError.NotFound) =>
+                        new Result<Release?, InstallationError>.Success(null),
+                    Result<Release, QueryError>.Failure(var error) =>
+                        new Result<Release?, InstallationError>.Failure(MapQueryError(error, query)),
+                    _ => throw new InvalidOperationException("Unexpected Result type")
+                },
+            Result<string[], NetworkError>.Failure(var error) =>
+                new Result<Release?, InstallationError>.Failure(
+                    new InstallationError.Failed($"Failed to fetch releases: {error}")),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
     /// <inheritdoc />
     public async Task<Result<string[], NetworkError>> FetchReleaseNames(CancellationToken cancellationToken, ReleaseFetchMode fetchMode = ReleaseFetchMode.UseCache)
     {
         var releaseIdsResult = await releaseCatalog.ReadReleaseIds(fetchMode, cancellationToken);
-        if (releaseIdsResult is Result<string[], NetworkError>.Failure(var error))
+
+        switch (releaseIdsResult)
         {
-            return new Result<string[], NetworkError>.Failure(error);
+            case Result<string[], NetworkError>.Failure(var error):
+                return new Result<string[], NetworkError>.Failure(error);
+
+            case Result<string[], NetworkError>.Success(var releaseIds):
+                var sortedReleases = releaseIds
+                    .Select(name => releaseManager.CreateRelease($"{name}-standard"))
+                    .Select(result => result switch
+                    {
+                        Result<Release, ReleaseParseError>.Success(var release) => release,
+                        Result<Release, ReleaseParseError>.Failure => null,
+                        _ => throw new InvalidOperationException("Unexpected Result type")
+                    })
+                    .OfType<Release>()
+                    .OrderByDescending(release => release)
+                    .Select(r => r.ReleaseName)
+                    .ToArray();
+
+                if (sortedReleases.Length == 0)
+                {
+                    logger.LogError("Unable to fetch remote releases");
+                    return new Result<string[], NetworkError>.Success([]);
+                }
+
+                return new Result<string[], NetworkError>.Success(sortedReleases);
+
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-
-        if (releaseIdsResult is not Result<string[], NetworkError>.Success(var releaseIds))
-        {
-            throw new InvalidOperationException("Unexpected Result type");
-        }
-
-        var sortedReleases = releaseIds
-            .Select(name => releaseManager.CreateRelease($"{name}-standard"))
-            .Select(result => result switch
-            {
-                Result<Release, ReleaseParseError>.Success(var release) => release,
-                Result<Release, ReleaseParseError>.Failure => null,
-                _ => throw new InvalidOperationException("Unexpected Result type")
-            })
-            .OfType<Release>()
-            .OrderByDescending(release => release)
-            .Select(r => r.ReleaseName)
-            .ToArray();
-
-        if (sortedReleases.Length == 0)
-        {
-            logger.LogError("Unable to fetch remote releases");
-            return new Result<string[], NetworkError>.Success([]);
-        }
-
-        return new Result<string[], NetworkError>.Success(sortedReleases);
     }
 
     private static InstallationError MapQueryError(QueryError error, string[] query) => error switch

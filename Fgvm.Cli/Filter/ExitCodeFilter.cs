@@ -27,6 +27,10 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
             AnsiConsole.MarkupLine(Messages.ConfigurationError(ex.Message));
             exitCode = ExitCodes.ConfigurationError;
         }
+        catch (ProcessExitCodeException ex)
+        {
+            exitCode = ex.ExitCode;
+        }
         catch (Exception e) when (e is ArgumentOutOfRangeException or ArgumentNullException or ArgumentException or ArgumentParseFailedException)
         {
             if (e is ArgumentParseFailedException)

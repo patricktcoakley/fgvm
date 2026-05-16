@@ -39,14 +39,14 @@ public interface IReleaseManager
     Task<Result<string, NetworkError>> GetSha512(Release release, CancellationToken cancellationToken);
 
     /// <summary>
-    ///     Gets the release archive response for a release file.
+    ///     Gets the release zip stream for a release file.
     /// </summary>
-    /// <param name="filename">The archive filename to fetch.</param>
-    /// <param name="release">The release that owns the archive.</param>
+    /// <param name="filename">The zip filename to fetch.</param>
+    /// <param name="release">The release that owns the zip.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The HTTP response, or a network error.</returns>
+    /// <returns>The zip stream, or a network error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when the request is canceled.</exception>
-    Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken);
+    Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken);
 
     /// <summary>
     ///     Resolves a version query against available release identifiers.
@@ -125,7 +125,7 @@ public sealed class ReleaseManager(
         await downloadClient.GetSha512(release, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
+    public async Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
         await downloadClient.GetZipFile(filename, release, cancellationToken);
 
     /// <inheritdoc />

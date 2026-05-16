@@ -29,6 +29,31 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
             : new Result<string, PlatformError>.Failure(new PlatformError.Unsupported(release, systemInfo.CurrentOS, systemInfo.CurrentArch));
     }
 
+    public static string GetCatalogTargetId(string? platformString)
+    {
+        if (platformString is null)
+        {
+            return "unknown";
+        }
+
+        var targetId = platformString.StartsWith("mono_", StringComparison.Ordinal)
+            ? platformString["mono_".Length..]
+            : platformString;
+
+        if (targetId.EndsWith(".exe", StringComparison.Ordinal))
+        {
+            targetId = targetId[..^4];
+        }
+
+        return targetId switch
+        {
+            "osx64" => "osx.64",
+            _ when targetId.StartsWith("linux_", StringComparison.Ordinal) => $"linux.{targetId["linux_".Length..]}",
+            _ when targetId.StartsWith("x11_", StringComparison.Ordinal) => $"x11.{targetId["x11_".Length..]}",
+            _ => targetId
+        };
+    }
+
     private static string? GetMacOSPlatformString(Release release, Architecture arch)
     {
         return (release.RuntimeEnvironment, release.Major, arch) switch

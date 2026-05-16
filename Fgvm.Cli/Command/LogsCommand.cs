@@ -36,15 +36,16 @@ public sealed class LogsCommand(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var logExists = hostSystem.FileExists(pathService.LogPath);
-            if (logExists is Result<bool, FileOperationError>.Failure(var existsError))
+            switch (hostSystem.FileExists(pathService.LogPath))
             {
-                throw new InvalidOperationException($"Unable to read log path `{pathService.LogPath}`: {existsError}");
-            }
-
-            if (logExists is Result<bool, FileOperationError>.Success { Value: false })
-            {
-                throw new FileNotFoundException(Messages.LogPathNotFound(pathService.LogPath));
+                case Result<bool, FileOperationError>.Failure(var existsError):
+                    throw new InvalidOperationException($"Unable to read log path `{pathService.LogPath}`: {existsError}");
+                case Result<bool, FileOperationError>.Success { Value: false }:
+                    throw new FileNotFoundException(Messages.LogPathNotFound(pathService.LogPath));
+                case Result<bool, FileOperationError>.Success:
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             if (!string.IsNullOrEmpty(level) && !LogLevels.Any(x => x.StartsWith(level, StringComparison.OrdinalIgnoreCase)))
@@ -52,15 +53,16 @@ public sealed class LogsCommand(
                 throw new ArgumentOutOfRangeException(Messages.LogLevelOutOfRange(level));
             }
 
-            var streamResult = hostSystem.OpenRead(pathService.LogPath, FileShare.ReadWrite);
-            if (streamResult is Result<Stream, FileOperationError>.Failure(var readError))
+            Stream streamValue;
+            switch (hostSystem.OpenRead(pathService.LogPath, FileShare.ReadWrite))
             {
-                throw new InvalidOperationException($"Unable to read log file `{pathService.LogPath}`: {readError}");
-            }
-
-            if (streamResult is not Result<Stream, FileOperationError>.Success(var streamValue))
-            {
-                throw new InvalidOperationException("Unexpected Result type");
+                case Result<Stream, FileOperationError>.Failure(var readError):
+                    throw new InvalidOperationException($"Unable to read log file `{pathService.LogPath}`: {readError}");
+                case Result<Stream, FileOperationError>.Success(var openedStream):
+                    streamValue = openedStream;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
             await using var stream = streamValue;

@@ -21,6 +21,11 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release
 
+      - name: Prepare Native E2E Fixtures
+        run: |
+          dotnet run Fgvm.Tests.EndToEnd/Fixtures/BuildFixtures.cs
+          dotnet run Fgvm.Tests.EndToEnd/Fixtures/PublishCli.cs
+
       - name: Run Tests
         run: dotnet test --configuration Release --no-build
 

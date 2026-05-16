@@ -1,7 +1,6 @@
 using Fgvm.Types;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -36,185 +35,287 @@ public interface IDownloadClient
     Task<Result<string, NetworkError>> GetSha512(Release godotRelease, CancellationToken cancellationToken);
 
     /// <summary>
-    ///     Gets the release archive response for a Godot release file.
+    ///     Gets the release zip stream for a Godot release file.
     /// </summary>
-    /// <param name="filename">The archive filename to fetch.</param>
-    /// <param name="godotRelease">The release that owns the archive.</param>
+    /// <param name="filename">The zip filename to fetch.</param>
+    /// <param name="godotRelease">The release that owns the zip.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The HTTP response, or a network error.</returns>
+    /// <returns>The zip stream, or a network error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when the request is canceled.</exception>
-    Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken);
+    Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken);
 }
 
 /// <summary>
-///     Downloads Godot release metadata and artifacts from the godot-builds GitHub repo.
+///     Downloads Godot release metadata and artifacts from official Godot sources.
 /// </summary>
 public sealed class DownloadClient : IDownloadClient
 {
-    private const string ReleaseDownloadBaseUrl = "https://github.com/godotengine/godot-builds/releases/download";
-    private const string ReleaseIndexUrl = "https://api.github.com/repos/godotengine/godot-builds/contents/releases";
-    private const string RawManifestBaseUrl = "https://raw.githubusercontent.com/godotengine/godot-builds/main/releases";
-
-    private readonly Lazy<IConfiguration> _configuration;
+    private readonly DownloadSource _gitHubBuildsManifest;
+    private readonly DownloadSource _gitHubBuildsRelease;
+    private readonly DownloadSource _gitHubBuildsReleaseIndex;
+    private readonly DownloadSource _gitHubRelease;
+    private readonly DownloadSource _godotDownloadApi;
     private readonly HttpClient _httpClient;
     private readonly ILogger<DownloadClient> _logger;
 
     public DownloadClient(HttpClient httpClient, Lazy<IConfiguration> configuration, ILogger<DownloadClient> logger)
     {
+        IReadOnlyDictionary<string, string>? gitHubHeaders = configuration.Value["github:token"] is { } token
+            ? new Dictionary<string, string> { ["Authorization"] = $"Bearer {token}" }
+            : null;
+
         _httpClient = httpClient;
-        _configuration = configuration;
+        _godotDownloadApi = new DownloadSource("https://downloads.godotengine.org/");
+        _gitHubBuildsRelease = new DownloadSource("https://github.com/godotengine/godot-builds/releases/download", gitHubHeaders);
+        _gitHubRelease = new DownloadSource("https://github.com/godotengine/godot/releases/download", gitHubHeaders);
+        _gitHubBuildsReleaseIndex = new DownloadSource("https://api.github.com/repos/godotengine/godot-builds/contents/releases", gitHubHeaders);
+        _gitHubBuildsManifest = new DownloadSource("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases", gitHubHeaders);
         _logger = logger;
-
-        ConfigureHttpClient();
     }
-
-    private string? GitHubToken => _configuration.Value["github:token"];
 
     /// <inheritdoc />
     public async Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken)
     {
-        try
-        {
-            _logger.LogInformation("HTTP GET {Url}", ReleaseIndexUrl);
-            var response = await _httpClient.GetAsync(ReleaseIndexUrl, cancellationToken);
-            _logger.LogInformation("HTTP GET {Url} completed with status {StatusCode}", ReleaseIndexUrl, (int)response.StatusCode);
+        var result = await GetStringFromSources(
+            GetReleaseIndexSources(),
+            "Failed to list releases",
+            cancellationToken);
 
-            if (response.IsSuccessStatusCode)
-            {
-                var jsonString = await response.Content.ReadAsStringAsync(cancellationToken);
-                var releases = JsonSerializer.Deserialize(jsonString, DownloadJsonContext.Default.ListReleaseIndexFile) ?? [];
-                releases.Reverse();
-                return new Result<IEnumerable<string>, NetworkError>.Success(
-                    releases.Select<ReleaseIndexFile, string>(release => release.ReleaseName));
-            }
+        switch (result)
+        {
+            case Result<string, NetworkError>.Failure(var error):
+                return new Result<IEnumerable<string>, NetworkError>.Failure(error);
 
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("{Url} returned {StatusCode}. Body: {Body}", ReleaseIndexUrl, response.StatusCode, body);
-            return new Result<IEnumerable<string>, NetworkError>.Failure(
-                new NetworkError.RequestFailure(ReleaseIndexUrl, (int)response.StatusCode, body));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Failed to list releases: {Message}", ex.Message);
-            return new Result<IEnumerable<string>, NetworkError>.Failure(
-                new NetworkError.ConnectionFailure(ex.Message));
+            case Result<string, NetworkError>.Success(var jsonString):
+                try
+                {
+                    var releases = JsonSerializer.Deserialize(jsonString, DownloadJsonContext.Default.ListReleaseIndexFile) ?? [];
+                    releases.Reverse();
+                    return new Result<IEnumerable<string>, NetworkError>.Success(
+                        releases.Select<ReleaseIndexFile, string>(release => release.ReleaseName));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Failed to list releases: {Message}", ex.Message);
+                    return new Result<IEnumerable<string>, NetworkError>.Failure(
+                        new NetworkError.ConnectionFailure(ex.Message));
+                }
+
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
     }
 
     /// <inheritdoc />
     public async Task<Result<GodotReleaseManifest, NetworkError>> GetReleaseManifest(Release godotRelease, CancellationToken cancellationToken)
     {
-        var url = $"{RawManifestBaseUrl}/godot-{godotRelease.ReleaseName}.json";
+        var result = await GetStringFromSources(
+            GetManifestSources(godotRelease),
+            $"Failed to get release manifest for {godotRelease.ReleaseName}",
+            cancellationToken);
 
-        try
+        switch (result)
         {
-            _logger.LogInformation("HTTP GET {Url}", url);
-            var response = await _httpClient.GetAsync(url, cancellationToken);
-            _logger.LogInformation("HTTP GET {Url} completed with status {StatusCode}", url, (int)response.StatusCode);
+            case Result<string, NetworkError>.Failure(var error):
+                return new Result<GodotReleaseManifest, NetworkError>.Failure(error);
 
-            if (response.IsSuccessStatusCode)
-            {
-                var jsonString = await response.Content.ReadAsStringAsync(cancellationToken);
-                var manifest = JsonSerializer.Deserialize(jsonString, DownloadJsonContext.Default.GodotReleaseManifest);
-                return manifest is not null
-                    ? new Result<GodotReleaseManifest, NetworkError>.Success(manifest)
-                    : new Result<GodotReleaseManifest, NetworkError>.Failure(
-                        new NetworkError.ConnectionFailure($"Release manifest {godotRelease.ReleaseName} was empty or invalid"));
-            }
+            case Result<string, NetworkError>.Success(var jsonString):
+                try
+                {
+                    var manifest = JsonSerializer.Deserialize(jsonString, DownloadJsonContext.Default.GodotReleaseManifest);
+                    return manifest is not null
+                        ? new Result<GodotReleaseManifest, NetworkError>.Success(manifest)
+                        : new Result<GodotReleaseManifest, NetworkError>.Failure(
+                            new NetworkError.ConnectionFailure($"Release manifest {godotRelease.ReleaseName} was empty or invalid"));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Failed to get release manifest for {ReleaseName}: {Message}", godotRelease.ReleaseName, ex.Message);
+                    return new Result<GodotReleaseManifest, NetworkError>.Failure(
+                        new NetworkError.ConnectionFailure(ex.Message));
+                }
 
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("{Url} returned {StatusCode}. Body: {Body}", url, response.StatusCode, body);
-            return new Result<GodotReleaseManifest, NetworkError>.Failure(
-                new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Failed to get release manifest for {ReleaseName}: {Message}", godotRelease.ReleaseName, ex.Message);
-            return new Result<GodotReleaseManifest, NetworkError>.Failure(
-                new NetworkError.ConnectionFailure(ex.Message));
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
     }
 
     /// <inheritdoc />
     public async Task<Result<string, NetworkError>> GetSha512(Release godotRelease, CancellationToken cancellationToken)
-    {
-        var url = $"{ReleaseDownloadBaseUrl}/{godotRelease.ReleaseName}/SHA512-SUMS.txt";
-
-        try
-        {
-            _logger.LogInformation("HTTP GET {Url}", url);
-            var response = await _httpClient.GetAsync(url, cancellationToken);
-            _logger.LogInformation("HTTP GET {Url} completed with status {StatusCode}", url, (int)response.StatusCode);
-
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync(cancellationToken);
-                return new Result<string, NetworkError>.Success(content);
-            }
-
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("{Url} returned {StatusCode}. Body: {Body}", url, response.StatusCode, body);
-            return new Result<string, NetworkError>.Failure(
-                new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Failed to get SHA512 for {Version}: {Message}", godotRelease.Version, ex.Message);
-            return new Result<string, NetworkError>.Failure(
-                new NetworkError.ConnectionFailure(ex.Message));
-        }
-    }
+        => await GetStringFromSources(
+            GetChecksumSources(godotRelease),
+            $"Failed to get SHA512 for {godotRelease.ReleaseName}",
+            cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<HttpResponseMessage, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken)
+    public async Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken)
+        => await GetZipFromSources(
+            GetZipSources(filename, godotRelease),
+            HttpCompletionOption.ResponseHeadersRead,
+            $"Failed to get zip file for {godotRelease.ReleaseNameWithRuntime}",
+            cancellationToken);
+
+    private async Task<Result<string, NetworkError>> GetStringFromSources(
+        IReadOnlyList<DownloadSource> sources,
+        string failureMessage,
+        CancellationToken cancellationToken)
     {
-        var url = $"{ReleaseDownloadBaseUrl}/{godotRelease.ReleaseName}/{filename}";
+        NetworkError? lastError = null;
 
-        try
+        foreach (var source in sources)
         {
-            _logger.LogInformation("HTTP GET {Url}", url);
-            var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            _logger.LogInformation("HTTP GET {Url} completed with status {StatusCode}", url, (int)response.StatusCode);
-
-            if (response.IsSuccessStatusCode)
+            try
             {
-                return new Result<HttpResponseMessage, NetworkError>.Success(response);
-            }
+                using var request = source.CreateRequest();
+                using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
 
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("{Url} returned {StatusCode}. Body: {Body}", url, response.StatusCode, body);
-            return new Result<HttpResponseMessage, NetworkError>.Failure(
-                new NetworkError.RequestFailure(url, (int)response.StatusCode, body));
+                if (response.IsSuccessStatusCode)
+                {
+                    return new Result<string, NetworkError>.Success(await response.Content.ReadAsStringAsync(cancellationToken));
+                }
+
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
+                lastError = new NetworkError.RequestFailure(source.Url, (int)response.StatusCode, body);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "HTTP GET {Url} failed", source.Url);
+                lastError = new NetworkError.ConnectionFailure(ex.Message);
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Failed to get zip file for {ReleaseNameWithRuntime}: {Message}", godotRelease.ReleaseNameWithRuntime, ex.Message);
-            return new Result<HttpResponseMessage, NetworkError>.Failure(
-                new NetworkError.ConnectionFailure(ex.Message));
-        }
+
+        return new Result<string, NetworkError>.Failure(
+            lastError ?? new NetworkError.ConnectionFailure(failureMessage));
     }
 
-    private void ConfigureHttpClient()
+    private async Task<Result<ZipDownload, NetworkError>> GetZipFromSources(
+        IReadOnlyList<DownloadSource> sources,
+        HttpCompletionOption completionOption,
+        string failureMessage,
+        CancellationToken cancellationToken)
     {
-        if (GitHubToken is { } token)
+        NetworkError? lastError = null;
+
+        foreach (var source in sources)
         {
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            try
+            {
+                using var request = source.CreateRequest();
+                var response = await _httpClient.SendAsync(request, completionOption, cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    try
+                    {
+                        var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                        return new Result<ZipDownload, NetworkError>.Success(
+                            new ZipDownload(stream, response.Content.Headers.ContentLength, response));
+                    }
+                    catch
+                    {
+                        response.Dispose();
+                        throw;
+                    }
+                }
+
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                response.Dispose();
+                _logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
+                lastError = new NetworkError.RequestFailure(source.Url, (int)response.StatusCode, body);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "HTTP GET {Url} failed", source.Url);
+                lastError = new NetworkError.ConnectionFailure(ex.Message);
+            }
+        }
+
+        return new Result<ZipDownload, NetworkError>.Failure(
+            lastError ?? new NetworkError.ConnectionFailure(failureMessage));
+    }
+
+    private DownloadSource[] GetReleaseIndexSources() =>
+    [
+        _gitHubBuildsReleaseIndex
+    ];
+
+    private DownloadSource[] GetManifestSources(Release godotRelease) =>
+    [
+        _gitHubBuildsManifest.WithPath($"godot-{godotRelease.ReleaseName}.json")
+    ];
+
+    private DownloadSource[] GetChecksumSources(Release godotRelease) =>
+    [
+        // Some older releases expose SHA512-SUMS.txt from godotengine/godot instead of godotengine/godot-builds.
+        _gitHubBuildsRelease.WithPath($"{godotRelease.ReleaseName}/SHA512-SUMS.txt"),
+        _gitHubRelease.WithPath($"{godotRelease.ReleaseName}/SHA512-SUMS.txt")
+    ];
+
+    private DownloadSource[] GetZipSources(string filename, Release godotRelease) =>
+    [
+        GodotDownloadApiArchive(filename, godotRelease),
+        _gitHubBuildsRelease.WithPath($"{godotRelease.ReleaseName}/{filename}")
+    ];
+
+    private DownloadSource GodotDownloadApiArchive(string filename, Release godotRelease)
+    {
+        var slug = GetDownloadSlug(filename, godotRelease);
+        var platform = godotRelease.PlatformString ?? RemoveArchiveExtension(slug);
+        var query = $"version={Escape(godotRelease.Version)}" +
+                    $"&flavor={Escape(godotRelease.Type?.ToString() ?? string.Empty)}" +
+                    $"&slug={Escape(slug)}" +
+                    $"&platform={Escape(platform)}";
+
+        return _godotDownloadApi.WithQuery(query);
+    }
+
+    private static string GetDownloadSlug(string filename, Release godotRelease)
+    {
+        var prefix = $"Godot_v{godotRelease.ReleaseName}_";
+        return filename.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? filename[prefix.Length..]
+            : filename;
+    }
+
+    private static string RemoveArchiveExtension(string slug) =>
+        slug.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+            ? slug[..^4]
+            : slug;
+
+    private static string Escape(string value) =>
+        Uri.EscapeDataString(value);
+
+    private sealed record DownloadSource(string Url, IReadOnlyDictionary<string, string>? Headers = null)
+    {
+        public DownloadSource WithPath(string relativePath) =>
+            this with { Url = $"{Url.TrimEnd('/')}/{relativePath.TrimStart('/')}" };
+
+        public DownloadSource WithQuery(string query) =>
+            this with { Url = $"{Url}?{query}" };
+
+        public HttpRequestMessage CreateRequest()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, Url);
+            if (Headers is null)
+            {
+                return request;
+            }
+
+            foreach (var header in Headers)
+            {
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            return request;
         }
     }
 }

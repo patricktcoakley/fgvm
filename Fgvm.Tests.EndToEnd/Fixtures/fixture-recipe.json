@@ -1,0 +1,219 @@
+{
+  "mockVersion": "4.6.2.stable.standard.mock",
+  "releases": [
+    {
+      "name": "4.7-dev1",
+      "version": "4.7",
+      "status": "dev1",
+      "gitReference": "mock-dev1"
+    },
+    {
+      "name": "4.6.2-stable",
+      "version": "4.6.2",
+      "status": "stable",
+      "gitReference": "mock-stable"
+    },
+    {
+      "name": "4.6.2-rc2",
+      "version": "4.6.2",
+      "status": "rc2",
+      "gitReference": "mock-rc2"
+    },
+    {
+      "name": "4.5-stable",
+      "version": "4.5",
+      "status": "stable",
+      "gitReference": "mock-4-5"
+    },
+    {
+      "name": "3.6.1-stable",
+      "version": "3.6.1",
+      "status": "stable",
+      "gitReference": "mock-3-6"
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "linux-x64",
+      "os": "linux",
+      "arch": "x64",
+      "fixtures": [
+        {
+          "target": "linux.x86_64",
+          "runtime": "standard",
+          "platform": "linux-x64",
+          "executableName": "Godot_v{release}_linux.x86_64",
+          "zipName": "Godot_v{release}_linux.x86_64.zip"
+        },
+        {
+          "target": "mono_linux_x86_64",
+          "runtime": "mono",
+          "platform": "linux-x64",
+          "executableName": "Godot_v{release}_mono_linux.x86_64",
+          "zipName": "Godot_v{release}_mono_linux_x86_64.zip"
+        },
+        {
+          "target": "linux.arm64",
+          "runtime": "standard",
+          "platform": "linux-x64",
+          "executableName": "Godot_v{release}_linux.arm64",
+          "zipName": "Godot_v{release}_linux.arm64.zip"
+        },
+        {
+          "target": "mono_linux_arm64",
+          "runtime": "mono",
+          "platform": "linux-x64",
+          "executableName": "Godot_v{release}_mono_linux.arm64",
+          "zipName": "Godot_v{release}_mono_linux_arm64.zip"
+        }
+      ]
+    },
+    {
+      "platform": "linux-arm64",
+      "os": "linux",
+      "arch": "arm64",
+      "fixtures": [
+        {
+          "target": "linux.x86_64",
+          "runtime": "standard",
+          "platform": "linux-arm64",
+          "executableName": "Godot_v{release}_linux.x86_64",
+          "zipName": "Godot_v{release}_linux.x86_64.zip"
+        },
+        {
+          "target": "mono_linux_x86_64",
+          "runtime": "mono",
+          "platform": "linux-arm64",
+          "executableName": "Godot_v{release}_mono_linux.x86_64",
+          "zipName": "Godot_v{release}_mono_linux_x86_64.zip"
+        },
+        {
+          "target": "linux.arm64",
+          "runtime": "standard",
+          "platform": "linux-arm64",
+          "executableName": "Godot_v{release}_linux.arm64",
+          "zipName": "Godot_v{release}_linux.arm64.zip"
+        },
+        {
+          "target": "mono_linux_arm64",
+          "runtime": "mono",
+          "platform": "linux-arm64",
+          "executableName": "Godot_v{release}_mono_linux.arm64",
+          "zipName": "Godot_v{release}_mono_linux_arm64.zip"
+        }
+      ]
+    },
+    {
+      "platform": "macos-x64",
+      "os": "macos",
+      "arch": "x64",
+      "fixtures": [
+        {
+          "target": "macos.universal",
+          "runtime": "standard",
+          "platform": "macos-x64",
+          "executableName": "Godot.app",
+          "zipName": "Godot_v{release}_macos.universal.zip"
+        },
+        {
+          "target": "mono_macos.universal",
+          "runtime": "mono",
+          "platform": "macos-x64",
+          "executableName": "Godot_mono.app",
+          "zipName": "Godot_v{release}_mono_macos.universal.zip"
+        }
+      ]
+    },
+    {
+      "platform": "macos-arm64",
+      "os": "macos",
+      "arch": "arm64",
+      "fixtures": [
+        {
+          "target": "macos.universal",
+          "runtime": "standard",
+          "platform": "macos-arm64",
+          "executableName": "Godot.app",
+          "zipName": "Godot_v{release}_macos.universal.zip"
+        },
+        {
+          "target": "mono_macos.universal",
+          "runtime": "mono",
+          "platform": "macos-arm64",
+          "executableName": "Godot_mono.app",
+          "zipName": "Godot_v{release}_mono_macos.universal.zip"
+        }
+      ]
+    },
+    {
+      "platform": "windows-x64",
+      "os": "windows",
+      "arch": "x64",
+      "fixtures": [
+        {
+          "target": "win64.exe",
+          "runtime": "standard",
+          "platform": "windows-x64",
+          "executableName": "Godot_v{release}_win64.exe",
+          "zipName": "Godot_v{release}_win64.exe.zip"
+        },
+        {
+          "target": "mono_win64",
+          "runtime": "mono",
+          "platform": "windows-x64",
+          "executableName": "Godot_v{release}_mono_win64.exe",
+          "zipName": "Godot_v{release}_mono_win64.zip"
+        },
+        {
+          "target": "windows_arm64.exe",
+          "runtime": "standard",
+          "platform": "windows-x64",
+          "executableName": "Godot_v{release}_windows_arm64.exe",
+          "zipName": "Godot_v{release}_windows_arm64.exe.zip"
+        },
+        {
+          "target": "mono_windows_arm64",
+          "runtime": "mono",
+          "platform": "windows-x64",
+          "executableName": "Godot_v{release}_mono_windows_arm64.exe",
+          "zipName": "Godot_v{release}_mono_windows_arm64.zip"
+        }
+      ]
+    },
+    {
+      "platform": "windows-arm64",
+      "os": "windows",
+      "arch": "arm64",
+      "fixtures": [
+        {
+          "target": "win64.exe",
+          "runtime": "standard",
+          "platform": "windows-arm64",
+          "executableName": "Godot_v{release}_win64.exe",
+          "zipName": "Godot_v{release}_win64.exe.zip"
+        },
+        {
+          "target": "mono_win64",
+          "runtime": "mono",
+          "platform": "windows-arm64",
+          "executableName": "Godot_v{release}_mono_win64.exe",
+          "zipName": "Godot_v{release}_mono_win64.zip"
+        },
+        {
+          "target": "windows_arm64.exe",
+          "runtime": "standard",
+          "platform": "windows-arm64",
+          "executableName": "Godot_v{release}_windows_arm64.exe",
+          "zipName": "Godot_v{release}_windows_arm64.exe.zip"
+        },
+        {
+          "target": "mono_windows_arm64",
+          "runtime": "mono",
+          "platform": "windows-arm64",
+          "executableName": "Godot_v{release}_mono_windows_arm64.exe",
+          "zipName": "Godot_v{release}_mono_windows_arm64.zip"
+        }
+      ]
+    }
+  ]
+}

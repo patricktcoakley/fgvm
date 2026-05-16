@@ -76,25 +76,26 @@ public sealed class GodotCommand(
                 versionResult = versionManagementService.ResolveInteractiveVersion(selection);
             }
 
-            if (versionResult is Result<VersionResolutionOutcome, VersionResolutionError>.Failure(var resolutionError))
+            VersionResolutionOutcome resolutionOutcome;
+            switch (versionResult)
             {
-                var errorMessage = resolutionError switch
-                {
-                    VersionResolutionError.NotFound notFound => Messages.VersionResolutionNotFound(notFound.Version, versionManagementService.HostSystem),
-                    VersionResolutionError.Failed failed => Messages.VersionResolutionFailed(failed.Reason),
-                    VersionResolutionError.InvalidVersion invalid => Messages.InvalidVersion(invalid.Version),
-                    _ => Messages.UnknownResolutionError
-                };
+                case Result<VersionResolutionOutcome, VersionResolutionError>.Failure(var resolutionError):
+                    var errorMessage = resolutionError switch
+                    {
+                        VersionResolutionError.NotFound notFound => Messages.VersionResolutionNotFound(notFound.Version, versionManagementService.HostSystem),
+                        VersionResolutionError.Failed failed => Messages.VersionResolutionFailed(failed.Reason),
+                        VersionResolutionError.InvalidVersion invalid => Messages.InvalidVersion(invalid.Version),
+                        _ => Messages.UnknownResolutionError
+                    };
 
-                console.MarkupLine(errorMessage);
-                throw new InvalidOperationException(errorMessage);
-            }
-
-            // Extract success result
-            if (versionResult is not Result<VersionResolutionOutcome, VersionResolutionError>.Success(var resolutionOutcome))
-            {
-                console.MarkupLine(Messages.UnexpectedError);
-                return;
+                    console.MarkupLine(errorMessage);
+                    throw new InvalidOperationException(errorMessage);
+                case Result<VersionResolutionOutcome, VersionResolutionError>.Success(var outcome):
+                    resolutionOutcome = outcome;
+                    break;
+                default:
+                    console.MarkupLine(Messages.UnexpectedError);
+                    return;
             }
 
             var (execPath, workingDirectory, versionName) = resolutionOutcome switch
@@ -109,21 +110,23 @@ public sealed class GodotCommand(
             // Auto-detect project file and add it to arguments if we're in a project directory
             if (string.IsNullOrEmpty(argumentString))
             {
-                var projectFilePathResult = projectManager.FindProjectFilePath();
-                if (projectFilePathResult is Result<ProjectLookup<string>, ProjectError>.Failure)
+                switch (projectManager.FindProjectFilePath())
                 {
-                    throw new InvalidOperationException("Unable to read project file information.");
-                }
-
-                if (projectFilePathResult is Result<ProjectLookup<string>, ProjectError>.Success
+                    case Result<ProjectLookup<string>, ProjectError>.Failure:
+                        throw new InvalidOperationException("Unable to read project file information.");
+                    case Result<ProjectLookup<string>, ProjectError>.Success
                     {
                         Value: ProjectLookup<string>.Found(var projectFilePath)
-                    })
-                {
-                    // Godot expects the directory path, not the file path
-                    var projectDirectory = Path.GetDirectoryName(projectFilePath);
-                    argumentString = $"--editor --path \"{projectDirectory}\"";
-                    console.MarkupLine(Messages.AutoDetectedProject(Path.GetFileName(projectFilePath)));
+                    }:
+                        // Godot expects the directory path, not the file path
+                        var projectDirectory = Path.GetDirectoryName(projectFilePath);
+                        argumentString = $"--editor --path \"{projectDirectory}\"";
+                        console.MarkupLine(Messages.AutoDetectedProject(Path.GetFileName(projectFilePath)));
+                        break;
+                    case Result<ProjectLookup<string>, ProjectError>.Success:
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
                 }
             }
 
@@ -202,15 +205,29 @@ public sealed class GodotCommand(
             await process.WaitForExitAsync(CancellationToken.None);
             process.CancelOutputRead();
             process.CancelErrorRead();
+            var godotExitCode = process.ExitCode;
 
             // Check if cancellation was requested after process completed
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (godotExitCode != 0)
+            {
+                logger.ZLogError(
+                    $"Godot exited with code {godotExitCode} and stderr: {error.ToString().EscapeMarkup()}");
+
+                console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
+                throw new ProcessExitCodeException(godotExitCode);
+            }
         }
         catch (TaskCanceledException)
         {
             logger.ZLogError($"User cancelled running Godot.");
             console.MarkupLine(Messages.UserCancelled("godot"));
 
+            throw;
+        }
+        catch (ProcessExitCodeException)
+        {
             throw;
         }
         catch (Exception e)
@@ -230,23 +247,6 @@ public sealed class GodotCommand(
             );
 
             throw;
-        }
-        finally
-        {
-            if (attached && process.ExitCode != 0)
-            {
-                var (finalExecPath, finalWorkingDir) = versionResult switch
-                {
-                    Result<VersionResolutionOutcome, VersionResolutionError>.Success { Value: VersionResolutionOutcome.Found found } => (found.ExecutablePath,
-                        found.WorkingDirectory),
-                    _ => ("unknown", "unknown")
-                };
-
-                logger.ZLogError(
-                    $"Error launching an instance using path {finalExecPath} and working directory {finalWorkingDir} with the following error:{error.ToString().EscapeMarkup()}");
-
-                console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
-            }
         }
     }
 
