@@ -1,0 +1,65 @@
+name: Prepare Release PR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare Release PR
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore Tools
+        run: dotnet tool restore
+
+      - name: Dry Run
+        run: dotnet tool run versionize -- --dry-run --exit-insignificant-commits
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Versionize
+        id: version
+        run: |
+          dotnet tool run versionize -- --skip-tag
+          version="$(dotnet tool run versionize -- inspect)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "branch=release/v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release Pull Request
+        id: pull-request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ steps.version.outputs.branch }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git switch -C "$RELEASE_BRANCH"
+          git push --force-with-lease --set-upstream origin "$RELEASE_BRANCH"
+
+          pr_url="$(gh pr create --base main --head "$RELEASE_BRANCH" --title "chore(release): $RELEASE_VERSION" --body "Prepares \`$RELEASE_TAG\`.")"
+          echo "pull-request-url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          echo "Prepared release PR for ${{ steps.version.outputs.tag }}: ${{ steps.pull-request.outputs.pull-request-url }}" >> "$GITHUB_STEP_SUMMARY"
