@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
@@ -6,7 +7,6 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Moq;
 using Spectre.Console.Testing;
-using System.Text.Json;
 
 namespace Fgvm.Tests.Command;
 
@@ -15,7 +15,8 @@ public sealed class WhichCommandTests
     [Fact]
     public void WhichCommand_WritesJson_WhenVersionIsSet()
     {
-        var installation = new Installation("4.5-stable-standard@linux.x86_64", "4.5-stable-standard", "linux.x86_64", "4.5-stable-standard", null, null);
+        var installation = new Installation("4.5-stable-standard@linux.x86_64", "4.5-stable-standard", "linux.x86_64",
+            "4.5-stable-standard", null, null);
         var registry = new Mock<IInstallationRegistry>();
         registry.Setup(x => x.GetDefault()).Returns(new Result<Installation, InstallationRegistryError>.Success(installation));
 

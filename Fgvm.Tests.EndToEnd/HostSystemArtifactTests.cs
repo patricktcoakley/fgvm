@@ -1,7 +1,7 @@
+using System.Runtime.InteropServices;
 using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Runtime.InteropServices;
 
 namespace Fgvm.Tests.EndToEnd;
 

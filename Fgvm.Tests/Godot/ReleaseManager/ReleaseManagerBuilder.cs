@@ -1,9 +1,9 @@
+using System.Runtime.InteropServices;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Moq;
-using System.Runtime.InteropServices;
 
 namespace Fgvm.Tests.Godot.ReleaseManager;
 

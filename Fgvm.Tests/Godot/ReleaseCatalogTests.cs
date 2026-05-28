@@ -1,9 +1,9 @@
+using System.Text.Json;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using System.Text.Json;
 
 namespace Fgvm.Tests.Godot;
 
@@ -706,13 +706,15 @@ public sealed class ReleaseCatalogTests : IDisposable
     {
         Directory.CreateDirectory(_rootPath);
         await using var stream = File.Create(_releasesPath);
-        await JsonSerializer.SerializeAsync(stream, manifest, ReleaseCatalogJsonContext.Default.ReleaseCatalogManifest, CancellationToken.None);
+        await JsonSerializer.SerializeAsync(stream, manifest, ReleaseCatalogJsonContext.Default.ReleaseCatalogManifest,
+            CancellationToken.None);
     }
 
     private async Task<ReleaseCatalogManifest> ReadManifest()
     {
         await using var stream = File.OpenRead(_releasesPath);
-        var manifest = await JsonSerializer.DeserializeAsync(stream, ReleaseCatalogJsonContext.Default.ReleaseCatalogManifest, CancellationToken.None);
+        var manifest = await JsonSerializer.DeserializeAsync(stream, ReleaseCatalogJsonContext.Default.ReleaseCatalogManifest,
+            CancellationToken.None);
         Assert.NotNull(manifest);
         return manifest;
     }

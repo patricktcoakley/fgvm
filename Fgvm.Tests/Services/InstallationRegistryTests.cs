@@ -1,10 +1,10 @@
+using System.Text.Json;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using System.Text.Json;
 using RuntimeEnvironment = Fgvm.Godot.RuntimeEnvironment;
 
 namespace Fgvm.Tests.Services;
@@ -36,7 +36,8 @@ public sealed class InstallationRegistryTests : IDisposable
         _hostSystem.Setup(x => x.WriteAllText(It.IsAny<string>(), It.IsAny<string>()))
             .Returns((string path, string contents) => filesystem.WriteAllText(path, contents));
         _hostSystem.Setup(x => x.MoveFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
-            .Returns((string sourcePath, string destinationPath, bool overwrite) => filesystem.MoveFile(sourcePath, destinationPath, overwrite));
+            .Returns((string sourcePath, string destinationPath, bool overwrite) =>
+                filesystem.MoveFile(sourcePath, destinationPath, overwrite));
         _hostSystem.Setup(x => x.DeleteFileIfExists(It.IsAny<string>()))
             .Returns((string path) => filesystem.DeleteFileIfExists(path));
         _hostSystem.Setup(x => x.DeleteDirectoryIfExists(It.IsAny<string>(), It.IsAny<bool>()))
@@ -346,8 +347,7 @@ public sealed class InstallationRegistryTests : IDisposable
         return JsonSerializer.Deserialize<InstallationRegistryDocument>(json)!;
     }
 
-    private static IReadOnlyList<Installation> AssertSuccess(
-        Result<IReadOnlyList<Installation>, InstallationRegistryError> result) =>
+    private static IReadOnlyList<Installation> AssertSuccess(Result<IReadOnlyList<Installation>, InstallationRegistryError> result) =>
         Assert.IsType<Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success>(result).Value;
 
     private static Result<Release, ReleaseParseError> CreateRelease(string version)

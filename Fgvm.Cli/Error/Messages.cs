@@ -55,7 +55,8 @@ public static class Messages
     // Exceptions
     public static string NoInstallationsFound => "No installations found. Please install one or more versions first.";
     public static string InvalidGodotVersion => "Invalid Godot version.";
-    public static string NoInstallationsAndNoVersionFile => "No installations found and no `.fgvm-version` file. Install a version first with: fgvm install <version>";
+    public static string NoInstallationsAndNoVersionFile =>
+        "No installations found and no `.fgvm-version` file. Install a version first with: fgvm install <version>";
     public static string NoVersionsInstalledPrompt => "No versions installed. Install a version first with: `fgvm install <version>`";
     public static string InstallationFailedNoVersions => "Installation failed and no versions available.";
     public static string UnknownInstallationOutcome => "Unknown installation outcome";
@@ -73,7 +74,8 @@ public static class Messages
     public static string ConfigurationError(string message) => $"[red]Configuration error: {message}[/]";
     public static string ExceptionMessage(string message) => $"[red]{message}.[/]";
     public static string SelectAVersionTo(string what) => $"[green]Select a version to {what}[/]\n[hotpink_1](Press CTRL+C to cancel)[/]";
-    public static string SelectVersionsTo(string what) => $"[green]Select the versions to {what}[/]\n[hotpink_1](Press CTRL+C to cancel)[/]";
+    public static string SelectVersionsTo(string what) =>
+        $"[green]Select the versions to {what}[/]\n[hotpink_1](Press CTRL+C to cancel)[/]";
 
     // Cancellation
     public static string UserCancelled(string what) => $"[red]User cancelled {what} operation :prohibited:[/]";
@@ -99,8 +101,10 @@ public static class Messages
         $"[red]Version {version} could not be found for {hostSystem.SystemInfo.CurrentOS.ToDisplayString()} {hostSystem.SystemInfo.CurrentArch.ToDisplayString()}[/]";
 
     public static string InstallationFailed(string reason) => $"[red]Installation failed: {reason}[/]";
-    public static string InstallationSuccessBase(string releaseNameWithRuntime) => $"Finished installing {releaseNameWithRuntime}! :party_popper:";
-    public static string SuccessfullyInstalled(string releaseNameWithRuntime) => $"[green]Successfully installed {releaseNameWithRuntime}.[/]";
+    public static string InstallationSuccessBase(string releaseNameWithRuntime) =>
+        $"Finished installing {releaseNameWithRuntime}! :party_popper:";
+    public static string SuccessfullyInstalled(string releaseNameWithRuntime) =>
+        $"[green]Successfully installed {releaseNameWithRuntime}.[/]";
 
     // Version resolution
     public static string VersionResolutionNotFound(string version, IHostSystem hostSystem) =>
@@ -109,7 +113,8 @@ public static class Messages
     public static string VersionResolutionFailed(string reason) => $"[red]Version resolution failed: {reason}[/]";
     public static string InvalidVersion(string version) => $"[red]The version '{version}' is invalid[/]";
     public static string InvalidProjectVersion(string compatibleVersion) => $"[red]Invalid project version: {compatibleVersion}[/]";
-    public static string SuccessfullySetVersion(string releaseNameWithRuntime) => $"[green]Successfully set version to {releaseNameWithRuntime}. [/]";
+    public static string SuccessfullySetVersion(string releaseNameWithRuntime) =>
+        $"[green]Successfully set version to {releaseNameWithRuntime}. [/]";
     public static string SetLocalVersion(string releaseNameWithRuntime) => $"[green]Set local version to {releaseNameWithRuntime}.[/]";
 
     public static string ProjectSpecifiesVersion(string projectVersion, string runtimeDisplaySuffix) =>
@@ -148,16 +153,20 @@ public static class Messages
         $"[yellow]Project requires {projectVersion}{runtimeText} but it's not installed.[/]\n[green]Would you like to install it now?[/]";
 
     public static string AutoDetectedProject(string fileName) => $"[dim]Auto-detected project file: {fileName}[/]";
-    public static string LaunchedGodotDetached(string versionName, int processId) => $"[green]Launched Godot {versionName} in detached mode (PID: {processId}).[/]";
+    public static string LaunchedGodotDetached(string versionName, int processId) =>
+        $"[green]Launched Godot {versionName} in detached mode (PID: {processId}).[/]";
 
     public static string RunningAttachedMode(string versionName) =>
         $"[yellow]Note: Running Godot {versionName} in attached mode due to arguments requiring terminal output.[/]";
 
     // Remove
-    public static string FoundExactMatch(string versionToRemove) => $"[yellow]Found exactly one version matching your query: {versionToRemove}[/]";
-    public static string NoVersionsMatchingQuery(string queryJoin) => $"[orange1]Couldn't find any versions with query `{queryJoin}`. Please try again. [/]";
+    public static string FoundExactMatch(string versionToRemove) =>
+        $"[yellow]Found exactly one version matching your query: {versionToRemove}[/]";
+    public static string NoVersionsMatchingQuery(string queryJoin) =>
+        $"[orange1]Couldn't find any versions with query `{queryJoin}`. Please try again. [/]";
     public static string SuccessfullyRemoved(string selectionPath) => $"Successfully removed {selectionPath} :wastebasket: ";
-    public static string LogLevelOutOfRange(string level) => $"{level} is not valid. Accepted values include: default, debug, info, warning, error, or critical";
+    public static string LogLevelOutOfRange(string level) =>
+        $"{level} is not valid. Accepted values include: default, debug, info, warning, error, or critical";
     public static string LogPathNotFound(string logPath) => $"Path to logs {logPath} doesn't exist.";
     public static string UnableToGetRelease(string version) => $"Unable to get release with selection `{version}`.";
 

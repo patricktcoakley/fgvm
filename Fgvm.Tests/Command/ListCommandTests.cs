@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
@@ -7,7 +8,6 @@ using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Spectre.Console.Testing;
-using System.Text.Json;
 
 namespace Fgvm.Tests.Command;
 

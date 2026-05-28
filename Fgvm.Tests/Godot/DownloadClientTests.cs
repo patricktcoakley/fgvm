@@ -1,10 +1,10 @@
+using System.Net;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
-using System.Net;
 
 namespace Fgvm.Tests.Godot;
 
@@ -52,7 +52,8 @@ public class DownloadClientTests
             .Setup<Task<HttpResponseMessage>>(
                 "SendAsync",
                 ItExpr.Is<HttpRequestMessage>(request =>
-                    request.RequestUri!.ToString() == "https://github.com/godotengine/godot-builds/releases/download/4.0-stable/SHA512-SUMS.txt"),
+                    request.RequestUri!.ToString() ==
+                    "https://github.com/godotengine/godot-builds/releases/download/4.0-stable/SHA512-SUMS.txt"),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -93,7 +94,8 @@ public class DownloadClientTests
             .Setup<Task<HttpResponseMessage>>(
                 "SendAsync",
                 ItExpr.Is<HttpRequestMessage>(request =>
-                    request.RequestUri!.ToString() == "https://raw.githubusercontent.com/godotengine/godot-builds/main/releases/godot-4.2-dev2.json"),
+                    request.RequestUri!.ToString() ==
+                    "https://raw.githubusercontent.com/godotengine/godot-builds/main/releases/godot-4.2-dev2.json"),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {

@@ -1,6 +1,6 @@
+using System.Runtime.InteropServices;
 using Fgvm.Godot;
 using Fgvm.Types;
-using System.Runtime.InteropServices;
 using RuntimeEnvironment = Fgvm.Godot.RuntimeEnvironment;
 
 namespace Fgvm.Environment;
@@ -26,7 +26,8 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
 
         return platformString != null
             ? new Result<string, PlatformError>.Success(platformString)
-            : new Result<string, PlatformError>.Failure(new PlatformError.Unsupported(release, systemInfo.CurrentOS, systemInfo.CurrentArch));
+            : new Result<string, PlatformError>.Failure(
+                new PlatformError.Unsupported(release, systemInfo.CurrentOS, systemInfo.CurrentArch));
     }
 
     public static string GetCatalogTargetId(string? platformString)
@@ -61,7 +62,8 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
             (RuntimeEnvironment.Standard, 1, Architecture.X86) => "osx.32",
 
             (RuntimeEnvironment.Standard, 2, Architecture.X86) when release is { Minor: >= 0, Patch: >= 4 } => "osx32",
-            (RuntimeEnvironment.Standard, 2, Architecture.X86 or Architecture.X64) when release is { Minor: >= 0, Patch: >= 4 } => "osx.fat",
+            (RuntimeEnvironment.Standard, 2, Architecture.X86 or Architecture.X64) when release is { Minor: >= 0, Patch: >= 4 } =>
+                "osx.fat",
 
             // Mono support started with v3
             (RuntimeEnvironment.Standard, 3, Architecture.X64) when release.Minor < 3 => "osx.64",

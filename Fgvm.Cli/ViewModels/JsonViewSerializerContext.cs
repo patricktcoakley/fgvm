@@ -1,5 +1,5 @@
-using Fgvm.Cli.Command;
 using System.Text.Json.Serialization;
+using Fgvm.Cli.Command;
 
 namespace Fgvm.Cli.ViewModels;
 

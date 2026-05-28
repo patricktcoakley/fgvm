@@ -1,10 +1,10 @@
+using System.Security;
 using ConsoleAppFramework;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using System.Security;
 using ZLogger;
 using Messages = Fgvm.Cli.Error.Messages;
 
@@ -20,7 +20,8 @@ public sealed class InstallCommand(
     IInstallationOrchestrator installationOrchestrator,
     IPathService pathService,
     IAnsiConsole console,
-    ILogger<InstallCommand> logger)
+    ILogger<InstallCommand> logger
+)
 {
     /// <summary>
     ///     Install a Godot version.

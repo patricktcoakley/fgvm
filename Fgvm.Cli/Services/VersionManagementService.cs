@@ -30,7 +30,8 @@ public interface IVersionManagementService
     /// <returns>Version resolution result containing execution path and working directory, or failure status</returns>
     /// <exception cref="OperationCanceledException">Thrown when version resolution is canceled.</exception>
     Task<Result<VersionResolutionOutcome, VersionResolutionError>> ResolveVersionForLaunchAsync(bool forceInteractive = false,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     ///     Resolves version for launching using only explicit .fgvm-version files (not project.godot auto-detection)
@@ -40,7 +41,8 @@ public interface IVersionManagementService
     /// <returns>Version resolution result containing execution path and working directory, or failure status</returns>
     /// <exception cref="OperationCanceledException">Thrown when version resolution is canceled.</exception>
     Task<Result<VersionResolutionOutcome, VersionResolutionError>> ResolveVersionForLaunchExplicitAsync(bool forceInteractive = false,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     ///     Sets the global Godot version in the installation registry and refreshes launch artifacts.
@@ -77,7 +79,10 @@ public interface IVersionManagementService
     ///     `.fgvm-version` writes cannot continue.
     /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when interactive selection or installation is canceled.</exception>
-    Task<Release> SetLocalVersionAsync(string[]? query = null, bool forceInteractive = false, CancellationToken cancellationToken = default);
+    Task<Release> SetLocalVersionAsync(string[]? query = null,
+        bool forceInteractive = false,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     ///     Finds or installs a compatible version for the given project requirements.
@@ -88,8 +93,11 @@ public interface IVersionManagementService
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The compatible version if found/installed, null otherwise</returns>
     /// <exception cref="OperationCanceledException">Thrown when installation or interactive confirmation is canceled.</exception>
-    Task<string?> FindOrInstallCompatibleVersionAsync(string projectVersion, bool isDotNet, bool promptForInstallation = true,
-        CancellationToken cancellationToken = default);
+    Task<string?> FindOrInstallCompatibleVersionAsync(string projectVersion,
+        bool isDotNet,
+        bool promptForInstallation = true,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     ///     Creates or updates a `.fgvm-version` file in the specified directory.
@@ -112,14 +120,16 @@ public class VersionManagementService(
     IPathService pathService,
     IProjectManager projectManager,
     IAnsiConsole console,
-    ILogger<VersionManagementService> logger) : IVersionManagementService
+    ILogger<VersionManagementService> logger
+) : IVersionManagementService
 {
     /// <inheritdoc />
     public IHostSystem HostSystem => hostSystem;
 
     /// <inheritdoc />
     public async Task<Result<VersionResolutionOutcome, VersionResolutionError>> ResolveVersionForLaunchAsync(bool forceInteractive = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -155,8 +165,10 @@ public class VersionManagementService(
     }
 
     /// <inheritdoc />
-    public async Task<Result<VersionResolutionOutcome, VersionResolutionError>> ResolveVersionForLaunchExplicitAsync(bool forceInteractive = false,
-        CancellationToken cancellationToken = default)
+    public async Task<Result<VersionResolutionOutcome, VersionResolutionError>> ResolveVersionForLaunchExplicitAsync(bool forceInteractive =
+            false,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -192,7 +204,10 @@ public class VersionManagementService(
     }
 
     /// <inheritdoc />
-    public async Task<Release> SetGlobalVersionAsync(string[] query, bool forceInteractive = false, CancellationToken cancellationToken = default)
+    public async Task<Release> SetGlobalVersionAsync(string[] query,
+        bool forceInteractive = false,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -263,7 +278,10 @@ public class VersionManagementService(
     }
 
     /// <inheritdoc />
-    public async Task<Release> SetLocalVersionAsync(string[]? query = null, bool forceInteractive = false, CancellationToken cancellationToken = default)
+    public async Task<Release> SetLocalVersionAsync(string[]? query = null,
+        bool forceInteractive = false,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -292,8 +310,11 @@ public class VersionManagementService(
 
     // TODO: Replace with Task<Result<string, VersionError>> FindOrInstallCompatibleVersionAsync(...)
     /// <inheritdoc />
-    public async Task<string?> FindOrInstallCompatibleVersionAsync(string projectVersion, bool isDotNet, bool promptForInstallation = true,
-        CancellationToken cancellationToken = default)
+    public async Task<string?> FindOrInstallCompatibleVersionAsync(string projectVersion,
+        bool isDotNet,
+        bool promptForInstallation = true,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -397,7 +418,8 @@ public class VersionManagementService(
 
     private async Task<Result<VersionResolutionOutcome, VersionResolutionError>> ResolveProjectVersionAsync(Release projectRelease,
         List<string> installed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var projectVersion = projectRelease.ReleaseNameWithRuntime;
 
@@ -421,7 +443,8 @@ public class VersionManagementService(
                 new VersionResolutionError.NotFound(projectVersion));
         }
 
-        var compatibleInstalled = await FindOrInstallCompatibleVersionAsync(projectVersion, projectRelease.IsDotNet, false, cancellationToken);
+        var compatibleInstalled =
+            await FindOrInstallCompatibleVersionAsync(projectVersion, projectRelease.IsDotNet, false, cancellationToken);
         if (compatibleInstalled is null)
         {
             console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
@@ -435,7 +458,8 @@ public class VersionManagementService(
         var newCompatibleVersion = TryFindCompatibleVersion(projectVersion, projectRelease.IsDotNet, updatedInstalled);
 
         if (newCompatibleVersion is null ||
-            releaseManager.CreateRelease(newCompatibleVersion) is not Result<Release, ReleaseParseError>.Success(var newProjectGodotRelease))
+            releaseManager.CreateRelease(newCompatibleVersion) is not
+                Result<Release, ReleaseParseError>.Success(var newProjectGodotRelease))
         {
             console.MarkupLine(Messages.InstallationSucceededButNotFound);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
@@ -444,7 +468,8 @@ public class VersionManagementService(
 
         var (execPath, workingDirectory, installationKey) = GetExecutionPaths(newProjectGodotRelease);
 
-        console.MarkupLine(Messages.SuccessfullyInstalledAndUsing(projectVersion, projectRelease.RuntimeDisplaySuffix, newCompatibleVersion));
+        console.MarkupLine(
+            Messages.SuccessfullyInstalledAndUsing(projectVersion, projectRelease.RuntimeDisplaySuffix, newCompatibleVersion));
 
         return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
             new VersionResolutionOutcome.Found(execPath, workingDirectory, newCompatibleVersion, true, installationKey));
@@ -478,9 +503,11 @@ public class VersionManagementService(
             new VersionResolutionOutcome.Found(execPath, workingDirectory, installation.ReleaseNameWithRuntime, false, installation.Key));
     }
 
-    private Result<VersionResolutionOutcome, VersionResolutionError> CreateVersionResolutionResult(string compatibleVersion, Release projectRelease,
+    private Result<VersionResolutionOutcome, VersionResolutionError> CreateVersionResolutionResult(string compatibleVersion,
+        Release projectRelease,
         string projectVersion,
-        bool isProjectVersion = false)
+        bool isProjectVersion = false
+    )
     {
         if (releaseManager.CreateRelease(compatibleVersion) is not Result<Release, ReleaseParseError>.Success(var projectGodotRelease))
         {
@@ -574,7 +601,11 @@ public class VersionManagementService(
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
 
-    private async Task<string> DetermineVersionToSetAsync(string[]? query, bool forceInteractive, string[] installed, CancellationToken cancellationToken)
+    private async Task<string> DetermineVersionToSetAsync(string[]? query,
+        bool forceInteractive,
+        string[] installed,
+        CancellationToken cancellationToken
+    )
     {
         if (query == null || query.Length == 0)
         {
@@ -604,8 +635,11 @@ public class VersionManagementService(
         return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
     }
 
-    private async Task<string> HandleProjectInfoAsync(Release projectRelease, string[] installed, bool forceInteractive,
-        CancellationToken cancellationToken)
+    private async Task<string> HandleProjectInfoAsync(Release projectRelease,
+        string[] installed,
+        bool forceInteractive,
+        CancellationToken cancellationToken
+    )
     {
         var projectVersion = projectRelease.ReleaseNameWithRuntime;
 

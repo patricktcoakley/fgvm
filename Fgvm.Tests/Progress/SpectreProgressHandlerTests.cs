@@ -28,7 +28,8 @@ public class SpectreProgressHandlerTests
         var result = await handler.TrackProgressAsync(async progress =>
         {
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
-            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase} • 50.0/100.0 MB • 25.5 MB/s"));
+            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
+                $"Downloading {installPathBase} • 50.0/100.0 MB • 25.5 MB/s"));
             await Task.Delay(1);
             return "success";
         });
@@ -120,7 +121,8 @@ public class SpectreProgressHandlerTests
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
             await Task.Delay(1);
 
-            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase} • 126.7/126.7 MB • 58.0 MB/s"));
+            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
+                $"Downloading {installPathBase} • 126.7/126.7 MB • 58.0 MB/s"));
             await Task.Delay(1);
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));

@@ -1,6 +1,6 @@
+using System.Text.RegularExpressions;
 using Fgvm.Environment;
 using Fgvm.Types;
-using System.Text.RegularExpressions;
 
 namespace Fgvm.Godot;
 

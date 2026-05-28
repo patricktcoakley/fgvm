@@ -5,8 +5,10 @@ namespace Fgvm.Cli.Prompts;
 
 public static class Remove
 {
-    public static async Task<IEnumerable<string>> ShowVersionRemovalPrompt(
-        string[] installed, IAnsiConsole console, CancellationToken cancellationToken)
+    public static async Task<IEnumerable<string>> ShowVersionRemovalPrompt(string[] installed,
+        IAnsiConsole console,
+        CancellationToken cancellationToken
+    )
     {
         var versionPrompt = CreateRemoveVersionPrompt(installed);
         var versions = await versionPrompt.ShowAsync(console, cancellationToken);

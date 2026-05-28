@@ -16,7 +16,8 @@ public sealed class RemoveCommand(
     IInstallationRegistry installationRegistry,
     IPathService pathService,
     IAnsiConsole console,
-    ILogger<RemoveCommand> logger)
+    ILogger<RemoveCommand> logger
+)
 {
     /// <summary>
     ///     Remove an installed Godot version.
@@ -77,7 +78,8 @@ public sealed class RemoveCommand(
                     case Result<bool, FileOperationError>.Failure(var existsError):
                         throw new InvalidOperationException($"Unable to read installation path `{selectionPath}`: {existsError}");
                     case Result<bool, FileOperationError>.Success { Value: true }:
-                        if (hostSystem.DeleteDirectoryIfExists(selectionPath, true) is Result<Unit, FileOperationError>.Failure(var deleteError))
+                        if (hostSystem.DeleteDirectoryIfExists(selectionPath, true) is
+                            Result<Unit, FileOperationError>.Failure(var deleteError))
                         {
                             throw new InvalidOperationException($"Unable to remove installation `{selectionPath}`: {deleteError}");
                         }

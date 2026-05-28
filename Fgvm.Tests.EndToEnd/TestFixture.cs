@@ -1,6 +1,6 @@
-using Fgvm.Error;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Fgvm.Error;
 
 namespace Fgvm.Tests.EndToEnd;
 
@@ -80,13 +80,13 @@ public sealed class TestFixture : IAsyncLifetime
     }
 
     public async Task<CommandResult> ExecuteCommand(string[] args) =>
-        await ExecuteProcess(FgvmPath, args, workingDirectory: null, environment: null);
+        await ExecuteProcess(FgvmPath, args, null, null);
 
     public async Task<CommandResult> ExecuteCommandInDirectory(string workingDirectory, string[] args) =>
-        await ExecuteProcess(FgvmPath, args, workingDirectory, environment: null);
+        await ExecuteProcess(FgvmPath, args, workingDirectory, null);
 
     public async Task<CommandResult> ExecuteCommandWithEnvironment(string[] args, IReadOnlyDictionary<string, string> environment) =>
-        await ExecuteProcess(FgvmPath, args, workingDirectory: null, environment);
+        await ExecuteProcess(FgvmPath, args, null, environment);
 
     public async Task<CommandResult> ExecuteGodotShim(string[] args)
     {
@@ -99,7 +99,7 @@ public sealed class TestFixture : IAsyncLifetime
             ? ["/c", "godot", .. args]
             : ["godot", .. args];
 
-        return await ExecuteProcess(launcher, launcherArgs, workingDirectory: null, environment: new Dictionary<string, string>
+        return await ExecuteProcess(launcher, launcherArgs, null, new Dictionary<string, string>
         {
             ["PATH"] = path
         });
@@ -215,11 +215,11 @@ public sealed class TestFixture : IAsyncLifetime
         return result.ExitCode == ExitCodes.Success ? result.Stdout.Trim() : string.Empty;
     }
 
-    private async Task<CommandResult> ExecuteProcess(
-        string fileName,
+    private async Task<CommandResult> ExecuteProcess(string fileName,
         string[] args,
         string? workingDirectory,
-        IReadOnlyDictionary<string, string>? environment)
+        IReadOnlyDictionary<string, string>? environment
+    )
     {
         var startInfo = new ProcessStartInfo
         {

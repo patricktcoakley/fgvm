@@ -1,10 +1,10 @@
+using System.IO.Enumeration;
+using System.Runtime.Versioning;
+using System.Security.Principal;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
-using System.IO.Enumeration;
-using System.Runtime.Versioning;
-using System.Security.Principal;
 
 namespace Fgvm.Environment;
 
@@ -867,7 +867,8 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
                     new SymlinkError.InvalidSymlink(pathService.MacAppSymlinkPath, appFile.LinkTarget));
             }
 
-            logger.LogInformation("{MacAppSymlinkPath} is currently set to: {LinkTarget}", pathService.MacAppSymlinkPath, appFile.LinkTarget);
+            logger.LogInformation("{MacAppSymlinkPath} is currently set to: {LinkTarget}", pathService.MacAppSymlinkPath,
+                appFile.LinkTarget);
             return new Result<SymlinkInfo, SymlinkError>.Success(new SymlinkInfo(appFile.LinkTarget));
         }
 

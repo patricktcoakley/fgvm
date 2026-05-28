@@ -1,6 +1,6 @@
+using System.Runtime.InteropServices;
 using Fgvm.Environment;
 using Fgvm.Godot;
-using System.Runtime.InteropServices;
 
 namespace Fgvm.Types;
 

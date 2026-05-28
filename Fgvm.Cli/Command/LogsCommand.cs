@@ -1,13 +1,13 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using System.Globalization;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using ZLogger;
 
 namespace Fgvm.Cli.Command;
@@ -136,7 +136,8 @@ public readonly record struct LogEntryView(
     [property: JsonPropertyName("Message")]
     string Message,
     [property: JsonPropertyName("Category")]
-    string Category) : IJsonView<LogEntryView>
+    string Category
+) : IJsonView<LogEntryView>
 {
     public override string ToString() =>
         $"Timestamp: {Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)}, LogLevel: {Level}, Message: {Message}, Category: {Category}";

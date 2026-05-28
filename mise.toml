@@ -36,14 +36,21 @@ run = [
 ]
 
 [tasks.format]
-description = "Format all projects in-place."
+description = "Format the project with JetBrains cleanupcode."
 dir = "."
-run = "dotnet format"
+run = [
+    "dotnet tool run jb -- cleanupcode --settings=Fgvm.sln.DotSettings --profile=\"Cleanup\" --no-build --no-updates --include=\"**/*.cs;**/*.csproj;**/*.props;**/*.targets;*.slnx\" --exclude=\"**/bin/**;**/obj/**;**/TestResults/**;.git/**;.idea/**;.fgvm-e2e-cli/**;.fgvm-e2e-fixtures/**\""
+]
 
 [tasks."format:check"]
-description = "Verify formatting without making changes."
+description = "Verify JetBrains cleanupcode formatting in a clean worktree."
 dir = "."
-run = "dotnet format --verify-no-changes"
+run = [
+    "git diff --quiet",
+    "git diff --cached --quiet",
+    "mise run format",
+    "git diff --exit-code"
+]
 
 [tasks.build]
 description = "Build the release configuration of the CLI."

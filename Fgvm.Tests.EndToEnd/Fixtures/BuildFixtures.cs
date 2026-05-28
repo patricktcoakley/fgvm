@@ -59,11 +59,11 @@ internal sealed class FixtureBuilder(BuildContext context)
         return publishedApps;
     }
 
-    private static async Task<GeneratedFixtureManifest> CreateManifestAsync(
-        FixtureRecipe recipe,
+    private static async Task<GeneratedFixtureManifest> CreateManifestAsync(FixtureRecipe recipe,
         FixturePlatform platform,
         FixtureOutputPaths outputs,
-        IReadOnlyDictionary<string, PublishedMockApp> publishedApps)
+        IReadOnlyDictionary<string, PublishedMockApp> publishedApps
+    )
     {
         var manifest = GeneratedFixtureManifest.Create(recipe, platform);
 
