@@ -1,7 +1,7 @@
-using Fgvm.Types;
-using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Fgvm.Types;
+using Microsoft.Extensions.Logging;
 
 namespace Fgvm.Godot;
 
@@ -34,7 +34,9 @@ public sealed class FixtureDownloadClient : IDownloadClient
     public Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken)
         => WithManifest(manifest => OpenZip(manifest, filename, godotRelease), cancellationToken);
 
-    private Task<Result<T, NetworkError>> WithManifest<T>(Func<FixtureManifest, Result<T, NetworkError>> getResult, CancellationToken cancellationToken)
+    private Task<Result<T, NetworkError>> WithManifest<T>(Func<FixtureManifest, Result<T, NetworkError>> getResult,
+        CancellationToken cancellationToken
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(ReadManifest() switch
@@ -82,7 +84,11 @@ public sealed class FixtureDownloadClient : IDownloadClient
             _logger.LogInformation("Loaded fixture manifest {ManifestPath}", fullPath);
             return new Result<FixtureManifest, NetworkError>.Success(manifest);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException or ArgumentException)
+        catch (Exception ex) when (ex is IOException
+                                       or UnauthorizedAccessException
+                                       or JsonException
+                                       or NotSupportedException
+                                       or ArgumentException)
         {
             return new Result<FixtureManifest, NetworkError>.Failure(
                 new NetworkError.ConnectionFailure($"Failed to load fixture manifest: {ex.Message}"));
@@ -91,11 +97,13 @@ public sealed class FixtureDownloadClient : IDownloadClient
 
     private static Result<GodotReleaseManifest, NetworkError> CreateReleaseManifest(FixtureManifest manifest, Release release)
     {
-        var fixtureRelease = manifest.Releases.FirstOrDefault(x => string.Equals(x.Name, release.ReleaseName, StringComparison.OrdinalIgnoreCase));
+        var fixtureRelease =
+            manifest.Releases.FirstOrDefault(x => string.Equals(x.Name, release.ReleaseName, StringComparison.OrdinalIgnoreCase));
         if (fixtureRelease is null)
         {
             return new Result<GodotReleaseManifest, NetworkError>.Failure(
-                new NetworkError.RequestFailure($"fixture://manifest/godot-{release.ReleaseName}.json", 404, "Release not found in fixture manifest."));
+                new NetworkError.RequestFailure($"fixture://manifest/godot-{release.ReleaseName}.json", 404,
+                    "Release not found in fixture manifest."));
         }
 
         var files = manifest.Artifacts
@@ -127,7 +135,8 @@ public sealed class FixtureDownloadClient : IDownloadClient
         if (artifacts.Length == 0)
         {
             return new Result<string, NetworkError>.Failure(
-                new NetworkError.RequestFailure($"fixture://checksums/{release.ReleaseName}/SHA512-SUMS.txt", 404, "Release checksums not found in fixture manifest."));
+                new NetworkError.RequestFailure($"fixture://checksums/{release.ReleaseName}/SHA512-SUMS.txt", 404,
+                    "Release checksums not found in fixture manifest."));
         }
 
         var content = string.Join(System.Environment.NewLine, artifacts.Select(artifact => $"{artifact.Sha512}  {artifact.FileName}"));
@@ -143,7 +152,8 @@ public sealed class FixtureDownloadClient : IDownloadClient
         if (artifact is null)
         {
             return new Result<ZipDownload, NetworkError>.Failure(
-                new NetworkError.RequestFailure($"fixture://zips/{release.ReleaseName}/{filename}", 404, "Artifact not found in fixture manifest."));
+                new NetworkError.RequestFailure($"fixture://zips/{release.ReleaseName}/{filename}", 404,
+                    "Artifact not found in fixture manifest."));
         }
 
         try

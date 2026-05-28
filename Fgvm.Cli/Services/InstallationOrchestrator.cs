@@ -27,8 +27,10 @@ public interface IInstallationOrchestrator
     ///     continue.
     /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when interactive selection or installation is canceled.</exception>
-    Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query, bool setAsDefault = false,
-        CancellationToken cancellationToken = default);
+    Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query,
+        bool setAsDefault = false,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public sealed class InstallationOrchestrator(
@@ -36,11 +38,14 @@ public sealed class InstallationOrchestrator(
     IInstallationRegistry installationRegistry,
     IInstallationService installationService,
     IProgressHandler<InstallationStage> progressHandler,
-    IAnsiConsole console) : IInstallationOrchestrator
+    IAnsiConsole console
+) : IInstallationOrchestrator
 {
     /// <inheritdoc />
-    public async Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query, bool setAsDefault = false,
-        CancellationToken cancellationToken = default)
+    public async Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query,
+        bool setAsDefault = false,
+        CancellationToken cancellationToken = default
+    )
     {
         Result<InstallationOutcome, InstallationError> installationResult;
         var wasAutoSetAsDefault = false;
@@ -114,7 +119,8 @@ public sealed class InstallationOrchestrator(
 
         switch (installationResult)
         {
-            case Result<InstallationOutcome, InstallationError>.Success(InstallationOutcome.NewInstallation(var release, var checksumStatus, var symlinkWarning)):
+            case Result<InstallationOutcome, InstallationError>.Success(
+                InstallationOutcome.NewInstallation(var release, var checksumStatus, var symlinkWarning)):
                 var successMessage = GetInstallationSuccessMessage(release, setAsDefault, wasAutoSetAsDefault);
                 console.MarkupLine(successMessage);
 

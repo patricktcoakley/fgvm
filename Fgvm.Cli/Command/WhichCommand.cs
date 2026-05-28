@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
@@ -5,11 +6,15 @@ using Fgvm.Godot;
 using Fgvm.Services;
 using Fgvm.Types;
 using Spectre.Console;
-using System.Text.Json.Serialization;
 
 namespace Fgvm.Cli.Command;
 
-public sealed class WhichCommand(IInstallationRegistry installationRegistry, IReleaseManager releaseManager, IPathService pathService, IAnsiConsole console)
+public sealed class WhichCommand(
+    IInstallationRegistry installationRegistry,
+    IReleaseManager releaseManager,
+    IPathService pathService,
+    IAnsiConsole console
+)
 {
     /// <summary>
     ///     Show the path to the current Godot version.
@@ -46,7 +51,10 @@ internal readonly record struct WhichView : IJsonView<WhichView>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 
-    public static WhichView Create(Result<Installation, InstallationRegistryError> result, IReleaseManager releaseManager, IPathService pathService) => result switch
+    public static WhichView Create(Result<Installation, InstallationRegistryError> result,
+        IReleaseManager releaseManager,
+        IPathService pathService
+    ) => result switch
     {
         Result<Installation, InstallationRegistryError>.Success(var installation) =>
             CreateSuccess(installation, releaseManager, pathService),
@@ -67,7 +75,8 @@ internal readonly record struct WhichView : IJsonView<WhichView>
 
     private static WhichView CreateSuccess(Installation installation, IReleaseManager releaseManager, IPathService pathService)
     {
-        if (releaseManager.CreateRelease(installation.ReleaseNameWithRuntime) is not Result<Release, ReleaseParseError>.Success(var release))
+        if (releaseManager.CreateRelease(installation.ReleaseNameWithRuntime) is not
+            Result<Release, ReleaseParseError>.Success(var release))
         {
             return new WhichView(false, null, "Default Godot version is invalid.");
         }

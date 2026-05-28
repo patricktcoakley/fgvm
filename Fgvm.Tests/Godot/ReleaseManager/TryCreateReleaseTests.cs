@@ -1,6 +1,6 @@
+using System.Runtime.InteropServices;
 using Fgvm.Environment;
 using Fgvm.Godot;
-using System.Runtime.InteropServices;
 using RuntimeEnvironment = Fgvm.Godot.RuntimeEnvironment;
 
 namespace Fgvm.Tests.Godot.ReleaseManager;
@@ -11,11 +11,11 @@ public class TryCreateReleaseTests
 {
     [Theory]
     [MemberData(nameof(GetExecNameTestData), MemberType = typeof(TestData))]
-    public void ExecName_ShouldReturnTheCorrectExecutable(
-        OS os,
+    public void ExecName_ShouldReturnTheCorrectExecutable(OS os,
         Architecture arch,
         string versionInfo,
-        string expectedExecName)
+        string expectedExecName
+    )
     {
         var releaseManager = new ReleaseManagerBuilder()
             .WithOSAndArch(os, arch)
@@ -29,7 +29,12 @@ public class TryCreateReleaseTests
 
     [Theory]
     [MemberData(nameof(DetermineFullNameTestData), MemberType = typeof(TestData))]
-    public void Release_FileName_ReturnsExpectedFileName(string version, RuntimeEnvironment runtimeEnvironment, OS os, Architecture arch, string expected)
+    public void Release_FileName_ReturnsExpectedFileName(string version,
+        RuntimeEnvironment runtimeEnvironment,
+        OS os,
+        Architecture arch,
+        string expected
+    )
     {
         var releaseManager = new ReleaseManagerBuilder()
             .WithOSAndArch(os, arch)
@@ -44,13 +49,13 @@ public class TryCreateReleaseTests
 
     [Theory]
     [MemberData(nameof(GetReleasePropertyTestData), MemberType = typeof(TestData))]
-    public void Release_Properties_ShouldBeCorrectlySet(
-        OS os,
+    public void Release_Properties_ShouldBeCorrectlySet(OS os,
         Architecture arch,
         string versionString,
         RuntimeEnvironment expectedRuntime,
         string expectedExecName,
-        string expectedFileName)
+        string expectedFileName
+    )
     {
         var releaseManager = new ReleaseManagerBuilder()
             .WithOSAndArch(os, arch)
@@ -97,7 +102,11 @@ public class TryCreateReleaseTests
     [InlineData(OS.Windows, Architecture.X86, "3.5-stable-standard", "win32.exe")]
     [InlineData(OS.Windows, Architecture.X64, "3.5-stable-mono", "mono_win64")]
     [InlineData(OS.Windows, Architecture.X86, "3.5-stable-mono", "mono_win32")]
-    public void TryCreateRelease_SupportedPlatform_ReturnsRelease(OS os, Architecture arch, string versionString, string expectedPlatformString)
+    public void TryCreateRelease_SupportedPlatform_ReturnsRelease(OS os,
+        Architecture arch,
+        string versionString,
+        string expectedPlatformString
+    )
     {
         var releaseManager = new ReleaseManagerBuilder()
             .WithOSAndArch(os, arch)

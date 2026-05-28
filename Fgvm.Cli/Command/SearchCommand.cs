@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
@@ -6,7 +7,6 @@ using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using System.Text.Json.Serialization;
 using ZLogger;
 
 namespace Fgvm.Cli.Command;
@@ -15,7 +15,8 @@ public sealed class SearchCommand(
     IReleaseManager releaseManager,
     IPathService pathService,
     IAnsiConsole console,
-    ILogger<SearchCommand> logger)
+    ILogger<SearchCommand> logger
+)
 {
     /// <summary>
     ///     Search available Godot versions.
@@ -27,7 +28,11 @@ public sealed class SearchCommand(
     /// <exception cref="InvalidOperationException">Thrown when remote release lookup fails.</exception>
     /// <exception cref="OperationCanceledException">Thrown when search is canceled.</exception>
     [Command("search|s")]
-    public async Task Search(bool json = false, bool noCache = false, [Argument] string[]? query = null, CancellationToken cancellationToken = default)
+    public async Task Search(bool json = false,
+        bool noCache = false,
+        [Argument] string[]? query = null,
+        CancellationToken cancellationToken = default
+    )
     {
         var searchQuery = query ?? [];
         var fetchMode = noCache ? ReleaseFetchMode.ForceRemote : ReleaseFetchMode.UseCache;
@@ -75,7 +80,10 @@ public sealed class SearchCommand(
     }
 }
 
-internal readonly record struct RemoteReleaseView([property: JsonPropertyName("name")] string Name) : IJsonView<RemoteReleaseView>;
+internal readonly record struct RemoteReleaseView(
+    [property: JsonPropertyName("name")]
+    string Name
+) : IJsonView<RemoteReleaseView>;
 
 internal static class RemoteReleaseViewExtensions
 {

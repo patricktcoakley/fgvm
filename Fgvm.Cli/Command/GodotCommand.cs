@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text;
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
@@ -6,8 +8,6 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using System.Diagnostics;
-using System.Text;
 using ZLogger;
 
 namespace Fgvm.Cli.Command;
@@ -18,7 +18,8 @@ public sealed class GodotCommand(
     IProjectManager projectManager,
     IInstallationRegistry installationRegistry,
     IAnsiConsole console,
-    ILogger<GodotCommand> logger)
+    ILogger<GodotCommand> logger
+)
 {
     /// <summary>
     ///     Launch the currently selected Godot version.
@@ -30,7 +31,11 @@ public sealed class GodotCommand(
     /// <exception cref="InvalidOperationException">Thrown when version resolution or project-file lookup cannot continue.</exception>
     /// <exception cref="OperationCanceledException">Thrown when launch is canceled.</exception>
     [Command("godot|g")]
-    public async Task Launch(bool interactive = false, bool attached = false, string args = "", CancellationToken cancellationToken = default)
+    public async Task Launch(bool interactive = false,
+        bool attached = false,
+        string args = "",
+        CancellationToken cancellationToken = default
+    )
     {
         var error = new StringBuilder();
         var process = new Process();
@@ -82,7 +87,8 @@ public sealed class GodotCommand(
                 case Result<VersionResolutionOutcome, VersionResolutionError>.Failure(var resolutionError):
                     var errorMessage = resolutionError switch
                     {
-                        VersionResolutionError.NotFound notFound => Messages.VersionResolutionNotFound(notFound.Version, versionManagementService.HostSystem),
+                        VersionResolutionError.NotFound notFound => Messages.VersionResolutionNotFound(notFound.Version,
+                            versionManagementService.HostSystem),
                         VersionResolutionError.Failed failed => Messages.VersionResolutionFailed(failed.Reason),
                         VersionResolutionError.InvalidVersion invalid => Messages.InvalidVersion(invalid.Version),
                         _ => Messages.UnknownResolutionError
@@ -234,7 +240,8 @@ public sealed class GodotCommand(
         {
             var (execPath, workingDir) = versionResult switch
             {
-                Result<VersionResolutionOutcome, VersionResolutionError>.Success { Value: VersionResolutionOutcome.Found found } => (found.ExecutablePath,
+                Result<VersionResolutionOutcome, VersionResolutionError>.Success { Value: VersionResolutionOutcome.Found found } => (
+                    found.ExecutablePath,
                     found.WorkingDirectory),
                 _ => ("unknown", "unknown")
             };

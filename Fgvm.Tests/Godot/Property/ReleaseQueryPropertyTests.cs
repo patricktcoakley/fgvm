@@ -172,7 +172,8 @@ public class ReleaseQueryPropertyTests
             .Zip(Gen.Elements("rc", "beta", "alpha", "dev"))
             .Zip(Gen.Choose(1, 5))
             .Zip(Gen.Choose(6, 10))
-            .Select(t => new { Version = t.Item1.Item1.Item1, ReleaseType = t.Item1.Item1.Item2, LowerNum = t.Item1.Item2, HigherNum = t.Item2 });
+            .Select(t => new
+                { Version = t.Item1.Item1.Item1, ReleaseType = t.Item1.Item1.Item2, LowerNum = t.Item1.Item2, HigherNum = t.Item2 });
 
         return Prop.ForAll(combinedGen.ToArbitrary(), data =>
         {

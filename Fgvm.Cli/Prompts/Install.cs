@@ -6,8 +6,10 @@ namespace Fgvm.Cli.Prompts;
 
 public static class Install
 {
-    public static async Task<string> ShowVersionSelectionPrompt(
-        string[] releaseNames, IAnsiConsole console, CancellationToken cancellationToken)
+    public static async Task<string> ShowVersionSelectionPrompt(string[] releaseNames,
+        IAnsiConsole console,
+        CancellationToken cancellationToken
+    )
     {
         var versionPrompt = CreateVersionSelectionPrompt(releaseNames);
         var version = await versionPrompt.ShowAsync(console, cancellationToken);

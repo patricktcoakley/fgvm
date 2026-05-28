@@ -20,13 +20,13 @@ public sealed record Release : IComparable<Release>
     /// <param name="type">Release type ("stable", "rc1", etc)</param>
     /// <param name="runtimeEnvironment">Standard or Mono</param>
     /// <param name="platformString">The platform string, i.e., "linux_x86_64"</param>
-    internal Release(
-        int major,
+    internal Release(int major,
         int minor,
         string? platformString = null,
         int? patch = null,
         ReleaseType? type = null,
-        RuntimeEnvironment runtimeEnvironment = RuntimeEnvironment.Standard)
+        RuntimeEnvironment runtimeEnvironment = RuntimeEnvironment.Standard
+    )
     {
         Major = major;
         Minor = minor;

@@ -13,13 +13,13 @@ public class ReleaseTests
     [InlineData("4.2-stable-mono", 4, 2, null, "stable", RuntimeEnvironment.Mono)]
     [InlineData("3.5.1-alpha1-mono", 3, 5, 1, "alpha1", RuntimeEnvironment.Mono)]
     [InlineData("4.3.1-rc4-mono", 4, 3, 1, "rc4", RuntimeEnvironment.Mono)]
-    public void TryParse_ValidVersions_ReturnsTrue(
-        string input,
+    public void TryParse_ValidVersions_ReturnsTrue(string input,
         int expectedMajor,
         int expectedMinor,
         int? expectedPatch,
         string expectedReleaseType,
-        RuntimeEnvironment expectedRuntimeEnvironment)
+        RuntimeEnvironment expectedRuntimeEnvironment
+    )
     {
         var release = Release.TryParse(input);
 

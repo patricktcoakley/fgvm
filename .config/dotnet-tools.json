@@ -22,6 +22,13 @@
         "reportgenerator"
       ],
       "rollForward": false
+    },
+    "jetbrains.resharper.globaltools": {
+      "version": "2026.1.2",
+      "commands": [
+        "jb"
+      ],
+      "rollForward": false
     }
   }
 }

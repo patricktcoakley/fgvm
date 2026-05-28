@@ -1,7 +1,7 @@
+using System.Runtime.InteropServices;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Types;
-using System.Runtime.InteropServices;
 using RuntimeEnvironment = Fgvm.Godot.RuntimeEnvironment;
 
 namespace Fgvm.Tests.Environment;
@@ -20,13 +20,13 @@ public class PlatformStringProviderTests
     [InlineData(RuntimeEnvironment.Mono, 3, Architecture.Arm, null)] // Should return Failure
     [InlineData(RuntimeEnvironment.Mono, 4, Architecture.Arm64, "mono_macos.universal")]
     [InlineData(RuntimeEnvironment.Standard, 4, Architecture.Arm64, "macos.universal")]
-    public void MacOS_ShouldReturnCorrectPlatformString(
-        RuntimeEnvironment runtimeEnvironment,
+    public void MacOS_ShouldReturnCorrectPlatformString(RuntimeEnvironment runtimeEnvironment,
         int major,
         Architecture arch,
         string? expected,
         int minor = 0,
-        int? patch = null)
+        int? patch = null
+    )
     {
         var platformStringProvider = new PlatformStringProvider(new SystemInfo(OS.MacOS, arch));
         var release = new Release(major, minor, patch: patch, runtimeEnvironment: runtimeEnvironment);
@@ -58,11 +58,11 @@ public class PlatformStringProviderTests
     [InlineData(RuntimeEnvironment.Mono, 4, Architecture.Arm, "mono_linux_arm32")]
     [InlineData(RuntimeEnvironment.Mono, 4, Architecture.Arm64, "mono_linux_arm64")]
     [InlineData(RuntimeEnvironment.Standard, 4, Architecture.Arm64, "linux.arm64")]
-    public void Linux_ShouldReturnCorrectPlatformString(
-        RuntimeEnvironment runtime,
+    public void Linux_ShouldReturnCorrectPlatformString(RuntimeEnvironment runtime,
         int major,
         Architecture arch,
-        string? expected)
+        string? expected
+    )
     {
         var platformStringProvider = new PlatformStringProvider(new SystemInfo(OS.Linux, arch));
         var release = new Release(major, 0, runtimeEnvironment: runtime);
@@ -93,12 +93,12 @@ public class PlatformStringProviderTests
     [InlineData(RuntimeEnvironment.Standard, Architecture.Arm64, null, 3, 0)]
     [InlineData(RuntimeEnvironment.Mono, Architecture.Arm64, null, 4, 2)]
     [InlineData(RuntimeEnvironment.Standard, Architecture.Arm64, null, 4, 2)]
-    public void Windows_ShouldReturnCorrectPlatformString(
-        RuntimeEnvironment runtime,
+    public void Windows_ShouldReturnCorrectPlatformString(RuntimeEnvironment runtime,
         Architecture arch,
         string? expected,
         int major = 3,
-        int minor = 0)
+        int minor = 0
+    )
     {
         var platformStringProvider = new PlatformStringProvider(new SystemInfo(OS.Windows, arch));
         var release = new Release(major, minor, runtimeEnvironment: runtime);

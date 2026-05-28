@@ -1,10 +1,10 @@
+using System.Text.Json;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Spectre.Console.Testing;
-using System.Text.Json;
 
 namespace Fgvm.Tests.Command;
 

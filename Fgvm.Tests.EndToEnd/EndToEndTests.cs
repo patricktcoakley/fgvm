@@ -1,6 +1,6 @@
-using Fgvm.Error;
 using System.Text.Json;
 using System.Xml.Linq;
+using Fgvm.Error;
 
 namespace Fgvm.Tests.EndToEnd;
 
@@ -79,7 +79,8 @@ public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
 
         using var document = JsonDocument.Parse(result.Stdout.Trim());
         Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
-        Assert.Contains(document.RootElement.EnumerateArray(), item => item.ToString().Contains(StableRelease, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(document.RootElement.EnumerateArray(),
+            item => item.ToString().Contains(StableRelease, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -90,10 +91,11 @@ public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
 
         try
         {
-            var result = await fixture.ExecuteCommandWithEnvironment(["search", "--json", StableVersionQuery], new Dictionary<string, string>
-            {
-                ["FGVM_HOME"] = home
-            });
+            var result = await fixture.ExecuteCommandWithEnvironment(["search", "--json", StableVersionQuery],
+                new Dictionary<string, string>
+                {
+                    ["FGVM_HOME"] = home
+                });
 
             await fixture.AssertSuccessfulExecutionAsync(result, "search");
             Assert.True(await fixture.FileExists(releasesPath), "Expected search to create releases.json when no cache exists.");
@@ -121,7 +123,8 @@ public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
         try
         {
             await fixture.CreateDirectory(root);
-            await fixture.WriteFile(releasesPath, "{\"lastUpdated\":\"2999-01-01T00:00:00+00:00\",\"releases\":{\"4.999\":{\"stable\":{}}}}");
+            await fixture.WriteFile(releasesPath,
+                "{\"lastUpdated\":\"2999-01-01T00:00:00+00:00\",\"releases\":{\"4.999\":{\"stable\":{}}}}");
 
             var cached = await fixture.ExecuteCommandWithEnvironment(["search", "--json", "4.999"], new Dictionary<string, string>
             {
@@ -130,10 +133,11 @@ public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
             await fixture.AssertSuccessfulExecutionAsync(cached, "cached search");
             Assert.Contains("4.999-stable", cached.Stdout);
 
-            var refreshed = await fixture.ExecuteCommandWithEnvironment(["search", "--no-cache", "--json", "4.999"], new Dictionary<string, string>
-            {
-                ["FGVM_HOME"] = home
-            });
+            var refreshed = await fixture.ExecuteCommandWithEnvironment(["search", "--no-cache", "--json", "4.999"],
+                new Dictionary<string, string>
+                {
+                    ["FGVM_HOME"] = home
+                });
             await fixture.AssertSuccessfulExecutionAsync(refreshed, "search --no-cache");
             Assert.DoesNotContain("4.999-stable", refreshed.Stdout);
             Assert.DoesNotContain("4.999", await fixture.ReadFile(releasesPath));

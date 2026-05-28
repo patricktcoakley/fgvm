@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Progress;
@@ -5,7 +6,6 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using System.IO.Compression;
 
 namespace Fgvm.Tests.Services;
 
@@ -116,7 +116,8 @@ public class InstallationServiceTests
 
         var installationRegistry = new Mock<IInstallationRegistry>();
         installationRegistry.Setup(x => x.FindByReleaseName(release.ReleaseNameWithRuntime))
-            .Returns(new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(release.ReleaseNameWithRuntime)));
+            .Returns(new Result<Installation, InstallationRegistryError>.Failure(
+                new InstallationRegistryError.NotFound(release.ReleaseNameWithRuntime)));
 
         installationRegistry.Setup(x => x.UpsertInstalled(release, It.IsAny<string>(), It.IsAny<DateTimeOffset?>()))
             .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
@@ -168,7 +169,8 @@ public class InstallationServiceTests
     {
         yield return
         [
-            "godot-4.4-dev3.tar.xz", "57557f3a05476518f2d9388dba4b2e9a5fd09a6ba7e5247b73919a7d31c846d5b0b2379279543c12cc7cd03ae828cf84751b1a0499d1ad2bb1f546c9372976e3"
+            "godot-4.4-dev3.tar.xz",
+            "57557f3a05476518f2d9388dba4b2e9a5fd09a6ba7e5247b73919a7d31c846d5b0b2379279543c12cc7cd03ae828cf84751b1a0499d1ad2bb1f546c9372976e3"
         ];
 
         yield return

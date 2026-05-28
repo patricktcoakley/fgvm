@@ -347,10 +347,8 @@ public sealed class ProjectManagerTests : IDisposable
     private string? FindProjectVersionValue(string? directory = null) =>
         ProjectLookupToNullable(_projectManager.FindProjectVersion(directory));
 
-    private void CreateVersionFile(string version, string? directory = null)
-    {
+    private void CreateVersionFile(string version, string? directory = null) =>
         Assert.IsType<Result<Unit, ProjectError>.Success>(_projectManager.CreateVersionFile(version, directory));
-    }
 
     private static T? ProjectLookupToNullable<T>(Result<ProjectLookup<T>, ProjectError> result) where T : class =>
         result switch

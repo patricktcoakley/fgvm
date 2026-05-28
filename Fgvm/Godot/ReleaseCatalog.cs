@@ -1,8 +1,8 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Fgvm.Godot;
 
@@ -47,7 +47,8 @@ public sealed class ReleaseCatalog(
     IDownloadClient downloadClient,
     IPathService pathService,
     IHostSystem hostSystem,
-    ILogger<ReleaseCatalog> logger) : IReleaseCatalog
+    ILogger<ReleaseCatalog> logger
+) : IReleaseCatalog
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromDays(1);
 
@@ -127,10 +128,10 @@ public sealed class ReleaseCatalog(
         }
     }
 
-    private async Task<Result<ReleaseArtifact, NetworkError>> HydrateFromSha512Sums(
-        ReleaseCatalogManifest manifest,
+    private async Task<Result<ReleaseArtifact, NetworkError>> HydrateFromSha512Sums(ReleaseCatalogManifest manifest,
         Release release,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var shaResult = await downloadClient.GetSha512(release, cancellationToken);
         switch (shaResult)
@@ -160,11 +161,11 @@ public sealed class ReleaseCatalog(
         }
     }
 
-    private async Task<Result<ReleaseCatalogManifest, NetworkError>> RecordReleaseManifest(
-        ReleaseCatalogManifest manifest,
+    private async Task<Result<ReleaseCatalogManifest, NetworkError>> RecordReleaseManifest(ReleaseCatalogManifest manifest,
         GodotReleaseManifest godotManifest,
         Release fallbackRelease,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var release = Release.TryParse(godotManifest.Name) ?? fallbackRelease;
         var artifacts = godotManifest.Files
@@ -204,9 +205,9 @@ public sealed class ReleaseCatalog(
             godotManifest.GitReference);
     }
 
-    private static ReleaseCatalogArtifactEntry[] OverlaySha512Sums(
-        IReadOnlyList<ReleaseCatalogArtifactEntry> artifacts,
-        IEnumerable<ReleaseCatalogArtifactEntry> sha512Sums)
+    private static ReleaseCatalogArtifactEntry[] OverlaySha512Sums(IReadOnlyList<ReleaseCatalogArtifactEntry> artifacts,
+        IEnumerable<ReleaseCatalogArtifactEntry> sha512Sums
+    )
     {
         var checksums = sha512Sums
             .GroupBy(entry => entry.FileName, StringComparer.Ordinal)
@@ -219,13 +220,13 @@ public sealed class ReleaseCatalog(
             .ToArray();
     }
 
-    private async Task<Result<ReleaseCatalogManifest, NetworkError>> RecordArtifacts(
-        ReleaseCatalogManifest manifest,
+    private async Task<Result<ReleaseCatalogManifest, NetworkError>> RecordArtifacts(ReleaseCatalogManifest manifest,
         Release release,
         IEnumerable<ReleaseCatalogArtifactEntry> artifacts,
         CancellationToken cancellationToken,
         long? releaseDate = null,
-        string? gitReference = null)
+        string? gitReference = null
+    )
     {
         var catalogRelease = GetOrCreateRelease(manifest, release);
         catalogRelease.ReleaseDate = releaseDate ?? catalogRelease.ReleaseDate;
@@ -369,9 +370,9 @@ public sealed class ReleaseCatalog(
         };
     }
 
-    private async Task<Result<ReleaseCatalogManifest, NetworkError>> RefreshCatalog(
-        ReleaseCatalogManifest? existing,
-        CancellationToken cancellationToken)
+    private async Task<Result<ReleaseCatalogManifest, NetworkError>> RefreshCatalog(ReleaseCatalogManifest? existing,
+        CancellationToken cancellationToken
+    )
     {
         var remote = await downloadClient.ListReleases(cancellationToken);
         return remote switch
@@ -384,10 +385,10 @@ public sealed class ReleaseCatalog(
         };
     }
 
-    private async Task<Result<ReleaseCatalogManifest, NetworkError>> WriteReleaseIndex(
-        IEnumerable<string> remoteReleaseIds,
+    private async Task<Result<ReleaseCatalogManifest, NetworkError>> WriteReleaseIndex(IEnumerable<string> remoteReleaseIds,
         ReleaseCatalogManifest? existing,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var manifest = CreateManifest(remoteReleaseIds, existing);
         manifest.LastUpdated = DateTimeOffset.UtcNow;

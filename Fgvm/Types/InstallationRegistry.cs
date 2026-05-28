@@ -9,7 +9,8 @@ public sealed record Installation(
     string Target,
     string RelativePath,
     DateTimeOffset? InstalledAt,
-    DateTimeOffset? LastLaunchedAt);
+    DateTimeOffset? LastLaunchedAt
+);
 
 /// <summary>
 ///     Represents failures while reading, generating, or writing the installation registry.

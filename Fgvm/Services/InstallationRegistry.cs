@@ -1,9 +1,9 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Fgvm.Services;
 
@@ -73,7 +73,8 @@ public sealed class InstallationRegistry(
     IPathService pathService,
     IReleaseManager releaseManager,
     IHostSystem hostSystem,
-    ILogger<InstallationRegistry> logger) : IInstallationRegistry
+    ILogger<InstallationRegistry> logger
+) : IInstallationRegistry
 {
     private const string InstallationsDirectoryName = "installations";
 
@@ -101,7 +102,8 @@ public sealed class InstallationRegistry(
     {
         if (releaseManager.CreateRelease(releaseNameWithRuntime) is not Result<Release, ReleaseParseError>.Success(var release))
         {
-            return new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(releaseNameWithRuntime));
+            return new Result<Installation, InstallationRegistryError>.Failure(
+                new InstallationRegistryError.NotFound(releaseNameWithRuntime));
         }
 
         var key = CreateKey(release.ReleaseNameWithRuntime, release.PlatformString);
@@ -377,7 +379,8 @@ public sealed class InstallationRegistry(
     }
 
     private Result<InstallationRegistryDocument, InstallationRegistryError> GenerateFromFileSystem(
-        InstallationRegistryDocument? existingDocument)
+        InstallationRegistryDocument? existingDocument
+    )
     {
         InstallationRegistryDocument generated;
         switch (ScanInstallations(existingDocument))
@@ -519,7 +522,9 @@ public sealed class InstallationRegistry(
         return new Result<IReadOnlyList<Installation>, FileOperationError>.Success(installations);
     }
 
-    private Result<IReadOnlyList<Installation>, FileOperationError> ScanTargetAwareInstallations(InstallationRegistryDocument? existingDocument)
+    private Result<IReadOnlyList<Installation>, FileOperationError> ScanTargetAwareInstallations(
+        InstallationRegistryDocument? existingDocument
+    )
     {
         switch (hostSystem.DirectoryExists(pathService.InstallationsDirectoryPath))
         {
@@ -650,7 +655,8 @@ public sealed class InstallationRegistry(
             return (hostSystem.FileExists(normalizedPath), hostSystem.DirectoryExists(normalizedPath)) switch
             {
                 (Result<bool, FileOperationError>.Failure, _) or (_, Result<bool, FileOperationError>.Failure) => null,
-                (Result<bool, FileOperationError>.Success { Value: false }, Result<bool, FileOperationError>.Success { Value: false }) => normalizedPath,
+                (Result<bool, FileOperationError>.Success { Value: false }, Result<bool, FileOperationError>.Success { Value: false }) =>
+                    normalizedPath,
                 (Result<bool, FileOperationError>.Success, Result<bool, FileOperationError>.Success) =>
                     hostSystem.ResolveLinkTarget(normalizedPath, true) is Result<string?, FileOperationError>.Success(var target)
                         ? target ?? normalizedPath
@@ -806,7 +812,8 @@ public sealed class InstallationRegistry(
     private sealed record RegistryValidation(
         InstallationRegistryDocument Document,
         bool Changed,
-        bool NeedsFileSystemGeneration);
+        bool NeedsFileSystemGeneration
+    );
 }
 
 public sealed class InstallationRegistryDocument

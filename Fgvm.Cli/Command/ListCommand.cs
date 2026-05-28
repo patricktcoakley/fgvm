@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
@@ -6,12 +7,16 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using System.Text.Json.Serialization;
 using ZLogger;
 
 namespace Fgvm.Cli.Command;
 
-public sealed class ListCommand(IInstallationRegistry installationRegistry, IPathService pathService, IAnsiConsole console, ILogger<ListCommand> logger)
+public sealed class ListCommand(
+    IInstallationRegistry installationRegistry,
+    IPathService pathService,
+    IAnsiConsole console,
+    ILogger<ListCommand> logger
+)
 {
     /// <summary>
     ///     List all installed Godot versions.
@@ -68,9 +73,11 @@ public sealed class ListCommand(IInstallationRegistry installationRegistry, IPat
 }
 
 internal readonly record struct ListView(
-    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("name")]
+    string Name,
     [property: JsonPropertyName("isDefault")]
-    bool IsDefault) : IJsonView<ListView>
+    bool IsDefault
+) : IJsonView<ListView>
 {
     private string ToDisplayString() => IsDefault
         ? $"{Messages.DefaultInstallationMarkerMarkup}  {Name}"

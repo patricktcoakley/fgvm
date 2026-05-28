@@ -44,12 +44,14 @@ public class RemoveCommandTests
 
         _mockLogger = new Mock<ILogger<RemoveCommand>>();
         var testConsole = new TestConsole();
-        _removeCommand = new RemoveCommand(_mockHostSystem.Object, _mockReleaseManager.Object, _mockInstallationRegistry.Object, _mockPathService.Object, testConsole,
+        _removeCommand = new RemoveCommand(_mockHostSystem.Object, _mockReleaseManager.Object, _mockInstallationRegistry.Object,
+            _mockPathService.Object, testConsole,
             _mockLogger.Object);
     }
 
     private RemoveCommand CreateRemoveCommandWithConsole(TestConsole console) =>
-        new(_mockHostSystem.Object, _mockReleaseManager.Object, _mockInstallationRegistry.Object, _mockPathService.Object, console, _mockLogger.Object);
+        new(_mockHostSystem.Object, _mockReleaseManager.Object, _mockInstallationRegistry.Object, _mockPathService.Object, console,
+            _mockLogger.Object);
 
     [Fact]
     public async Task Remove_WithNoInstallations_ShowsNoInstallationsMessage()

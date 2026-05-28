@@ -1,8 +1,8 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Fgvm.Types;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Fgvm.Godot;
 
@@ -68,8 +68,10 @@ public sealed class DownloadClient : IDownloadClient
         _godotDownloadApi = new DownloadSource("https://downloads.godotengine.org/");
         _gitHubBuildsRelease = new DownloadSource("https://github.com/godotengine/godot-builds/releases/download", gitHubHeaders);
         _gitHubRelease = new DownloadSource("https://github.com/godotengine/godot/releases/download", gitHubHeaders);
-        _gitHubBuildsReleaseIndex = new DownloadSource("https://api.github.com/repos/godotengine/godot-builds/contents/releases", gitHubHeaders);
-        _gitHubBuildsManifest = new DownloadSource("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases", gitHubHeaders);
+        _gitHubBuildsReleaseIndex =
+            new DownloadSource("https://api.github.com/repos/godotengine/godot-builds/contents/releases", gitHubHeaders);
+        _gitHubBuildsManifest =
+            new DownloadSource("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases", gitHubHeaders);
         _logger = logger;
     }
 
@@ -107,7 +109,9 @@ public sealed class DownloadClient : IDownloadClient
     }
 
     /// <inheritdoc />
-    public async Task<Result<GodotReleaseManifest, NetworkError>> GetReleaseManifest(Release godotRelease, CancellationToken cancellationToken)
+    public async Task<Result<GodotReleaseManifest, NetworkError>> GetReleaseManifest(Release godotRelease,
+        CancellationToken cancellationToken
+    )
     {
         var result = await GetStringFromSources(
             GetManifestSources(godotRelease),
@@ -148,17 +152,20 @@ public sealed class DownloadClient : IDownloadClient
             cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken)
+    public async Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename,
+        Release godotRelease,
+        CancellationToken cancellationToken
+    )
         => await GetZipFromSources(
             GetZipSources(filename, godotRelease),
             HttpCompletionOption.ResponseHeadersRead,
             $"Failed to get zip file for {godotRelease.ReleaseNameWithRuntime}",
             cancellationToken);
 
-    private async Task<Result<string, NetworkError>> GetStringFromSources(
-        IReadOnlyList<DownloadSource> sources,
+    private async Task<Result<string, NetworkError>> GetStringFromSources(IReadOnlyList<DownloadSource> sources,
         string failureMessage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         NetworkError? lastError = null;
 
@@ -193,11 +200,11 @@ public sealed class DownloadClient : IDownloadClient
             lastError ?? new NetworkError.ConnectionFailure(failureMessage));
     }
 
-    private async Task<Result<ZipDownload, NetworkError>> GetZipFromSources(
-        IReadOnlyList<DownloadSource> sources,
+    private async Task<Result<ZipDownload, NetworkError>> GetZipFromSources(IReadOnlyList<DownloadSource> sources,
         HttpCompletionOption completionOption,
         string failureMessage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         NetworkError? lastError = null;
 

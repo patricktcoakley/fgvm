@@ -1,7 +1,7 @@
+using System.Security.Cryptography;
 using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Configuration;
-using System.Security.Cryptography;
 
 namespace Fgvm.Tests.Environment;
 

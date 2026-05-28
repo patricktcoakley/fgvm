@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
 using Fgvm.Godot;
@@ -7,7 +8,6 @@ using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Spectre.Console.Testing;
-using System.Runtime.InteropServices;
 using RuntimeEnvironment = Fgvm.Godot.RuntimeEnvironment;
 
 namespace Fgvm.Tests.Services;
@@ -137,7 +137,8 @@ public class VersionManagementServiceTests
                     .Returns(ProjectFound(projectRelease));
 
                 SetupInstallations(installedVersions);
-                _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+                _mockReleaseManager.Setup(x =>
+                        x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
                     .Returns(compatibleVersion);
 
                 var mockRelease = CreateMockRelease(compatibleVersion);
@@ -244,7 +245,8 @@ public class VersionManagementServiceTests
                     .Returns(ProjectFound(projectRelease));
 
                 SetupInstallations(installedVersions);
-                _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+                _mockReleaseManager.Setup(x =>
+                        x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
                     .Returns(compatibleVersion);
 
                 var mockRelease = CreateMockRelease(compatibleVersion, execName);
@@ -395,7 +397,8 @@ public class VersionManagementServiceTests
             new InstallationOutcome.NewInstallation(mockRelease.ReleaseNameWithRuntime, new ChecksumVerification.Verified()));
 
         _mockInstallationService.Setup(x =>
-                x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    It.IsAny<CancellationToken>()))
             .ReturnsAsync(installationResult);
 
         _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, new[] { newVersion }))
@@ -408,7 +411,8 @@ public class VersionManagementServiceTests
 
         Assert.Equal(mockRelease, result);
         _mockInstallationService.Verify(
-            x => x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            x => x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
 
         Assert.Contains("No installed version found matching", _console.Output);
@@ -803,7 +807,8 @@ public class VersionManagementServiceTests
 
         SetupInstallations([]);
         _mockInstallationService.Setup(x =>
-                x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
@@ -842,7 +847,8 @@ public class VersionManagementServiceTests
             .Returns(QueryNotFound(string.Join(" ", query)));
 
         _mockInstallationService.Setup(x =>
-                x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException(errorMessage));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -899,7 +905,9 @@ public class VersionManagementServiceTests
         var sequence = _mockInstallationRegistry.SetupSequence(x => x.ListInstallations());
         foreach (var releaseNames in releaseNameSequences)
         {
-            sequence.Returns(new Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(releaseNames.Select(CreateInstallation).ToArray()));
+            sequence.Returns(
+                new Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(
+                    releaseNames.Select(CreateInstallation).ToArray()));
         }
 
         foreach (var releaseName in releaseNameSequences.SelectMany(x => x).Distinct())

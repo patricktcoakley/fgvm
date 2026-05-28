@@ -1,5 +1,5 @@
-using Fgvm.Environment;
 using System.Runtime.InteropServices;
+using Fgvm.Environment;
 using Godot_RuntimeEnvironment = Fgvm.Godot.RuntimeEnvironment;
 
 namespace Fgvm.Tests.Godot.ReleaseManager;
@@ -88,16 +88,34 @@ public static class TestData
     {
         var data = new TheoryData<OS, Architecture, string, Godot_RuntimeEnvironment, string, string>
         {
-            { OS.Windows, Architecture.X64, "4.2-stable-mono", Godot_RuntimeEnvironment.Mono, "Godot_v4.2-stable_mono_win64.exe", "Godot_v4.2-stable_mono_win64.zip" },
-            { OS.Windows, Architecture.X64, "4.2-rc2-standard", Godot_RuntimeEnvironment.Standard, "Godot_v4.2-rc2_win64.exe", "Godot_v4.2-rc2_win64.exe.zip" },
-            { OS.Windows, Architecture.X86, "4.2-stable-mono", Godot_RuntimeEnvironment.Mono, "Godot_v4.2-stable_mono_win32.exe", "Godot_v4.2-stable_mono_win32.zip" },
+            {
+                OS.Windows, Architecture.X64, "4.2-stable-mono", Godot_RuntimeEnvironment.Mono, "Godot_v4.2-stable_mono_win64.exe",
+                "Godot_v4.2-stable_mono_win64.zip"
+            },
+            {
+                OS.Windows, Architecture.X64, "4.2-rc2-standard", Godot_RuntimeEnvironment.Standard, "Godot_v4.2-rc2_win64.exe",
+                "Godot_v4.2-rc2_win64.exe.zip"
+            },
+            {
+                OS.Windows, Architecture.X86, "4.2-stable-mono", Godot_RuntimeEnvironment.Mono, "Godot_v4.2-stable_mono_win32.exe",
+                "Godot_v4.2-stable_mono_win32.zip"
+            },
             {
                 OS.Linux, Architecture.X64, "4.2-stable-mono", Godot_RuntimeEnvironment.Mono, "Godot_v4.2-stable_mono_linux.x86_64",
                 "Godot_v4.2-stable_mono_linux_x86_64.zip"
             },
-            { OS.Linux, Architecture.X86, "4.2-beta5-standard", Godot_RuntimeEnvironment.Standard, "Godot_v4.2-beta5_linux.x86_32", "Godot_v4.2-beta5_linux.x86_32.zip" },
-            { OS.MacOS, Architecture.X64, "4.2-stable-mono", Godot_RuntimeEnvironment.Mono, "Godot_mono.app", "Godot_v4.2-stable_mono_macos.universal.zip" },
-            { OS.MacOS, Architecture.Arm64, "4.2-rc1-standard", Godot_RuntimeEnvironment.Standard, "Godot.app", "Godot_v4.2-rc1_macos.universal.zip" }
+            {
+                OS.Linux, Architecture.X86, "4.2-beta5-standard", Godot_RuntimeEnvironment.Standard, "Godot_v4.2-beta5_linux.x86_32",
+                "Godot_v4.2-beta5_linux.x86_32.zip"
+            },
+            {
+                OS.MacOS, Architecture.X64, "4.2-stable-mono", Godot_RuntimeEnvironment.Mono, "Godot_mono.app",
+                "Godot_v4.2-stable_mono_macos.universal.zip"
+            },
+            {
+                OS.MacOS, Architecture.Arm64, "4.2-rc1-standard", Godot_RuntimeEnvironment.Standard, "Godot.app",
+                "Godot_v4.2-rc1_macos.universal.zip"
+            }
         };
 
         return data;
@@ -109,40 +127,138 @@ public static class TestData
         foreach (var releaseType in new[] { "rc1", "dev2", "beta3", "alpha4", "stable" })
         {
             // Version 3 Mono
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.MacOS, Architecture.Arm64, $"Godot_v3.6-{releaseType}_mono_osx.universal"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X86, $"Godot_v3.6-{releaseType}_mono_win32"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X64, $"Godot_v3.6-{releaseType}_mono_win64"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X86, $"Godot_v3.6-{releaseType}_mono_x11_32"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X64, $"Godot_v3.6-{releaseType}_mono_x11_64"];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.MacOS, Architecture.Arm64,
+                $"Godot_v3.6-{releaseType}_mono_osx.universal"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X86, $"Godot_v3.6-{releaseType}_mono_win32"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X64, $"Godot_v3.6-{releaseType}_mono_win64"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X86, $"Godot_v3.6-{releaseType}_mono_x11_32"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X64, $"Godot_v3.6-{releaseType}_mono_x11_64"
+            ];
 
             // Version 3 Standard
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.MacOS, Architecture.X64, $"Godot_v3.6-{releaseType}_osx.universal"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X64, $"Godot_v3.6-{releaseType}_win64.exe"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X86, $"Godot_v3.6-{releaseType}_win32.exe"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm, $"Godot_v3.6-{releaseType}_linux.arm32"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm64, $"Godot_v3.6-{releaseType}_linux.arm64"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X64, $"Godot_v3.6-{releaseType}_x11.64"];
-            yield return [$"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X86, $"Godot_v3.6-{releaseType}_x11.32"];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.MacOS, Architecture.X64,
+                $"Godot_v3.6-{releaseType}_osx.universal"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X64, $"Godot_v3.6-{releaseType}_win64.exe"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X86, $"Godot_v3.6-{releaseType}_win32.exe"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm, $"Godot_v3.6-{releaseType}_linux.arm32"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm64,
+                $"Godot_v3.6-{releaseType}_linux.arm64"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X64, $"Godot_v3.6-{releaseType}_x11.64"
+            ];
+            yield return
+            [
+                $"3.6-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X86, $"Godot_v3.6-{releaseType}_x11.32"
+            ];
 
             // Version 4 Mono
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.MacOS, Architecture.Arm64, $"Godot_v4.3-{releaseType}_mono_macos.universal"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X86, $"Godot_v4.3-{releaseType}_mono_win32"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X64, $"Godot_v4.3-{releaseType}_mono_win64"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.Arm64, $"Godot_v4.3-{releaseType}_mono_windows_arm64"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X86, $"Godot_v4.3-{releaseType}_mono_linux_x86_32"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X64, $"Godot_v4.3-{releaseType}_mono_linux_x86_64"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.Arm, $"Godot_v4.3-{releaseType}_mono_linux_arm32"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.Arm64, $"Godot_v4.3-{releaseType}_mono_linux_arm64"];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.MacOS, Architecture.Arm64,
+                $"Godot_v4.3-{releaseType}_mono_macos.universal"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X86, $"Godot_v4.3-{releaseType}_mono_win32"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.X64, $"Godot_v4.3-{releaseType}_mono_win64"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Windows, Architecture.Arm64,
+                $"Godot_v4.3-{releaseType}_mono_windows_arm64"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X86,
+                $"Godot_v4.3-{releaseType}_mono_linux_x86_32"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.X64,
+                $"Godot_v4.3-{releaseType}_mono_linux_x86_64"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.Arm,
+                $"Godot_v4.3-{releaseType}_mono_linux_arm32"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Mono, OS.Linux, Architecture.Arm64,
+                $"Godot_v4.3-{releaseType}_mono_linux_arm64"
+            ];
 
             // Version 4 Standard
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.MacOS, Architecture.X64, $"Godot_v4.3-{releaseType}_macos.universal"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X64, $"Godot_v4.3-{releaseType}_win64.exe"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X86, $"Godot_v4.3-{releaseType}_win32.exe"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.Arm64, $"Godot_v4.3-{releaseType}_windows_arm64.exe"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm, $"Godot_v4.3-{releaseType}_linux.arm32"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm64, $"Godot_v4.3-{releaseType}_linux.arm64"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X64, $"Godot_v4.3-{releaseType}_linux.x86_64"];
-            yield return [$"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X86, $"Godot_v4.3-{releaseType}_linux.x86_32"];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.MacOS, Architecture.X64,
+                $"Godot_v4.3-{releaseType}_macos.universal"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X64, $"Godot_v4.3-{releaseType}_win64.exe"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.X86, $"Godot_v4.3-{releaseType}_win32.exe"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Windows, Architecture.Arm64,
+                $"Godot_v4.3-{releaseType}_windows_arm64.exe"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm, $"Godot_v4.3-{releaseType}_linux.arm32"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.Arm64,
+                $"Godot_v4.3-{releaseType}_linux.arm64"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X64,
+                $"Godot_v4.3-{releaseType}_linux.x86_64"
+            ];
+            yield return
+            [
+                $"4.3-{releaseType}", Godot_RuntimeEnvironment.Standard, OS.Linux, Architecture.X86,
+                $"Godot_v4.3-{releaseType}_linux.x86_32"
+            ];
         }
     }
 }

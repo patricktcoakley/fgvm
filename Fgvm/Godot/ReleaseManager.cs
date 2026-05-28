@@ -24,10 +24,10 @@ public interface IReleaseManager
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Matching release identifiers, or a network error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when release lookup is canceled.</exception>
-    Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(
-        string[] query,
+    Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(string[] query,
         ReleaseFetchMode fetchMode,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken
+    );
 
     /// <summary>
     ///     Gets SHA512 checksum metadata for a release.
@@ -72,7 +72,10 @@ public interface IReleaseManager
     /// <param name="isDotNet">Whether the project requires Mono/.NET.</param>
     /// <param name="installedReleaseIds">Installed release identifiers.</param>
     /// <returns>The compatible release identifier, or a compatibility error.</returns>
-    Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion, bool isDotNet, IEnumerable<string> installedReleaseIds);
+    Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion,
+        bool isDotNet,
+        IEnumerable<string> installedReleaseIds
+    );
 
     /// <summary>
     ///     Creates a release model for the current host platform.
@@ -86,7 +89,8 @@ public sealed class ReleaseManager(
     IHostSystem hostSystem,
     PlatformStringProvider platformStringProvider,
     IDownloadClient downloadClient,
-    IReleaseCatalog releaseCatalog) : IReleaseManager
+    IReleaseCatalog releaseCatalog
+) : IReleaseManager
 {
     /// <inheritdoc />
     public async Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken)
@@ -103,10 +107,10 @@ public sealed class ReleaseManager(
     }
 
     /// <inheritdoc />
-    public async Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(
-        string[] query,
+    public async Task<Result<IEnumerable<string>, NetworkError>> SearchRemoteReleases(string[] query,
         ReleaseFetchMode fetchMode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var result = await releaseCatalog.ReadReleaseIds(fetchMode, cancellationToken);
         return result switch
@@ -125,7 +129,8 @@ public sealed class ReleaseManager(
         await downloadClient.GetSha512(release, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
+    public async Task<Result<ZipDownload, NetworkError>>
+        GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
         await downloadClient.GetZipFile(filename, release, cancellationToken);
 
     /// <inheritdoc />
@@ -217,7 +222,10 @@ public sealed class ReleaseManager(
     }
 
     /// <inheritdoc />
-    public Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion, bool isDotNet, IEnumerable<string> installedReleaseIds)
+    public Result<string, CompatibilityError> FindCompatibleVersionResult(string projectVersion,
+        bool isDotNet,
+        IEnumerable<string> installedReleaseIds
+    )
     {
         var versions = installedReleaseIds.ToList();
 

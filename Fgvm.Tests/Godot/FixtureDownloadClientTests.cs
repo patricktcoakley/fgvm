@@ -1,14 +1,22 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.IO.Compression;
-using System.Security.Cryptography;
 
 namespace Fgvm.Tests.Godot;
 
 public sealed class FixtureDownloadClientTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fgvm-fixture-client-tests", Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, true);
+        }
+    }
 
     [Fact]
     public async Task FixtureClient_ReturnsReleaseMetadataAndZip()
@@ -50,14 +58,6 @@ public sealed class FixtureDownloadClientTests : IDisposable
         var zip = await client.GetZipFile("missing.zip", release, CancellationToken.None);
 
         Assert.IsType<Result<ZipDownload, NetworkError>.Failure>(zip);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_root))
-        {
-            Directory.Delete(_root, true);
-        }
     }
 
     private async Task<string> CreateZip(string filename)

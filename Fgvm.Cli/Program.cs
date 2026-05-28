@@ -1,4 +1,6 @@
-﻿using ConsoleAppFramework;
+﻿using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
+using ConsoleAppFramework;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.Filter;
 using Fgvm.Cli.Http;
@@ -14,8 +16,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using System.Net.Http.Headers;
-using System.Runtime.InteropServices;
 using ZLogger;
 
 namespace Fgvm.Cli;
@@ -106,7 +106,8 @@ public class Program
                         throw new ConfigurationException($"Unable to create configuration directory: {createDirectoryError}");
                     }
 
-                    if (hostSystem.WriteAllText(pathService.ConfigPath, "# FGVM Configuration File\n") is Result<Unit, FileOperationError>.Failure(var writeError))
+                    if (hostSystem.WriteAllText(pathService.ConfigPath, "# FGVM Configuration File\n") is
+                        Result<Unit, FileOperationError>.Failure(var writeError))
                     {
                         throw new ConfigurationException($"Unable to create configuration file: {writeError}");
                     }
@@ -143,7 +144,8 @@ public class Program
 
         using var serviceProvider = services.BuildServiceProvider();
 
-        if (serviceProvider.GetRequiredService<IHostSystem>().CreateDirectory(pathService.BinPath) is Result<Unit, FileOperationError>.Failure(var binError))
+        if (serviceProvider.GetRequiredService<IHostSystem>().CreateDirectory(pathService.BinPath) is
+            Result<Unit, FileOperationError>.Failure(var binError))
         {
             throw new InvalidOperationException($"Unable to create fgvm bin directory: {binError}");
         }

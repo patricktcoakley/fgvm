@@ -25,7 +25,8 @@ public sealed class LocalCommand(IVersionManagementService versionManagementServ
     {
         try
         {
-            var godotRelease = await versionManagementService.SetLocalVersionAsync(query.Length > 0 ? query : null, cancellationToken: cancellationToken);
+            var godotRelease =
+                await versionManagementService.SetLocalVersionAsync(query.Length > 0 ? query : null, cancellationToken: cancellationToken);
             console.MarkupLine(Messages.SetLocalVersion(godotRelease.ReleaseNameWithRuntime));
         }
         catch (TaskCanceledException)
