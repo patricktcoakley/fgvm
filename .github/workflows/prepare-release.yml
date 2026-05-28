@@ -30,7 +30,7 @@ jobs:
         run: dotnet tool restore
 
       - name: Dry Run
-        run: dotnet tool run versionize -- --dry-run --exit-insignificant-commits && dotnet tool run jb -- cleanupcode
+        run: dotnet tool run versionize -- --dry-run --exit-insignificant-commits
 
       - name: Configure Git
         run: |
@@ -41,6 +41,13 @@ jobs:
         id: version
         run: |
           dotnet tool run versionize -- --skip-tag
+          dotnet tool run jb -- cleanupcode Fgvm.Cli/Fgvm.Cli.csproj
+
+          git add -u # Stage changes made by cleanupcode, if any, then commit
+          if ! git diff --cached --quiet; then
+            git commit --amend --no-edit
+          fi
+
           version="$(dotnet tool run versionize -- inspect)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
