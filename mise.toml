@@ -39,7 +39,7 @@ run = [
 description = "Format the project with JetBrains cleanupcode."
 dir = "."
 run = [
-    "dotnet tool run jb -- cleanupcode --settings=Fgvm.sln.DotSettings --profile=\"Cleanup\" --no-build --no-updates --include=\"**/*.cs;**/*.csproj;**/*.props;**/*.targets;*.slnx\" --exclude=\"**/bin/**;**/obj/**;**/TestResults/**;.git/**;.idea/**;.fgvm-e2e-cli/**;.fgvm-e2e-fixtures/**\""
+    "dotnet tool run jb -- cleanupcode Fgvm.slnx --profile=Cleanup --no-build"
 ]
 
 [tasks."format:check"]
