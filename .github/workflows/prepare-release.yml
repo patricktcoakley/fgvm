@@ -30,7 +30,7 @@ jobs:
         run: dotnet tool restore
 
       - name: Dry Run
-        run: dotnet tool run versionize -- --dry-run --exit-insignificant-commits
+        run: dotnet tool run versionize -- --dry-run --exit-insignificant-commits && dotnet tool run jb -- cleanupcode
 
       - name: Configure Git
         run: |
