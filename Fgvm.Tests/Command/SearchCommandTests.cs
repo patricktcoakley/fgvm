@@ -73,7 +73,6 @@ public sealed class SearchCommandTests
         var pathServiceMock = new Mock<IPathService>();
         var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-search-tests");
         pathServiceMock.SetupGet(x => x.RootPath).Returns(rootPath);
-        pathServiceMock.SetupGet(x => x.ConfigPath).Returns(Path.Combine(rootPath, "fgvm.ini"));
         pathServiceMock.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
         pathServiceMock.SetupGet(x => x.BinPath).Returns(Path.Combine(rootPath, "bin"));
         pathServiceMock.SetupGet(x => x.SymlinkPath).Returns(Path.Combine(rootPath, "Godot"));

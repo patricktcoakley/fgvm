@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Fgvm.Types;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Fgvm.Godot;
@@ -58,20 +57,16 @@ public sealed class DownloadClient : IDownloadClient
     private readonly HttpClient _httpClient;
     private readonly ILogger<DownloadClient> _logger;
 
-    public DownloadClient(HttpClient httpClient, Lazy<IConfiguration> configuration, ILogger<DownloadClient> logger)
+    public DownloadClient(HttpClient httpClient, ILogger<DownloadClient> logger)
     {
-        IReadOnlyDictionary<string, string>? gitHubHeaders = configuration.Value["github:token"] is { } token
-            ? new Dictionary<string, string> { ["Authorization"] = $"Bearer {token}" }
-            : null;
-
         _httpClient = httpClient;
         _godotDownloadApi = new DownloadSource("https://downloads.godotengine.org/");
-        _gitHubBuildsRelease = new DownloadSource("https://github.com/godotengine/godot-builds/releases/download", gitHubHeaders);
-        _gitHubRelease = new DownloadSource("https://github.com/godotengine/godot/releases/download", gitHubHeaders);
+        _gitHubBuildsRelease = new DownloadSource("https://github.com/godotengine/godot-builds/releases/download");
+        _gitHubRelease = new DownloadSource("https://github.com/godotengine/godot/releases/download");
         _gitHubBuildsReleaseIndex =
-            new DownloadSource("https://api.github.com/repos/godotengine/godot-builds/contents/releases", gitHubHeaders);
+            new DownloadSource("https://api.github.com/repos/godotengine/godot-builds/contents/releases");
         _gitHubBuildsManifest =
-            new DownloadSource("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases", gitHubHeaders);
+            new DownloadSource("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases");
         _logger = logger;
     }
 
@@ -301,7 +296,7 @@ public sealed class DownloadClient : IDownloadClient
     private static string Escape(string value) =>
         Uri.EscapeDataString(value);
 
-    private sealed record DownloadSource(string Url, IReadOnlyDictionary<string, string>? Headers = null)
+    private sealed record DownloadSource(string Url)
     {
         public DownloadSource WithPath(string relativePath) =>
             this with { Url = $"{Url.TrimEnd('/')}/{relativePath.TrimStart('/')}" };
@@ -309,21 +304,7 @@ public sealed class DownloadClient : IDownloadClient
         public DownloadSource WithQuery(string query) =>
             this with { Url = $"{Url}?{query}" };
 
-        public HttpRequestMessage CreateRequest()
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get, Url);
-            if (Headers is null)
-            {
-                return request;
-            }
-
-            foreach (var header in Headers)
-            {
-                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-
-            return request;
-        }
+        public HttpRequestMessage CreateRequest() => new(HttpMethod.Get, Url);
     }
 }
 

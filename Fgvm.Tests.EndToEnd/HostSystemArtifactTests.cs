@@ -161,8 +161,6 @@ public sealed class HostSystemArtifactTests : IDisposable
     {
         public string RootPath => rootPath;
 
-        public string ConfigPath => Path.Combine(RootPath, "fgvm.ini");
-
         public string ReleasesPath => Path.Combine(RootPath, "releases.json");
 
         public string InstallationsPath => Path.Combine(RootPath, "installations.json");

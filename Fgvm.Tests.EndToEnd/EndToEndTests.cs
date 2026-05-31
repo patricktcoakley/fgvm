@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Xml.Linq;
 using Fgvm.Error;
 
@@ -232,6 +233,48 @@ public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
         await fixture.AssertSuccessfulExecutionAsync(install2, "second install");
 
         await CleanupVersion(StableRelease);
+    }
+
+    [Fact]
+    public async Task InstallWithChecksumMismatchFailsAndDoesNotRegisterInstallation()
+    {
+        var home = NewTempPath("checksum-mismatch");
+        var manifestPath = Path.Combine(home, "manifest.json");
+        var environment = new Dictionary<string, string>
+        {
+            ["FGVM_HOME"] = home,
+            ["FGVM_E2E_FIXTURE_MANIFEST"] = manifestPath
+        };
+
+        try
+        {
+            var manifest = JsonNode.Parse(await fixture.ReadFile(fixture.FixtureManifestPath))
+                           ?? throw new InvalidOperationException("Fixture manifest was empty.");
+            var artifacts = manifest["artifacts"]?.AsArray()
+                            ?? throw new InvalidOperationException("Fixture manifest did not contain artifacts.");
+
+            foreach (var artifact in artifacts.OfType<JsonObject>()
+                         .Where(artifact =>
+                             string.Equals((string?)artifact["releaseName"], StableRelease, StringComparison.OrdinalIgnoreCase) &&
+                             string.Equals((string?)artifact["runtime"], "standard", StringComparison.OrdinalIgnoreCase)))
+            {
+                artifact["sha512"] = new string('0', 128);
+            }
+
+            await fixture.WriteFile(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+            var install = await fixture.ExecuteCommandWithEnvironment(["install", StableRelease], environment);
+
+            Assert.Equal(ExitCodes.GeneralError, install.ExitCode);
+
+            var list = await fixture.ExecuteCommandWithEnvironment(["list"], environment);
+            await fixture.AssertSuccessfulExecutionAsync(list, "list");
+            Assert.DoesNotContain(StableRelease, list.Stdout, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await fixture.DeletePath(home);
+        }
     }
 
     [Fact]

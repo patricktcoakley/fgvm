@@ -323,7 +323,6 @@ public sealed class InstallationRegistryTests : IDisposable
         var root = rootPath ?? _rootPath;
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(root);
-        pathService.SetupGet(x => x.ConfigPath).Returns(Path.Combine(root, "fgvm.ini"));
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(root, "releases.json"));
         pathService.SetupGet(x => x.InstallationsPath).Returns(Path.Combine(root, "installations.json"));
         pathService.SetupGet(x => x.InstallationsDirectoryPath).Returns(Path.Combine(root, "installations"));

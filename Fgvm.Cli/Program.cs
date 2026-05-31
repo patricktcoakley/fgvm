@@ -12,7 +12,6 @@ using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
 using Fgvm.Types;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -88,59 +87,6 @@ public class Program
 
         // Progress handling
         services.AddSingleton<IProgressHandler<InstallationStage>, SpectreProgressHandler<InstallationStage>>();
-
-        // Lazy configuration - only load and validate when first accessed
-        services.AddSingleton<Lazy<IConfiguration>>(sp => new Lazy<IConfiguration>(() =>
-        {
-            var hostSystem = sp.GetRequiredService<IHostSystem>();
-
-            // Ensure config file exists before loading
-            switch (hostSystem.FileExists(pathService.ConfigPath))
-            {
-                case Result<bool, FileOperationError>.Failure(var existsError):
-                    throw new ConfigurationException($"Unable to read configuration path: {existsError}");
-                case Result<bool, FileOperationError>.Success { Value: false }:
-                    if (Path.GetDirectoryName(pathService.ConfigPath) is { } directory &&
-                        hostSystem.CreateDirectory(directory) is Result<Unit, FileOperationError>.Failure(var createDirectoryError))
-                    {
-                        throw new ConfigurationException($"Unable to create configuration directory: {createDirectoryError}");
-                    }
-
-                    if (hostSystem.WriteAllText(pathService.ConfigPath, "# FGVM Configuration File\n") is
-                        Result<Unit, FileOperationError>.Failure(var writeError))
-                    {
-                        throw new ConfigurationException($"Unable to create configuration file: {writeError}");
-                    }
-
-                    break;
-                case Result<bool, FileOperationError>.Success:
-                    break;
-                default:
-                    throw new InvalidOperationException("Unexpected Result type");
-            }
-
-            var configuration = new ConfigurationBuilder()
-                .SetBasePath(AppContext.BaseDirectory)
-                .AddIniFile(pathService.ConfigPath, false, true)
-                .AddEnvironmentVariables(prefix: "FGVM_")
-                .Build();
-
-            if (Configuration.ValidateConfiguration(configuration) is Result<Unit, ConfigError>.Failure(var error))
-            {
-                throw new ConfigurationException(error switch
-                {
-                    ConfigError.InvalidGitHubTokenPrefix =>
-                        "GitHub token should start with 'github_pat_', 'ghp_', 'gho_', 'ghu_', 'ghs_', or 'ghr_' prefix",
-                    ConfigError.InvalidGitHubTokenLength =>
-                        "GitHub token length does not match a supported token format",
-                    ConfigError.InvalidGitHubTokenCharacters =>
-                        "GitHub token contains invalid characters",
-                    _ => "Invalid configuration"
-                });
-            }
-
-            return configuration;
-        }));
 
         using var serviceProvider = services.BuildServiceProvider();
 

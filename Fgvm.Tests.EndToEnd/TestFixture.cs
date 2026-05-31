@@ -32,6 +32,7 @@ public sealed class TestFixture : IAsyncLifetime
     }
 
     public string FgvmPath => _fgvmPath ?? throw new InvalidOperationException("Native fixture was not initialized.");
+    public string FixtureManifestPath => _fixtureManifestPath ?? throw new InvalidOperationException("Native fixture manifest was not initialized.");
     public string HomePath { get; }
     public string RootPath { get; }
     public string TempPath { get; }

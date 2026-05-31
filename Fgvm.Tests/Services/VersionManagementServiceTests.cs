@@ -36,7 +36,6 @@ public class VersionManagementServiceTests
         var installFlowProgressHandler = new TestProgressHandler<InstallationStage>();
 
         mockPathService.Setup(x => x.RootPath).Returns("/test/fgvm");
-        mockPathService.Setup(x => x.ConfigPath).Returns("/test/fgvm/fgvm.ini");
         mockPathService.Setup(x => x.ReleasesPath).Returns("/test/fgvm/releases.json");
         mockPathService.Setup(x => x.InstallationsPath).Returns("/test/fgvm/installations.json");
         mockPathService.Setup(x => x.InstallationsDirectoryPath).Returns("/test/fgvm/installations");

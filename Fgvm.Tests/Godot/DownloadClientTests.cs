@@ -1,7 +1,6 @@
 using System.Net;
 using Fgvm.Godot;
 using Fgvm.Types;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
@@ -12,6 +11,48 @@ public class DownloadClientTests
 {
     private readonly Mock<ILogger<DownloadClient>> _mockLogger = new();
     private readonly Release _testRelease = new(4, 3, "linux_x86_64", 0, ReleaseType.Stable());
+
+    [Fact]
+    public async Task ListReleases_GitHubIndexSucceeds_ReturnsReleaseNamesNewestFirst()
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.Is<HttpRequestMessage>(request => MatchesUnauthenticatedRequest(
+                    request,
+                    "https://api.github.com/repos/godotengine/godot-builds/contents/releases")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent(
+                    """
+                    [
+                      { "name": "godot-4.4-stable.json" },
+                      { "name": "godot-4.5-dev1.json" }
+                    ]
+                    """)
+            });
+
+        var downloadClient = CreateDownloadClient(mockHandler);
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
+        Assert.Equal(["4.5-dev1", "4.4-stable"], success.Value);
+    }
+
+    [Fact]
+    public async Task ListReleases_InvalidJson_ReturnsConnectionFailure()
+    {
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, "{ nope"));
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+    }
 
     [Fact]
     public async Task GetSha512_GitHubSucceeds_ReturnsSuccess()
@@ -51,9 +92,9 @@ public class DownloadClientTests
         gitHubMockHandler.Protected()
             .Setup<Task<HttpResponseMessage>>(
                 "SendAsync",
-                ItExpr.Is<HttpRequestMessage>(request =>
-                    request.RequestUri!.ToString() ==
-                    "https://github.com/godotengine/godot-builds/releases/download/4.0-stable/SHA512-SUMS.txt"),
+                ItExpr.Is<HttpRequestMessage>(request => MatchesUnauthenticatedRequest(
+                    request,
+                    "https://github.com/godotengine/godot-builds/releases/download/4.0-stable/SHA512-SUMS.txt")),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -64,8 +105,9 @@ public class DownloadClientTests
         gitHubMockHandler.Protected()
             .Setup<Task<HttpResponseMessage>>(
                 "SendAsync",
-                ItExpr.Is<HttpRequestMessage>(request =>
-                    request.RequestUri!.ToString() == "https://github.com/godotengine/godot/releases/download/4.0-stable/SHA512-SUMS.txt"),
+                ItExpr.Is<HttpRequestMessage>(request => MatchesUnauthenticatedRequest(
+                    request,
+                    "https://github.com/godotengine/godot/releases/download/4.0-stable/SHA512-SUMS.txt")),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -93,9 +135,9 @@ public class DownloadClientTests
         gitHubMockHandler.Protected()
             .Setup<Task<HttpResponseMessage>>(
                 "SendAsync",
-                ItExpr.Is<HttpRequestMessage>(request =>
-                    request.RequestUri!.ToString() ==
-                    "https://raw.githubusercontent.com/godotengine/godot-builds/main/releases/godot-4.2-dev2.json"),
+                ItExpr.Is<HttpRequestMessage>(request => MatchesUnauthenticatedRequest(
+                    request,
+                    "https://raw.githubusercontent.com/godotengine/godot-builds/main/releases/godot-4.2-dev2.json")),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -130,6 +172,28 @@ public class DownloadClientTests
     }
 
     [Fact]
+    public async Task GetReleaseManifest_InvalidJson_ReturnsConnectionFailure()
+    {
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, "{ nope"));
+
+        var result = await downloadClient.GetReleaseManifest(_testRelease, CancellationToken.None);
+
+        var failure = Assert.IsType<Result<GodotReleaseManifest, NetworkError>.Failure>(result);
+        Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+    }
+
+    [Fact]
+    public async Task GetReleaseManifest_NullJson_ReturnsConnectionFailure()
+    {
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, "null"));
+
+        var result = await downloadClient.GetReleaseManifest(_testRelease, CancellationToken.None);
+
+        var failure = Assert.IsType<Result<GodotReleaseManifest, NetworkError>.Failure>(result);
+        Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+    }
+
+    [Fact]
     public async Task GetZipFile_GodotDownloadApiSucceeds_ReturnsSuccess()
     {
         if (Release.TryParse("4.6.2-stable") is not { } release)
@@ -152,7 +216,7 @@ public class DownloadClientTests
                 Content = new StringContent("zip")
             });
 
-        var downloadClient = CreateDownloadClient(mockHandler, "github-token");
+        var downloadClient = CreateDownloadClient(mockHandler);
 
         var result = await downloadClient.GetZipFile("Godot_v4.6.2-stable_linux.x86_64.zip", release, CancellationToken.None);
 
@@ -189,10 +253,9 @@ public class DownloadClientTests
         mockHandler.Protected()
             .Setup<Task<HttpResponseMessage>>(
                 "SendAsync",
-                ItExpr.Is<HttpRequestMessage>(request => MatchesBearerRequest(
+                ItExpr.Is<HttpRequestMessage>(request => MatchesUnauthenticatedRequest(
                     request,
-                    $"https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/{filename}",
-                    "github-token")),
+                    $"https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/{filename}")),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
@@ -200,7 +263,7 @@ public class DownloadClientTests
                 Content = new StringContent("zip")
             });
 
-        var downloadClient = CreateDownloadClient(mockHandler, "github-token");
+        var downloadClient = CreateDownloadClient(mockHandler);
 
         var result = await downloadClient.GetZipFile(filename, release, CancellationToken.None);
 
@@ -222,8 +285,8 @@ public class DownloadClientTests
         Assert.Equal((int)HttpStatusCode.NotFound, requestFailure.StatusCode);
     }
 
-    private DownloadClient CreateDownloadClient(Mock<HttpMessageHandler> httpHandler, string? githubToken = null) =>
-        new(new HttpClient(httpHandler.Object), CreateMockConfiguration(githubToken), _mockLogger.Object);
+    private DownloadClient CreateDownloadClient(Mock<HttpMessageHandler> httpHandler) =>
+        new(new HttpClient(httpHandler.Object), _mockLogger.Object);
 
     private static Mock<HttpMessageHandler> CreateMockHttpHandler(HttpStatusCode statusCode, string content)
     {
@@ -242,18 +305,6 @@ public class DownloadClientTests
         return mockHandler;
     }
 
-    private static Lazy<IConfiguration> CreateMockConfiguration(string? githubToken = null)
-    {
-        var mockConfig = new Mock<IConfiguration>();
-        mockConfig.Setup(x => x["github:token"]).Returns(githubToken);
-        return new Lazy<IConfiguration>(() => mockConfig.Object);
-    }
-
     private static bool MatchesUnauthenticatedRequest(HttpRequestMessage request, string url) =>
         request.RequestUri?.ToString() == url && request.Headers.Authorization == null;
-
-    private static bool MatchesBearerRequest(HttpRequestMessage request, string url, string token) =>
-        request.RequestUri?.ToString() == url &&
-        request.Headers.Authorization is { Scheme: "Bearer" } authorization &&
-        authorization.Parameter == token;
 }

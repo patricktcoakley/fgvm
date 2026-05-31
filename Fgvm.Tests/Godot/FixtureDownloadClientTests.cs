@@ -60,6 +60,47 @@ public sealed class FixtureDownloadClientTests : IDisposable
         Assert.IsType<Result<ZipDownload, NetworkError>.Failure>(zip);
     }
 
+    [Fact]
+    public async Task FixtureClient_MissingManifest_ReturnsFailure()
+    {
+        var client = new FixtureDownloadClient(Path.Combine(_root, "missing.json"), NullLogger<FixtureDownloadClient>.Instance);
+
+        var result = await client.ListReleases(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        var error = Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+        Assert.Contains("Fixture manifest was not found", error.Message);
+    }
+
+    [Fact]
+    public async Task FixtureClient_MissingRelease_ReturnsFailuresForManifestAndChecksums()
+    {
+        var zipPath = await CreateZip("Godot_v4.6.2-stable_linux.x86_64.zip");
+        var checksum = await CalculateSha512(zipPath);
+        var manifestPath = await WriteManifest(zipPath, checksum);
+        var client = new FixtureDownloadClient(manifestPath, NullLogger<FixtureDownloadClient>.Instance);
+        var release = Release.TryParse("4.5-stable")!;
+
+        var manifest = await client.GetReleaseManifest(release, CancellationToken.None);
+        var sha512 = await client.GetSha512(release, CancellationToken.None);
+
+        Assert.IsType<Result<GodotReleaseManifest, NetworkError>.Failure>(manifest);
+        Assert.IsType<Result<string, NetworkError>.Failure>(sha512);
+    }
+
+    [Fact]
+    public async Task FixtureClient_CanceledToken_ThrowsOperationCanceledException()
+    {
+        var zipPath = await CreateZip("Godot_v4.6.2-stable_linux.x86_64.zip");
+        var checksum = await CalculateSha512(zipPath);
+        var manifestPath = await WriteManifest(zipPath, checksum);
+        var client = new FixtureDownloadClient(manifestPath, NullLogger<FixtureDownloadClient>.Instance);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        await cancellationTokenSource.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => client.ListReleases(cancellationTokenSource.Token));
+    }
+
     private async Task<string> CreateZip(string filename)
     {
         Directory.CreateDirectory(_root);
