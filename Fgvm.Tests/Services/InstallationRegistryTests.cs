@@ -57,7 +57,7 @@ public sealed class InstallationRegistryTests : IDisposable
         _hostSystem.Setup(x => x.EnsureShim(It.IsAny<string>()))
             .Returns(new Result<Unit, ShimError>.Success(Unit.Value));
 
-        _hostSystem.Setup(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()))
+        _hostSystem.Setup(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()))
             .Returns(new Result<Unit, SymlinkError>.Success(Unit.Value));
 
         _releaseManager.Setup(x => x.CreateRelease(It.IsAny<string>()))
@@ -89,7 +89,7 @@ public sealed class InstallationRegistryTests : IDisposable
         Assert.Equal(LegacyRelease, installation.RelativePath);
         Assert.True(File.Exists(InstallationsPath));
         _hostSystem.Verify(x => x.EnsureShim(It.IsAny<string>()), Times.Never);
-        _hostSystem.Verify(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()), Times.Never);
+        _hostSystem.Verify(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class InstallationRegistryTests : IDisposable
         Assert.Single(AssertSuccess(result));
         Assert.Equal($"{LegacyRelease}@{Target}", ReadRegistry().Default);
         _hostSystem.Verify(x => x.EnsureShim(It.IsAny<string>()), Times.Once);
-        _hostSystem.Verify(x => x.CreateOrOverwriteSymbolicLink(
+        _hostSystem.Verify(x => x.CreateOrOverwriteShortcut(
                 Path.Combine(legacyPath, "Godot_v4.3-stable_linux.x86_64")),
             Times.Once);
     }
@@ -203,7 +203,7 @@ public sealed class InstallationRegistryTests : IDisposable
         Assert.Single(AssertSuccess(result));
         Assert.Equal($"{LegacyRelease}@{Target}", ReadRegistry().Default);
         _hostSystem.Verify(x => x.EnsureShim(It.IsAny<string>()), Times.Once);
-        _hostSystem.Verify(x => x.CreateOrOverwriteSymbolicLink(
+        _hostSystem.Verify(x => x.CreateOrOverwriteShortcut(
                 Path.Combine(legacyPath, "Godot_v4.3-stable_linux.x86_64")),
             Times.Once);
     }
@@ -224,7 +224,7 @@ public sealed class InstallationRegistryTests : IDisposable
         Assert.Equal(2, AssertSuccess(result).Count);
         Assert.Equal($"{NewLayoutRelease}@{Target}", ReadRegistry().Default);
         _hostSystem.Verify(x => x.EnsureShim(It.IsAny<string>()), Times.Once);
-        _hostSystem.Verify(x => x.CreateOrOverwriteSymbolicLink(
+        _hostSystem.Verify(x => x.CreateOrOverwriteShortcut(
                 Path.Combine(newLayoutPath, "Godot_v4.2-stable_linux.x86_64")),
             Times.Once);
     }
@@ -240,7 +240,7 @@ public sealed class InstallationRegistryTests : IDisposable
         _hostSystem.Setup(x => x.EnsureShim(It.IsAny<string>()))
             .Returns(new Result<Unit, ShimError>.Failure(new ShimError.PathConflict(Path.Combine(_rootPath, "bin", "godot"))));
 
-        _hostSystem.Setup(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()))
+        _hostSystem.Setup(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()))
             .Returns(new Result<Unit, SymlinkError>.Failure(new SymlinkError.PermissionDenied()));
 
         var result = CreateRegistry().ListInstallations();

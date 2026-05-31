@@ -250,7 +250,7 @@ public class InstallationService(
                 }
 
                 var symlinkTargetPath = Path.Combine(extractPath, godotRelease.ExecName);
-                switch (hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath))
+                switch (hostSystem.CreateOrOverwriteShortcut(symlinkTargetPath))
                 {
                     case Result<Unit, SymlinkError>.Success:
                         break;
