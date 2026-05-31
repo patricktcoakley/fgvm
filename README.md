@@ -10,7 +10,7 @@
 
 fgvm is a friendly Godot version manager that lets users install and manage multiple versions of Godot with ease. It uses a hybrid CLI/TUI design, meaning that in certain places where it makes sense
 it will prompt you to let you select what you're looking for instead of having to pass in confusing arguments, as well as support for [passing it unstructured queries](#usage) to help find the
-appropriate version based on your input, like `4 dev` or `latest`. It's released as a static binary that can work on Windows, macOS, and Linux by just putting it somewhere and calling it in the
+appropriate version based on your input, like `4 dev` or `latest`. The CLI itself can work on Windows, macOS, and Linux by just putting it somewhere and calling it in the
 terminal, or, the preferred method of installation, using a [package manager](#package-managers).
 
 ## Features
@@ -28,11 +28,8 @@ terminal, or, the preferred method of installation, using a [package manager](#p
 ## Installation
 
 > [!NOTE]
-> In order to use the optional symlink feature for **Windows**, you first need to enable [Developer Mode](https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development).
-> Without it, you can still install, remove, set, and launch versions with `fgvm godot`; only the `Godot.exe` symlink to the selected version is skipped.
->
-> In addition, Powershell, the default shell for Windows, doesn't support the emojis out of the box. To fix this, you simply need to update the `$PROFILE`/profile.ps1:
-> ```powershell 
+> PowerShell, the default shell for Windows, doesn't support emoji out of the box. To fix this, you simply need to update the `$PROFILE`/profile.ps1:
+> ```powershell
 > '[console]::InputEncoding = [console]::OutputEncoding = [System.Text.UTF8Encoding]::new()' | Add-Content -Path $PROFILE
 > ```
 >
@@ -66,8 +63,8 @@ scoop install patricktcoakley/fgvm
 
 ### fgvmup (Currently Windows only)
 
-There is also an **experimental** tool called `fgvmup` that can manage your installations on **Windows** using a Powershell script. I've only done preliminary testing and am open to feedback, but be
-aware things there may be issues. To try it out, you can do the following:
+There is also an **experimental** tool called `fgvmup` that can manage your installations on **Windows** using a PowerShell script. I've only done preliminary testing and am open to feedback, but be
+aware there may be issues. To try it out, you can do the following:
 
 ```powershell
 irm https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.ps1 | iex
@@ -98,12 +95,12 @@ See [Build](#build) for instructions on how to build fgvm from source.
 ### Getting Started
 
 fgvm downloads and installs Godot into folders inside of `~/fgvm/` for macOS and Linux, and `$env:USERPROFILE\fgvm\` for Windows. You can customize this location using the `FGVM_HOME` environment variable (see [Environment Variables](#environment-variables)).
-New installations are stored under `installations/<VERSION>-<TYPE>-<RUNTIME>/<TARGET>/`, and fgvm tracks them in `installations.json`. For example, a 4.3 stable .NET install on Linux x64 is tracked as `installations/4.3-stable-mono/linux.x86_64/`.
+New installations are stored under `installations/<VERSION>-<TYPE>-<RUNTIME>/<TARGET>/`, and fgvm tracks them in `installations.json`. For example, a 4.3 stable .NET install on Linux x64 is tracked as `installations/4.3-stable-mono/mono_linux_x86_64/`.
 
-By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root symlink named `Godot` on Linux, `Godot.app` on macOS, or `Godot.exe` on Windows for GUI launch compatibility.
+By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root launch artifact named `Godot` on Linux, `Godot.app` on macOS, or `Godot.url` on Windows for GUI launch compatibility.
 You can run `fgvm godot -i` to pick another installation to launch, or use `fgvm set` to pick the version you want to launch by default.
 
-Right now fvgm supports installing whatever your computer supports by CPU and OS, so if you're running Windows on a standard x86_64 CPU you are able to install
+Right now fgvm supports installing whatever your computer supports by CPU and OS, so if you're running Windows on a standard x86_64 CPU you are able to install
 and run versions of Godot all the way back to 1.x. macOS went through multiple architecture transitions since Godot 1 and so most modern Macs will only support releases
 as far back as ~3.3, but if you have an older Mac you should still be able to install whatever it supports (should fgvm itself be able to run on the system). An override to force downloads on
 unsupported systems may be added later, but it hasn't come up as a requested feature yet.
@@ -122,7 +119,7 @@ but here is a detailed summary of the available commands:
 
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
 - `fgvm install` or `fgvm i` `[<...strings>]` [`--default|-D`] will prompt the user to install a version if no arguments are supplied, or will
-  try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
+  try to find the closest matching version based on the query, preferring "stable" if no other release type is supplied.
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
     - Queries:
         - `latest` or `latest standard` will install the latest stable, and `latest mono` will install the latest .NET stable.
@@ -148,14 +145,14 @@ but here is a detailed summary of the available commands:
 - `fgvm which` [`--json`] displays the executable path for the current default Godot installation. Use `--json` to output in JSON format.
 - `fgvm remove` or `fgvm r` `[<...strings>]` prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
-    - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if remove a specific version, like
-      `4.4.1-stable-mono`, it will just delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
+    - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if your query only matches one installed
+      version, even from a fuzzy search like `4.4 mono`, it will delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
 - `fgvm logs` [`--level|-l <string>`] [`--message|-m <string>`] [`--json`] displays all of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
 - `fgvm search` or `fgvm s` `[<...strings>]` [`--json|-j`] [`--no-cache|-F`] takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
   and `--no-cache` or `-F` to force a remote refresh instead of using the local release cache.
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
-        - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2.-rc3`
+        - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2-rc3`
 
 ### Project Version Management
 
@@ -198,10 +195,9 @@ fgvm g -i                     # Same as above
 
 ### Configuration
 
-Once you've installed fgvm, there should be a `fgvm.ini` file located inside of the root `fgvm` directory. Currently, the only supported
+fgvm creates a `fgvm.ini` file inside of the root `fgvm` directory when configuration is first needed. Currently, the only supported
 setting is to set a [GitHub token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) to
-disable
-rate limiting on queries and installations. In order to do so, you need to edit the `fgvm.ini` to look like the following:
+disable rate limiting on queries and installations. In order to do so, you need to edit the `fgvm.ini` to look like the following:
 
 ```ini
 # FGVM Configuration File
@@ -243,23 +239,22 @@ other use cases in the future, but otherwise all functionality exists inside the
 
 ### Build
 
-In order to build this project, you just need the .NET 10 SDK. Running `dotnet run --project Fgvm.Cli -- <command> [args]` will let you run commands immediately, but you can also run `dotnet build -c Release` to get a
-release build and just copy to a directory in your PATH:
+In order to build this project, you just need a .NET SDK compatible with `global.json`, or you can use the included mise setup below. Running `dotnet run --project Fgvm.Cli -- <command> [args]` will let you run commands immediately, but you can also run `dotnet build -c Release` for development builds. To create the standalone binary used by releases, publish the CLI and copy the published `fgvm`/`fgvm.exe` to a directory in your PATH:
 
 ```shell
 git clone https://github.com/patricktcoakley/fgvm.git
 cd fgvm
-dotnet restore
-dotnet build -c Release
+dotnet publish Fgvm.Cli/Fgvm.Cli.csproj -c Release
 ```
 
 This repo also includes an optional [mise](https://mise.jdx.dev/) setup for installing the expected .NET SDK and running common development tasks:
 
 ```shell
 mise install
-mise run restore
 mise run build
+mise run publish
 mise run test
+mise run format
 ```
 
 ### Test
@@ -290,10 +285,10 @@ When making changes:
 Example:
 
 ```shell
-git commit -m "feat(environment): Added suport for OpenBSD."
+git commit -m "feat(environment): Added support for OpenBSD."
 ```
 
-Also please make sure to run `dotnet format` before committing to ensure code style consistency.
+Also please make sure to run `mise run format` before committing to ensure code style consistency.
 
 See: https://github.com/patricktcoakley/fgvm
 
@@ -305,13 +300,13 @@ See: https://github.com/patricktcoakley/fgvm
 
 ## Migrating from gdvm
 
-If you were using this project in the past then you'll know it used to be called `gdvm`. Prior to this project's creation and after, there have been several other projects with similar goals using the same name. 
+If you were using this project in the past then you'll know it used to be called `gdvm`. Prior to this project's creation and after, there have been several other projects with similar goals using the same name.
 
 In an effort to differentiate this project I decided to change the name to stand out, and am also using it as an opportunity to implement some breaking changes due to some recent updates in the libraries I am using to write this tool.
 
 What this means for you:
 - `gdvm` and `fgvm` are mostly the same workflow but there were minor changes to the commands that are breaking, so consult the updated documentation if you get stuck
-- If you are using a package manager (the recommend way to install), you will have to remove the `gdvm` package and install `fgvm`
+- If you are using a package manager (the recommended way to install), you will have to remove the `gdvm` package and install `fgvm`
   - Homebrew users: `brew update && brew uninstall gdvm && brew install fgvm`
   - Scoop users: `scoop update && scoop uninstall gdvm && scoop install fgvm`
 - If you want to keep your current installations, you can copy the existing `gdvm` directory to `fgvm`, which will preserve everything. Here are some one-liners that copy them over and delete the gdvm folder:
