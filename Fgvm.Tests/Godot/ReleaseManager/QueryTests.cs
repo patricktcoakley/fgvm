@@ -129,6 +129,25 @@ public class QueryTests
     }
 
     [Fact]
+    public async Task SearchRemoteReleases_ManifestRefreshFailure_FiltersCachedReleaseIdsInFailure()
+    {
+        var releaseManager = new ReleaseManagerBuilder()
+            .ConfigureReleaseCatalog(mock =>
+            {
+                mock.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(new Result<string[], NetworkError>.Failure(
+                        new NetworkError.ManifestRefreshFailure(["4.5-stable", "3.5-stable"])));
+            })
+            .Build();
+
+        var result = await releaseManager.SearchRemoteReleases(["4"], ReleaseFetchMode.UseCache, CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        var manifestRefreshFailure = Assert.IsType<NetworkError.ManifestRefreshFailure>(failure.Error);
+        Assert.Equal(["4.5-stable"], manifestRefreshFailure.releaseIds);
+    }
+
+    [Fact]
     public async Task SearchRemoteReleases_WithCancellation_ThrowsOperationCanceledException()
     {
         var cts = new CancellationTokenSource();

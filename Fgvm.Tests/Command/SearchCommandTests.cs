@@ -68,6 +68,22 @@ public sealed class SearchCommandTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task SearchCommand_ManifestRefreshFailure_WritesWarningAndCachedOutput()
+    {
+        var releases = new[] { "4.5-stable" };
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(new NetworkError.ManifestRefreshFailure(releases)));
+
+        var command = CreateCommand(releaseManager.Object, out var console);
+
+        await command.Search();
+
+        Assert.Contains("Could not refresh the release cache", console.Output);
+        Assert.Contains("4.5-stable", console.Output);
+    }
+
     private static SearchCommand CreateCommand(IReleaseManager releaseManager, out TestConsole console)
     {
         var pathServiceMock = new Mock<IPathService>();

@@ -100,6 +100,9 @@ public sealed class ReleaseManager(
         {
             Result<string[], NetworkError>.Success(var releases) =>
                 new Result<IEnumerable<string>, NetworkError>.Success(releases),
+            Result<string[], NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseIds)) =>
+                new Result<IEnumerable<string>, NetworkError>.Failure(
+                    new NetworkError.ManifestRefreshFailure(releaseIds)),
             Result<string[], NetworkError>.Failure(var error) =>
                 new Result<IEnumerable<string>, NetworkError>.Failure(error),
             _ => throw new InvalidOperationException("Unexpected Result type")
@@ -118,6 +121,9 @@ public sealed class ReleaseManager(
             Result<string[], NetworkError>.Success(var releases) =>
                 new Result<IEnumerable<string>, NetworkError>.Success(
                     FilterReleasesByQuery(query, releases, true)),
+            Result<string[], NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseIds)) =>
+                new Result<IEnumerable<string>, NetworkError>.Failure(
+                    new NetworkError.ManifestRefreshFailure(FilterReleasesByQuery(query, releaseIds.ToArray(), true).ToArray())),
             Result<string[], NetworkError>.Failure(var error) =>
                 new Result<IEnumerable<string>, NetworkError>.Failure(error),
             _ => throw new InvalidOperationException("Unexpected Result type")

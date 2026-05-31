@@ -63,8 +63,21 @@ public sealed class ReleaseCatalog(
                 return new Result<string[], NetworkError>.Failure(error);
 
             case Result<ReleaseCatalogRead, NetworkError>.Success { Value: ReleaseCatalogRead.Found(var manifest) }
-                when fetchMode == ReleaseFetchMode.UseCache && IsReleaseIndexFresh(manifest) && GetReleaseIds(manifest).Any():
-                return new Result<string[], NetworkError>.Success(SortReleaseIds(GetReleaseIds(manifest)));
+                when fetchMode == ReleaseFetchMode.UseCache && GetReleaseIds(manifest).Any():
+                if (IsReleaseIndexFresh(manifest))
+                {
+                    return new Result<string[], NetworkError>.Success(SortReleaseIds(GetReleaseIds(manifest)));
+                }
+
+                var staleRefreshResult = await RefreshCatalog(manifest, cancellationToken);
+                return staleRefreshResult switch
+                {
+                    Result<ReleaseCatalogManifest, NetworkError>.Success(var refreshed) =>
+                        new Result<string[], NetworkError>.Success(SortReleaseIds(GetReleaseIds(refreshed))),
+                    Result<ReleaseCatalogManifest, NetworkError>.Failure(var error) =>
+                        ManifestRefreshFailure(manifest, error),
+                    _ => throw new InvalidOperationException("Unexpected Result type")
+                };
 
             case Result<ReleaseCatalogRead, NetworkError>.Success(var read):
                 var refreshResult = await RefreshCatalog(GetExistingManifest(read), cancellationToken);
@@ -80,6 +93,15 @@ public sealed class ReleaseCatalog(
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
+    }
+
+    private Result<string[], NetworkError> ManifestRefreshFailure(ReleaseCatalogManifest manifest, NetworkError refreshError)
+    {
+        logger.LogWarning("Failed to refresh stale release catalog at {ReleasesPath}: {Error}",
+            pathService.ReleasesPath,
+            refreshError);
+        return new Result<string[], NetworkError>.Failure(
+            new NetworkError.ManifestRefreshFailure(SortReleaseIds(GetReleaseIds(manifest))));
     }
 
     /// <inheritdoc />
@@ -99,7 +121,7 @@ public sealed class ReleaseCatalog(
                 var remoteManifestResult = await downloadClient.GetReleaseManifest(release, cancellationToken);
                 switch (remoteManifestResult)
                 {
-                    case Result<GodotReleaseManifest, NetworkError>.Success(var godotManifest) when godotManifest.Files.Count > 0:
+                    case Result<GodotReleaseManifest, NetworkError>.Success({ Files.Count: > 0 } godotManifest):
                         var recordResult = await RecordReleaseManifest(manifest, godotManifest, release, cancellationToken);
                         return recordResult switch
                         {
