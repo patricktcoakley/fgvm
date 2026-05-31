@@ -196,24 +196,7 @@ fgvm g -i                     # Same as above
 2. **`fgvm godot`** (or `fgvm g`) - Respects `.fgvm-version` file if present, otherwise uses global default
 3. **`fgvm set`** - Sets the global default version used when no `.fgvm-version` exists
 
-### Configuration
-
-Once you've installed fgvm, there should be a `fgvm.ini` file located inside of the root `fgvm` directory. Currently, the only supported
-setting is to set a [GitHub token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) to
-disable
-rate limiting on queries and installations. In order to do so, you need to edit the `fgvm.ini` to look like the following:
-
-```ini
-# FGVM Configuration File
-[github]
-token = "<MY_SUPER_SECRET_TOKEN>"
-```
-
-which allows you to use `fgvm` without
-the [60 requests per hour restriction](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=2022-11-28#primary-rate-limit-for-unauthenticated-users). There may be
-other use cases in the future, but otherwise all functionality exists inside the CLI itself.
-
-#### Environment Variables
+### Environment Variables
 
 - **`FGVM_HOME`**: Customize the installation directory for fgvm. By default, fgvm uses `~/fgvm/` (macOS/Linux) or `$env:USERPROFILE\fgvm\` (Windows). Setting this variable allows you to use a different location:
 

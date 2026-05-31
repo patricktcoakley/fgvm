@@ -11,11 +11,6 @@ public interface IPathService
     string RootPath { get; }
 
     /// <summary>
-    ///     Path to the Fgvm configuration file.
-    /// </summary>
-    string ConfigPath { get; }
-
-    /// <summary>
     ///     Path to the releases catalog file.
     /// </summary>
     string ReleasesPath { get; }
@@ -71,9 +66,6 @@ public sealed class PathService : IPathService
         _fgvmHomeEnvVar is not null
             ? Path.GetFullPath("fgvm", _fgvmHomeEnvVar)
             : Path.GetFullPath("fgvm", System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile));
-
-    /// <inheritdoc />
-    public string ConfigPath => Path.Combine(RootPath, "fgvm.ini");
 
     /// <inheritdoc />
     public string ReleasesPath => Path.Combine(RootPath, "releases.json");

@@ -36,9 +36,6 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.8" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.8" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.Ini" Version="10.0.8" />
         <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
         <PackageReference Include="Spectre.Console" Version="0.55.2"/>
         <PackageReference Include="ZLogger" Version="2.5.10"/>
