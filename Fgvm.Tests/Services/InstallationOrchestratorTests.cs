@@ -121,6 +121,31 @@ public sealed class InstallationOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task InstallAsync_ManifestRefreshFailure_WritesWarningAndUsesCachedReleaseNames()
+    {
+        var query = new[] { "4.3.0" };
+        var releaseNames = new[] { "4.3.0-stable" };
+        if (Release.TryParse("4.3.0-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Failure(new NetworkError.ManifestRefreshFailure(releaseNames)));
+
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, releaseNames))
+            .Returns(new Result<Release, QueryError>.Success(release));
+
+        SetupInstallations([release.ReleaseNameWithRuntime]);
+
+        var result = await _orchestrator.InstallAsync(query);
+
+        Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
+        Assert.Contains("Could not refresh the release cache", _console.Output);
+        Assert.Contains("already installed", _console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task InstallAsync_NoInstalledVersions_AutoSetsDefault()
     {
         var query = new[] { "4.3.0" };

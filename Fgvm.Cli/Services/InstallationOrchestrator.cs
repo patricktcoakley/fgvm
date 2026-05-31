@@ -163,10 +163,18 @@ public sealed class InstallationOrchestrator(
         return await installationService.FetchReleaseNames(cancellationToken) switch
         {
             Result<string[], NetworkError>.Success(var releaseNames) => releaseNames,
+            Result<string[], NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseNames)) =>
+                UseCachedReleaseNames(releaseNames),
             Result<string[], NetworkError>.Failure =>
                 throw new InvalidOperationException("Unable to fetch available Godot releases."),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
+    }
+
+    private string[] UseCachedReleaseNames(IEnumerable<string> releaseNames)
+    {
+        console.MarkupLine(Messages.ReleaseCacheRefreshFailed);
+        return releaseNames.ToArray();
     }
 
     private IReadOnlyList<string> ListInstallations() =>

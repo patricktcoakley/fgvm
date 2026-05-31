@@ -350,21 +350,13 @@ public class InstallationService(
         switch (releaseIdsResult)
         {
             case Result<string[], NetworkError>.Failure(var error):
-                return new Result<string[], NetworkError>.Failure(error);
+                return error is NetworkError.ManifestRefreshFailure(var cachedReleaseIds)
+                    ? new Result<string[], NetworkError>.Failure(
+                        new NetworkError.ManifestRefreshFailure(SortReleaseNames(cachedReleaseIds)))
+                    : new Result<string[], NetworkError>.Failure(error);
 
             case Result<string[], NetworkError>.Success(var releaseIds):
-                var sortedReleases = releaseIds
-                    .Select(name => releaseManager.CreateRelease($"{name}-standard"))
-                    .Select(result => result switch
-                    {
-                        Result<Release, ReleaseParseError>.Success(var release) => release,
-                        Result<Release, ReleaseParseError>.Failure => null,
-                        _ => throw new InvalidOperationException("Unexpected Result type")
-                    })
-                    .OfType<Release>()
-                    .OrderByDescending(release => release)
-                    .Select(r => r.ReleaseName)
-                    .ToArray();
+                var sortedReleases = SortReleaseNames(releaseIds);
 
                 if (sortedReleases.Length == 0)
                 {
@@ -379,6 +371,20 @@ public class InstallationService(
         }
     }
 
+    private string[] SortReleaseNames(IEnumerable<string> releaseIds) =>
+        releaseIds
+            .Select(name => releaseManager.CreateRelease($"{name}-standard"))
+            .Select(result => result switch
+            {
+                Result<Release, ReleaseParseError>.Success(var release) => release,
+                Result<Release, ReleaseParseError>.Failure => null,
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            })
+            .OfType<Release>()
+            .OrderByDescending(release => release)
+            .Select(r => r.ReleaseName)
+            .ToArray();
+
     private async Task<Result<Release?, InstallationError>> ResolveReleaseFromCatalog(string[] query,
         ReleaseFetchMode fetchMode,
         CancellationToken cancellationToken
@@ -388,22 +394,27 @@ public class InstallationService(
         return releaseNamesResult switch
         {
             Result<string[], NetworkError>.Success(var releaseNames) =>
-                releaseManager.ResolveReleaseQuery(query, releaseNames) switch
-                {
-                    Result<Release, QueryError>.Success(var release) =>
-                        new Result<Release?, InstallationError>.Success(release),
-                    Result<Release, QueryError>.Failure(QueryError.NotFound) =>
-                        new Result<Release?, InstallationError>.Success(null),
-                    Result<Release, QueryError>.Failure(var error) =>
-                        new Result<Release?, InstallationError>.Failure(MapQueryError(error, query)),
-                    _ => throw new InvalidOperationException("Unexpected Result type")
-                },
+                ResolveReleaseNames(query, releaseNames),
+            Result<string[], NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseNames)) =>
+                ResolveReleaseNames(query, releaseNames.ToArray()),
             Result<string[], NetworkError>.Failure(var error) =>
                 new Result<Release?, InstallationError>.Failure(
                     new InstallationError.Failed($"Failed to fetch releases: {error}")),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
     }
+
+    private Result<Release?, InstallationError> ResolveReleaseNames(string[] query, string[] releaseNames) =>
+        releaseManager.ResolveReleaseQuery(query, releaseNames) switch
+        {
+            Result<Release, QueryError>.Success(var release) =>
+                new Result<Release?, InstallationError>.Success(release),
+            Result<Release, QueryError>.Failure(QueryError.NotFound) =>
+                new Result<Release?, InstallationError>.Success(null),
+            Result<Release, QueryError>.Failure(var error) =>
+                new Result<Release?, InstallationError>.Failure(MapQueryError(error, query)),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
 
     private static InstallationError MapQueryError(QueryError error, string[] query) => error switch
     {

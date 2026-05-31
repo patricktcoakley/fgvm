@@ -42,6 +42,8 @@ public static class Messages
 
     // Search
     public static string AvailableVersionsHeader => "[green]List Of Available Versions[/]";
+    public static string ReleaseCacheRefreshFailed =>
+        "[orange1]Warning: Could not refresh the release cache. Showing cached releases.[/]";
 
     // Exceptions
     public static string NoInstallationsFound => "No installations found. Please install one or more versions first.";

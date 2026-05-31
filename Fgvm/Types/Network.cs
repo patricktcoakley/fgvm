@@ -9,6 +9,8 @@ public abstract record NetworkError
 
     public record ConnectionFailure(string Message, string? Details = null) : NetworkError;
 
+    public record ManifestRefreshFailure(IEnumerable<string> releaseIds) : NetworkError;
+
     public record CacheReadFailure(FileOperationError Error) : NetworkError
     {
         public override string ToString() => $"Unable to read release cache: {Error}";

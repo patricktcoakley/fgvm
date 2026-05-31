@@ -63,6 +63,24 @@ public class InstallationServiceTests
     }
 
     [Fact]
+    public async Task FetchReleaseNames_ManifestRefreshFailure_PropagatesSortedCachedReleaseNames()
+    {
+        var releaseIds = new[] { "4.5-dev1", "4.4-stable", "4.5.1-rc1", "4.5-stable" };
+        var releaseManager = CreateReleaseManagerMock(releaseIds);
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Failure(new NetworkError.ManifestRefreshFailure(releaseIds)));
+
+        var service = CreateService(releaseManager.Object, releaseCatalog.Object);
+
+        var releaseNamesResult = await service.FetchReleaseNames(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<string[], NetworkError>.Failure>(releaseNamesResult);
+        var manifestRefreshFailure = Assert.IsType<NetworkError.ManifestRefreshFailure>(failure.Error);
+        Assert.Equal(["4.5.1-rc1", "4.5-stable", "4.5-dev1", "4.4-stable"], manifestRefreshFailure.releaseIds);
+    }
+
+    [Fact]
     public async Task InstallByQueryAsync_InvalidQuery_ReturnsInvalidQueryWithoutRemoteRefresh()
     {
         var query = new[] { "bad-query" };

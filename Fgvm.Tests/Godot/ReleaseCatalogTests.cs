@@ -86,6 +86,22 @@ public sealed class ReleaseCatalogTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadReleaseIds_RefreshWritesCacheAndReusesItForSubsequentReads()
+    {
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.4-stable", "4.5-dev1"]));
+
+        var first = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
+        var second = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
+
+        var firstSuccess = Assert.IsType<Result<string[], NetworkError>.Success>(first);
+        var secondSuccess = Assert.IsType<Result<string[], NetworkError>.Success>(second);
+        Assert.Equal(["4.5-dev1", "4.4-stable"], firstSuccess.Value);
+        Assert.Equal(firstSuccess.Value, secondSuccess.Value);
+        _downloadClient.Verify(x => x.ListReleases(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ReadReleaseIds_DeduplicatesRuntimeSpecificRemoteIds()
     {
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
@@ -172,6 +188,60 @@ public sealed class ReleaseCatalogTests : IDisposable
         var manifest = await ReadManifest();
         Assert.DoesNotContain("4.3", manifest.Releases.Keys);
         Assert.Contains("4.4", manifest.Releases.Keys);
+    }
+
+    [Fact]
+    public async Task ReadReleaseIds_StaleLastUpdatedRemoteFailureReturnsCachedIdsInFailure()
+    {
+        await WriteManifest(new ReleaseCatalogManifest
+        {
+            LastUpdated = DateTimeOffset.UtcNow.AddDays(-2),
+            Releases =
+            {
+                ["4.3"] = new ReleaseCatalogVersion
+                {
+                    ["stable"] = new ReleaseCatalogRelease()
+                }
+            }
+        });
+
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
+                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403, "rate limit")));
+
+        var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
+
+        var failure = Assert.IsType<Result<string[], NetworkError>.Failure>(result);
+        var manifestRefreshFailure = Assert.IsType<NetworkError.ManifestRefreshFailure>(failure.Error);
+        Assert.Equal(["4.3-stable"], manifestRefreshFailure.releaseIds);
+        _downloadClient.Verify(x => x.ListReleases(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReadReleaseIds_ForceRemoteFailureDoesNotUseStaleCache()
+    {
+        await WriteManifest(new ReleaseCatalogManifest
+        {
+            LastUpdated = DateTimeOffset.UtcNow.AddDays(-2),
+            Releases =
+            {
+                ["4.3"] = new ReleaseCatalogVersion
+                {
+                    ["stable"] = new ReleaseCatalogRelease()
+                }
+            }
+        });
+
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
+                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403, "rate limit")));
+
+        var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.ForceRemote, CancellationToken.None);
+
+        var failure = Assert.IsType<Result<string[], NetworkError>.Failure>(result);
+        var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
+        Assert.Equal(403, requestFailure.StatusCode);
+        _downloadClient.Verify(x => x.ListReleases(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

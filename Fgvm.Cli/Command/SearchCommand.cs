@@ -41,19 +41,17 @@ public sealed class SearchCommand(
         switch (result)
         {
             case Result<IEnumerable<string>, NetworkError>.Success(var releaseNames):
-                var releases = releaseNames
-                    .Select(name => new RemoteReleaseView(name))
-                    .ToList();
+                WriteReleases(releaseNames);
+                return;
 
-                if (json)
+            case Result<IEnumerable<string>, NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseNames)):
+                logger.ZLogWarning($"Failed to refresh release cache. Showing cached releases.");
+                if (!json)
                 {
-                    console.Profile.Out.Writer.WriteLine(releases.ToJson());
-                }
-                else
-                {
-                    console.Write(releases.ToPanel(searchQuery));
+                    console.MarkupLine(Messages.ReleaseCacheRefreshFailed);
                 }
 
+                WriteReleases(releaseNames);
                 return;
 
             case Result<IEnumerable<string>, NetworkError>.Failure(var error):
@@ -76,6 +74,22 @@ public sealed class SearchCommand(
                 );
 
                 throw new InvalidOperationException(errorMessage);
+        }
+
+        void WriteReleases(IEnumerable<string> releaseNames)
+        {
+            var releases = releaseNames
+                .Select(name => new RemoteReleaseView(name))
+                .ToList();
+
+            if (json)
+            {
+                console.Profile.Out.Writer.WriteLine(releases.ToJson());
+            }
+            else
+            {
+                console.Write(releases.ToPanel(searchQuery));
+            }
         }
     }
 }
