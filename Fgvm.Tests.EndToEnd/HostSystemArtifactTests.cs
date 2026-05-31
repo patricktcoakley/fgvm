@@ -102,7 +102,7 @@ public sealed class HostSystemArtifactTests : IDisposable
         File.WriteAllText(targetPath, "");
         var hostSystem = CreateHostSystem(OS.Linux);
 
-        var result = hostSystem.CreateOrOverwriteSymbolicLink(targetPath);
+        var result = hostSystem.CreateOrOverwriteShortcut(targetPath);
 
         Assert.IsType<Result<Unit, SymlinkError>.Success>(result);
         var symlink = new FileInfo(Path.Combine(_rootPath, "Godot"));
@@ -125,7 +125,7 @@ public sealed class HostSystemArtifactTests : IDisposable
         File.CreateSymbolicLink(Path.Combine(_rootPath, "Godot"), oldExecutablePath);
         var hostSystem = CreateHostSystem(OS.MacOS);
 
-        var result = hostSystem.CreateOrOverwriteSymbolicLink(targetAppPath);
+        var result = hostSystem.CreateOrOverwriteShortcut(targetAppPath);
 
         Assert.IsType<Result<Unit, SymlinkError>.Success>(result);
         Assert.Equal(targetAppPath, new FileInfo(Path.Combine(_rootPath, "Godot.app")).LinkTarget);
@@ -180,6 +180,7 @@ public sealed class HostSystemArtifactTests : IDisposable
             : Path.Combine(RootPath, "Godot");
 
         public string MacAppSymlinkPath => Path.Combine(RootPath, "Godot.app");
+        public string WindowsShortcutPath => Path.Combine(RootPath, "Godot.url");
 
         public string LogPath => Path.Combine(RootPath, "fgvm.log");
     }

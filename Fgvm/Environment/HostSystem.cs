@@ -1,10 +1,7 @@
 using System.IO.Enumeration;
-using System.Runtime.Versioning;
-using System.Security.Principal;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
-using Microsoft.Win32;
 
 namespace Fgvm.Environment;
 
@@ -32,7 +29,7 @@ public interface IHostSystem
     /// </summary>
     /// <param name="symlinkTargetPath">The executable or app bundle path to link to.</param>
     /// <returns>Success, or a symlink error describing why the link could not be created.</returns>
-    Result<Unit, SymlinkError> CreateOrOverwriteSymbolicLink(string symlinkTargetPath);
+    Result<Unit, SymlinkError> CreateOrOverwriteShortcut(string symlinkTargetPath);
 
     /// <summary>
     ///     Removes fgvm-managed selected Godot symlinks.
@@ -51,12 +48,6 @@ public interface IHostSystem
     /// </summary>
     /// <returns>Installed release names, or a filesystem error.</returns>
     Result<string[], FileSystemError> ListInstallations();
-
-    /// <summary>
-    ///     Checks whether fgvm can create symlinks on the current host.
-    /// </summary>
-    /// <returns>Success, or a symlink support error.</returns>
-    Result<Unit, SymlinkError> AreSymlinksSupported();
 
     /// <summary>
     ///     Checks whether a file exists.
@@ -594,20 +585,6 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
         }
     }
 
-    /// <inheritdoc />
-    public Result<Unit, SymlinkError> AreSymlinksSupported()
-    {
-        Result<Unit, SymlinkError> result = SystemInfo.CurrentOS switch
-        {
-            OS.Windows => IsWindowsDeveloperModeEnabled()
-                ? new Result<Unit, SymlinkError>.Success(Unit.Value)
-                : new Result<Unit, SymlinkError>.Failure(new SymlinkError.DeveloperModeRequired()),
-            OS.Linux or OS.MacOS => new Result<Unit, SymlinkError>.Success(Unit.Value),
-            _ => new Result<Unit, SymlinkError>.Failure(new SymlinkError.UnsupportedOS(SystemInfo.CurrentOS.ToString()))
-        };
-
-        return result;
-    }
 
     /// <inheritdoc />
     public Result<Unit, ShimError> EnsureShim(string fgvmExecutablePath)
@@ -723,13 +700,8 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
     }
 
     /// <inheritdoc />
-    public Result<Unit, SymlinkError> CreateOrOverwriteSymbolicLink(string symlinkTargetPath)
+    public Result<Unit, SymlinkError> CreateOrOverwriteShortcut(string symlinkTargetPath)
     {
-        if (AreSymlinksSupported() is Result<Unit, SymlinkError>.Failure supportFailure)
-        {
-            return supportFailure;
-        }
-
         if (RemoveSymbolicLinks() is Result<Unit, SymlinkError>.Failure removeFailure)
         {
             return removeFailure;
@@ -737,31 +709,31 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
 
         switch (SystemInfo.CurrentOS)
         {
-            case OS.MacOS:
+            case OS.Windows:
                 try
                 {
-                    Directory.CreateSymbolicLink(pathService.MacAppSymlinkPath, symlinkTargetPath);
+                    // Create a .url shortcut instead of a symbolic link to avoid requiring Developer Mode
+                    using var writer = new StreamWriter(pathService.WindowsShortcutPath);
+                    writer.WriteLine("[InternetShortcut]");
+                    writer.WriteLine("URL=" + new Uri(symlinkTargetPath).AbsoluteUri);
+                    writer.WriteLine("IconIndex=0");
+                    writer.WriteLine("IconFile=" + symlinkTargetPath);
                 }
                 catch (UnauthorizedAccessException)
                 {
                     return new Result<Unit, SymlinkError>.Failure(new SymlinkError.PermissionDenied());
                 }
+                catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException)
+                {
+                    return new Result<Unit, SymlinkError>.Failure(
+                        new SymlinkError.InvalidSymlink(pathService.WindowsShortcutPath, "Shortcut could not be created"));
+                }
 
-                break;
-            case OS.Windows:
+                return new Result<Unit, SymlinkError>.Success(Unit.Value);
+            case OS.MacOS:
                 try
                 {
-                    File.CreateSymbolicLink(pathService.SymlinkPath, symlinkTargetPath);
-                }
-                // Special case where we can assume that the user has not enabled Developer Mode.
-                // We don't necessarily want to fail because symlinks aren't required.
-                // TODO: Consider adding an option to ignore/disable symlinks for people who don't care
-                catch (Exception e) when (e.Message.StartsWith("A required privilege is not held by the client"))
-                {
-                    logger.LogWarning(
-                        "Windows requires Developer Mode enabled to create symlinks. See: https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development.");
-
-                    return new Result<Unit, SymlinkError>.Failure(new SymlinkError.DeveloperModeRequired());
+                    Directory.CreateSymbolicLink(pathService.MacAppSymlinkPath, symlinkTargetPath);
                 }
                 catch (UnauthorizedAccessException)
                 {
@@ -817,6 +789,17 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
 
         try
         {
+            if (SystemInfo.CurrentOS == OS.Windows)
+            {
+                var urlPath = pathService.WindowsShortcutPath;
+                if (File.Exists(urlPath))
+                {
+                    File.Delete(urlPath);
+                }
+
+                return new Result<Unit, SymlinkError>.Success(Unit.Value);
+            }
+
             // ATTN: On macOS the behavior of #.Exists can be unreliable due to the differences in how symbolic links are handled on the filesystem.
             // This is possibly related to the fact that the .app is a symlink to a directory and not a file, so it is technically "neither."
             // Therefore, we need to check if it has the ReparsePoint attribute to see if it "truly" exists.
@@ -870,6 +853,44 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
             logger.LogInformation("{MacAppSymlinkPath} is currently set to: {LinkTarget}", pathService.MacAppSymlinkPath,
                 appFile.LinkTarget);
             return new Result<SymlinkInfo, SymlinkError>.Success(new SymlinkInfo(appFile.LinkTarget));
+        }
+
+        if (SystemInfo.CurrentOS == OS.Windows)
+        {
+            var urlPath = pathService.WindowsShortcutPath;
+
+            try
+            {
+                if (!File.Exists(urlPath))
+                {
+                    return new Result<SymlinkInfo, SymlinkError>.Failure(new SymlinkError.NoVersionSet());
+                }
+
+                var urlLine = File.ReadLines(urlPath)
+                    .FirstOrDefault(line => line.StartsWith("URL=", StringComparison.OrdinalIgnoreCase));
+
+                if (urlLine is null ||
+                    !Uri.TryCreate(urlLine["URL=".Length..], UriKind.Absolute, out var uri) ||
+                    !uri.IsFile)
+                {
+                    return new Result<SymlinkInfo, SymlinkError>.Failure(
+                        new SymlinkError.InvalidSymlink(urlPath, "Shortcut does not contain a valid file URL"));
+                }
+
+                return new Result<SymlinkInfo, SymlinkError>.Success(
+                    new SymlinkInfo(uri.LocalPath));
+            }
+
+            catch (UnauthorizedAccessException)
+            {
+                return new Result<SymlinkInfo, SymlinkError>.Failure(new SymlinkError.PermissionDenied());
+            }
+
+            catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException)
+            {
+                return new Result<SymlinkInfo, SymlinkError>.Failure(
+                    new SymlinkError.InvalidSymlink(urlPath, "Shortcut could not be read"));
+            }
         }
 
         var file = new FileInfo(pathService.SymlinkPath);
@@ -946,49 +967,5 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
 
         return linkTarget is not null &&
                (File.Exists(linkTarget.FullName) || Directory.Exists(linkTarget.FullName));
-    }
-
-    // Stub Developer Mode check by existing early on non-Windows and only checking when necessary
-    private bool IsWindowsDeveloperModeEnabled() =>
-        !OperatingSystem.IsWindows() || IsDeveloperModeEnabled() || IsWindowsElevated();
-
-    /// <summary>
-    ///     Determines whether Windows Developer Mode is enabled by querying the system registry. This method assumes it is
-    ///     only called on Windows platforms that support registry access.
-    /// </summary>
-    /// <returns>
-    ///     True if Windows Developer Mode is enabled; otherwise, false. Defaults to false if the registry query fails.
-    /// </returns>
-    [SupportedOSPlatform("windows")]
-    private bool IsDeveloperModeEnabled()
-    {
-        try
-        {
-            const string subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock";
-            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default);
-            using var key = baseKey.OpenSubKey(subKey);
-            return key?.GetValue("AllowDevelopmentWithoutDevLicense") is 1;
-        }
-        catch
-        {
-            logger.LogWarning("Windows Developer Mode not enabled.");
-            return false;
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private bool IsWindowsElevated()
-    {
-        try
-        {
-            using var identity = WindowsIdentity.GetCurrent();
-            var principal = new WindowsPrincipal(identity);
-            return principal.IsInRole(WindowsBuiltInRole.Administrator);
-        }
-        catch
-        {
-            logger.LogWarning("Command not run with elevated privileges on Windows.");
-            return false;
-        }
     }
 }

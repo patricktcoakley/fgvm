@@ -1,13 +1,10 @@
 [tools]
-dotnet = "10"
+dotnet = "10.0.300"
 
 [tasks.test]
 description = "Run the unit and end-to-end suites."
 dir = "."
-run = [
-    "dotnet test --nologo --configuration Release Fgvm.Tests/Fgvm.Tests.csproj",
-    "mise run test:e2e:native"
-]
+depends = ["test:unit", "test:e2e:native"]
 
 [tasks."test:unit"]
 description = "Run the faster unit tests only."
@@ -17,7 +14,7 @@ run = "dotnet test --nologo --configuration Release Fgvm.Tests/Fgvm.Tests.csproj
 [tasks."test:e2e"]
 description = "Run only the end-to-end tests."
 dir = "."
-run = "mise run test:e2e:native"
+depends = ["test:e2e:native"]
 
 [tasks."e2e:prepare:native"]
 description = "Build native fixtures and publish the CLI for the current platform."
@@ -30,10 +27,8 @@ run = [
 [tasks."test:e2e:native"]
 description = "Run end-to-end tests against the native platform."
 dir = "."
-run = [
-    "mise run e2e:prepare:native",
-    "dotnet test --nologo --configuration Release Fgvm.Tests.EndToEnd/Fgvm.Tests.EndToEnd.csproj"
-]
+depends = ["e2e:prepare:native"]
+run = "dotnet test --nologo --configuration Release Fgvm.Tests.EndToEnd/Fgvm.Tests.EndToEnd.csproj"
 
 [tasks.format]
 description = "Format the project with JetBrains cleanupcode."
@@ -45,10 +40,10 @@ run = [
 [tasks."format:check"]
 description = "Verify JetBrains cleanupcode formatting in a clean worktree."
 dir = "."
+depends = ["format"]
 run = [
     "git diff --quiet",
     "git diff --cached --quiet",
-    "mise run format",
     "git diff --exit-code"
 ]
 

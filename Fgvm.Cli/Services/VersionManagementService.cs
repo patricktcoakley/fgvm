@@ -241,15 +241,12 @@ public class VersionManagementService(
 
             var symlinkTargetPath = Path.Combine(pathService.RootPath, installation.RelativePath);
             symlinkTargetPath = Path.Combine(symlinkTargetPath, godotRelease.ExecName);
-            if (hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath) is Result<Unit, SymlinkError>.Failure(var symlinkError))
+            if (hostSystem.CreateOrOverwriteShortcut(symlinkTargetPath) is Result<Unit, SymlinkError>.Failure(var symlinkError))
             {
                 logger.ZLogWarning($"Failed to refresh Godot symlink: {symlinkError}");
 
                 switch (symlinkError)
                 {
-                    case SymlinkError.DeveloperModeRequired:
-                        console.MarkupLine(Messages.DeveloperModeRequiredForSymlink);
-                        return godotRelease;
                     case SymlinkError.PermissionDenied:
                         console.MarkupLine(Messages.SymlinkPermissionDenied);
                         return godotRelease;

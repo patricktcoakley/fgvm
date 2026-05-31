@@ -51,6 +51,12 @@ public interface IPathService
     string MacAppSymlinkPath { get; }
 
     /// <summary>
+    ///     Path to the selected Windows shortcut.
+    /// </summary>
+    string WindowsShortcutPath { get; }
+
+
+    /// <summary>
     ///     Path to the log directory.
     /// </summary>
     string LogPath { get; }
@@ -93,6 +99,9 @@ public sealed class PathService : IPathService
 
     /// <inheritdoc />
     public string MacAppSymlinkPath => Path.Combine(RootPath, "Godot.app");
+
+    /// <inheritdoc />
+    public string WindowsShortcutPath => Path.Combine(RootPath, "Godot.url");
 
     /// <inheritdoc />
     public string LogPath => Path.Combine(RootPath, "fgvm.log");

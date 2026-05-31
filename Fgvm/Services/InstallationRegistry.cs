@@ -640,7 +640,7 @@ public sealed class InstallationRegistry(
             }
 
             var symlinkTargetPath = Path.Combine(ResolvePath(entry.Path), release.ExecName);
-            if (hostSystem.CreateOrOverwriteSymbolicLink(symlinkTargetPath) is Result<Unit, SymlinkError>.Failure(var symlinkError))
+            if (hostSystem.CreateOrOverwriteShortcut(symlinkTargetPath) is Result<Unit, SymlinkError>.Failure(var symlinkError))
             {
                 logger.LogWarning("Failed to refresh Godot symlink after generating installation registry: {Error}", symlinkError);
             }

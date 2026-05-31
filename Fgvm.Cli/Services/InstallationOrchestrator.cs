@@ -133,9 +133,6 @@ public sealed class InstallationOrchestrator(
                 {
                     switch (symlinkWarning)
                     {
-                        case SymlinkError.DeveloperModeRequired:
-                            console.MarkupLine(Messages.DeveloperModeRequiredForSymlink);
-                            break;
                         case SymlinkError.PermissionDenied:
                             console.MarkupLine(Messages.SymlinkPermissionDenied);
                             break;

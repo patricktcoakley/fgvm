@@ -62,7 +62,7 @@ public class VersionManagementServiceTests
         _mockHostSystem.Setup(x => x.EnsureShim(It.IsAny<string>()))
             .Returns(new Result<Unit, ShimError>.Success(Unit.Value));
 
-        _mockHostSystem.Setup(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()))
+        _mockHostSystem.Setup(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()))
             .Returns(new Result<Unit, SymlinkError>.Success(Unit.Value));
 
         SetupInstallations([]);
@@ -599,14 +599,14 @@ public class VersionManagementServiceTests
         _mockReleaseManager.Setup(x => x.CreateRelease(matchedVersion))
             .Returns(mockRelease);
 
-        _mockHostSystem.Setup(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()))
+        _mockHostSystem.Setup(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()))
             .Returns(new Result<Unit, SymlinkError>.Success(Unit.Value));
 
         var result = await _service.SetGlobalVersionAsync(query);
 
         Assert.Equal(mockRelease, result);
         _mockHostSystem.Verify(x => x.EnsureShim(It.IsAny<string>()), Times.Once);
-        _mockHostSystem.Verify(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()), Times.Once);
+        _mockHostSystem.Verify(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()), Times.Once);
 
         Assert.Contains("Successfully set version to", _console.Output);
         Assert.Contains(matchedVersion, _console.Output);
@@ -665,7 +665,7 @@ public class VersionManagementServiceTests
         _mockReleaseManager.Setup(x => x.CreateRelease(selectedVersion))
             .Returns(mockRelease);
 
-        _mockHostSystem.Setup(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()))
+        _mockHostSystem.Setup(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()))
             .Returns(new Result<Unit, SymlinkError>.Success(Unit.Value));
 
         var result = await _service.SetGlobalVersionAsync([]);
@@ -673,7 +673,7 @@ public class VersionManagementServiceTests
         Assert.Equal(mockRelease, result);
         _mockInstallationRegistry.Verify(x => x.ListInstallations(), Times.Once);
         _mockHostSystem.Verify(x => x.EnsureShim(It.IsAny<string>()), Times.Once);
-        _mockHostSystem.Verify(x => x.CreateOrOverwriteSymbolicLink(It.IsAny<string>()), Times.Once);
+        _mockHostSystem.Verify(x => x.CreateOrOverwriteShortcut(It.IsAny<string>()), Times.Once);
 
         Assert.Contains("Successfully set version to", _console.Output);
     }
