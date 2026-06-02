@@ -1,4 +1,4 @@
-name: Native E2E
+name: Integration
 permissions:
   contents: read
 
@@ -14,7 +14,7 @@ on:
 
 jobs:
   test:
-    name: Native E2E (${{ matrix.os }})
+    name: Integration (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -34,23 +34,23 @@ jobs:
       - name: Run Unit Tests
         run: dotnet test Fgvm.Tests --configuration Release --no-build --verbosity normal --logger "console;verbosity=detailed"
 
-      - name: Prepare Native E2E Fixtures
+      - name: Prepare Integration Fixtures
         run: |
-          dotnet run Fgvm.Tests.EndToEnd/Fixtures/BuildFixtures.cs
-          dotnet run Fgvm.Tests.EndToEnd/Fixtures/PublishCli.cs
+          dotnet run Fgvm.Tests.Integration/Fixtures/BuildFixtures.cs
+          dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs
 
-      - name: Run Native E2E Tests
-        run: dotnet test Fgvm.Tests.EndToEnd --configuration Release --no-build --verbosity normal --logger "console;verbosity=detailed"
+      - name: Run Integration Tests
+        run: dotnet test Fgvm.Tests.Integration --configuration Release --no-build --verbosity normal --logger "console;verbosity=detailed"
 
   required:
-    name: Native E2E
+    name: Integration
     runs-on: ubuntu-24.04
     needs: test
     if: ${{ always() }}
     steps:
-      - name: Verify E2E Matrix Result
+      - name: Verify Integration Matrix Result
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "::error::Native E2E matrix finished with result '${{ needs.test.result }}'."
+            echo "::error::Integration matrix finished with result '${{ needs.test.result }}'."
             exit 1
           fi
