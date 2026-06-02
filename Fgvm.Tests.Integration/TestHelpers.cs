@@ -1,7 +1,7 @@
 using System.Text;
 using Fgvm.Error;
 
-namespace Fgvm.Tests.EndToEnd;
+namespace Fgvm.Tests.Integration;
 
 public static class TestHelpers
 {

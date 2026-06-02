@@ -57,7 +57,7 @@ public sealed class FixtureDownloadClient : IDownloadClient
             if (string.IsNullOrWhiteSpace(_manifestPath))
             {
                 return new Result<FixtureManifest, NetworkError>.Failure(
-                    new NetworkError.ConnectionFailure("FGVM_E2E_FIXTURE_MANIFEST is not set."));
+                    new NetworkError.ConnectionFailure("FGVM_INTEGRATION_FIXTURE_MANIFEST is not set."));
             }
 
             var fullPath = Path.GetFullPath(_manifestPath);

@@ -3,7 +3,7 @@ using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Fgvm.Tests.EndToEnd;
+namespace Fgvm.Tests.Integration;
 
 public sealed class HostSystemArtifactTests : IDisposable
 {

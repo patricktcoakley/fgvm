@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Fgvm.Error;
 
-namespace Fgvm.Tests.EndToEnd;
+namespace Fgvm.Tests.Integration;
 
 public sealed class TestFixture : IAsyncLifetime
 {
@@ -16,7 +16,7 @@ public sealed class TestFixture : IAsyncLifetime
     public TestFixture()
     {
         _repoRoot = FindRepoRoot();
-        _testRoot = Path.Combine(Path.GetTempPath(), "fgvm-e2e", Guid.NewGuid().ToString("N"));
+        _testRoot = Path.Combine(Path.GetTempPath(), "fgvm-integration", Guid.NewGuid().ToString("N"));
         HomePath = Path.Combine(_testRoot, "home");
         TempPath = Path.Combine(_testRoot, "tmp");
         RootPath = Path.Combine(HomePath, "fgvm");
@@ -48,25 +48,25 @@ public sealed class TestFixture : IAsyncLifetime
         Directory.CreateDirectory(TempPath);
 
         var platform = CurrentPlatform();
-        _fgvmPath = System.Environment.GetEnvironmentVariable("FGVM_E2E_CLI_PATH")
-                    ?? Path.Combine(_repoRoot, ".fgvm-e2e-cli", platform, ExecutableName("fgvm"));
-        _fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_E2E_FIXTURE_MANIFEST")
-                               ?? Path.Combine(_repoRoot, ".fgvm-e2e-fixtures", platform, "manifest.json");
+        _fgvmPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_CLI_PATH")
+                    ?? Path.Combine(_repoRoot, ".fgvm-integration-cli", platform, ExecutableName("fgvm"));
+        _fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_FIXTURE_MANIFEST")
+                               ?? Path.Combine(_repoRoot, ".fgvm-integration-fixtures", platform, "manifest.json");
 
         if (!File.Exists(_fgvmPath))
         {
             throw new InvalidOperationException(
-                $"Native CLI publish was not found at '{_fgvmPath}'. Run `mise run e2e:prepare:native` before direct `dotnet test`.");
+                $"Native CLI publish was not found at '{_fgvmPath}'. Run `mise run integration:prepare:native` before direct `dotnet test`.");
         }
 
         if (!File.Exists(_fixtureManifestPath))
         {
             throw new InvalidOperationException(
-                $"Native fixture manifest was not found at '{_fixtureManifestPath}'. Run `mise run e2e:prepare:native` before direct `dotnet test`.");
+                $"Native fixture manifest was not found at '{_fixtureManifestPath}'. Run `mise run integration:prepare:native` before direct `dotnet test`.");
         }
 
         _baseEnvironment["FGVM_HOME"] = HomePath;
-        _baseEnvironment["FGVM_E2E_FIXTURE_MANIFEST"] = _fixtureManifestPath;
+        _baseEnvironment["FGVM_INTEGRATION_FIXTURE_MANIFEST"] = _fixtureManifestPath;
         return Task.CompletedTask;
     }
 

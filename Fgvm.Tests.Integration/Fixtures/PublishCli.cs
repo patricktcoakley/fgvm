@@ -37,7 +37,7 @@ internal sealed record PublishContext(string RepoRoot, string OutputRoot, BuildP
     public static PublishContext Create(PublishOptions options)
     {
         var repoRoot = options.RepoRoot ?? RepositoryPaths.FindRoot();
-        var outputRoot = options.OutputRoot ?? Path.Combine(repoRoot, ".fgvm-e2e-cli");
+        var outputRoot = options.OutputRoot ?? Path.Combine(repoRoot, ".fgvm-integration-cli");
         var platform = options.Platform is null ? BuildPlatform.Current() : BuildPlatform.Parse(options.Platform);
 
         return new PublishContext(repoRoot, outputRoot, platform);
