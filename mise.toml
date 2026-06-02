@@ -2,33 +2,33 @@
 dotnet = "10.0.300"
 
 [tasks.test]
-description = "Run the unit and end-to-end suites."
+description = "Run the unit and integration suites."
 dir = "."
-depends = ["test:unit", "test:e2e:native"]
+depends = ["test:unit", "test:integration:native"]
 
 [tasks."test:unit"]
 description = "Run the faster unit tests only."
 dir = "."
 run = "dotnet test --nologo --configuration Release Fgvm.Tests/Fgvm.Tests.csproj"
 
-[tasks."test:e2e"]
-description = "Run only the end-to-end tests."
+[tasks."test:integration"]
+description = "Run only the integration tests."
 dir = "."
-depends = ["test:e2e:native"]
+depends = ["test:integration:native"]
 
-[tasks."e2e:prepare:native"]
+[tasks."integration:prepare:native"]
 description = "Build native fixtures and publish the CLI for the current platform."
 dir = "."
 run = [
-    "dotnet run Fgvm.Tests.EndToEnd/Fixtures/BuildFixtures.cs",
-    "dotnet run Fgvm.Tests.EndToEnd/Fixtures/PublishCli.cs"
+    "dotnet run Fgvm.Tests.Integration/Fixtures/BuildFixtures.cs",
+    "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs"
 ]
 
-[tasks."test:e2e:native"]
-description = "Run end-to-end tests against the native platform."
+[tasks."test:integration:native"]
+description = "Run integration tests against the native platform."
 dir = "."
-depends = ["e2e:prepare:native"]
-run = "dotnet test --nologo --configuration Release Fgvm.Tests.EndToEnd/Fgvm.Tests.EndToEnd.csproj"
+depends = ["integration:prepare:native"]
+run = "dotnet test --nologo --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj"
 
 [tasks.format]
 description = "Format the project with JetBrains cleanupcode."

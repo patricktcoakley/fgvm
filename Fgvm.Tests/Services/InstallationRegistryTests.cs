@@ -151,6 +151,44 @@ public sealed class InstallationRegistryTests : IDisposable
     }
 
     [Fact]
+    public void ListInstallations_TargetAwareSameReleaseWithMultipleTargets_KeepsEachTarget()
+    {
+        const string armTarget = "linux.arm64";
+        Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease, Target));
+        Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease, armTarget));
+
+        var result = CreateRegistry().ListInstallations();
+
+        var installations = AssertSuccess(result);
+        Assert.Equal(2, installations.Count);
+        Assert.Contains(installations, installation =>
+            installation.Key == $"{LegacyRelease}@{Target}" &&
+            installation.ReleaseNameWithRuntime == LegacyRelease &&
+            installation.Target == Target &&
+            installation.RelativePath == $"installations/{LegacyRelease}/{Target}");
+        Assert.Contains(installations, installation =>
+            installation.Key == $"{LegacyRelease}@{armTarget}" &&
+            installation.ReleaseNameWithRuntime == LegacyRelease &&
+            installation.Target == armTarget &&
+            installation.RelativePath == $"installations/{LegacyRelease}/{armTarget}");
+    }
+
+    [Fact]
+    public void FindByReleaseName_WhenSameReleaseHasMultipleTargets_UsesReleaseManagerPlatformTarget()
+    {
+        const string armTarget = "linux.arm64";
+        Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease, Target));
+        Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease, armTarget));
+
+        var result = CreateRegistry().FindByReleaseName(LegacyRelease);
+
+        var installation = Assert.IsType<Result<Installation, InstallationRegistryError>.Success>(result).Value;
+        Assert.Equal($"{LegacyRelease}@{Target}", installation.Key);
+        Assert.Equal(Target, installation.Target);
+        Assert.Equal($"installations/{LegacyRelease}/{Target}", installation.RelativePath);
+    }
+
+    [Fact]
     public void ListInstallations_DropsInvalidRecordsAndClearsInvalidDefault()
     {
         Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease, Target));

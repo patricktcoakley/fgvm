@@ -3,17 +3,17 @@ using System.Text.Json.Nodes;
 using System.Xml.Linq;
 using Fgvm.Error;
 
-namespace Fgvm.Tests.EndToEnd;
+namespace Fgvm.Tests.Integration;
 
 /// <summary>
-///     Collection definition to ensure end-to-end tests run sequentially.
+///     Collection definition to ensure integration tests run sequentially.
 ///     Tests share a single runner and modify shared Fgvm state.
 /// </summary>
-[CollectionDefinition("EndToEnd", DisableParallelization = true)]
-public class EndToEndCollection;
+[CollectionDefinition("Integration", DisableParallelization = true)]
+public class IntegrationCollection;
 
-[Collection("EndToEnd")]
-public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
+[Collection("Integration")]
+public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixture>
 {
     private const string StableRelease = "4.6.2-stable";
     private const string StableVersionQuery = "4.6";
@@ -243,7 +243,7 @@ public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
         var environment = new Dictionary<string, string>
         {
             ["FGVM_HOME"] = home,
-            ["FGVM_E2E_FIXTURE_MANIFEST"] = manifestPath
+            ["FGVM_INTEGRATION_FIXTURE_MANIFEST"] = manifestPath
         };
 
         try
@@ -415,7 +415,7 @@ public class EndToEndTests(TestFixture fixture) : IClassFixture<TestFixture>
         var environment = new Dictionary<string, string>
         {
             ["FGVM_HOME"] = home,
-            ["FGVM_E2E_ARCH_OVERRIDE"] = "x64"
+            ["FGVM_INTEGRATION_ARCH_OVERRIDE"] = "x64"
         };
 
         try

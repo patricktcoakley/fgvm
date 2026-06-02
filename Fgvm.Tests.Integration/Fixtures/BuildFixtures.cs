@@ -105,13 +105,13 @@ internal sealed class FixtureBuilder(BuildContext context)
 
 internal sealed record BuildContext(string RepoRoot, string RecipePath, string OutputRoot, BuildPlatform Platform)
 {
-    public string MockSourcePath => Path.Combine(RepoRoot, "Fgvm.Tests.EndToEnd", "Fixtures", "MockGodot.cs");
+    public string MockSourcePath => Path.Combine(RepoRoot, "Fgvm.Tests.Integration", "Fixtures", "MockGodot.cs");
 
     public static BuildContext Create(BuildOptions options)
     {
         var repoRoot = options.RepoRoot ?? RepositoryPaths.FindRoot();
-        var recipePath = options.RecipePath ?? Path.Combine(repoRoot, "Fgvm.Tests.EndToEnd", "Fixtures", "fixture-recipe.json");
-        var outputRoot = options.OutputRoot ?? Path.Combine(repoRoot, ".fgvm-e2e-fixtures");
+        var recipePath = options.RecipePath ?? Path.Combine(repoRoot, "Fgvm.Tests.Integration", "Fixtures", "fixture-recipe.json");
+        var outputRoot = options.OutputRoot ?? Path.Combine(repoRoot, ".fgvm-integration-fixtures");
         var platform = options.Platform is null ? BuildPlatform.Current() : BuildPlatform.Parse(options.Platform);
 
         return new BuildContext(repoRoot, recipePath, outputRoot, platform);

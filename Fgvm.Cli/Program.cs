@@ -24,7 +24,7 @@ public class Program
     public static int Main(string[] args)
     {
         var pathService = new PathService();
-        var fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_E2E_FIXTURE_MANIFEST");
+        var fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_FIXTURE_MANIFEST");
         var fixtureMode = !string.IsNullOrWhiteSpace(fixtureManifestPath);
 
         var services = new ServiceCollection();
@@ -120,7 +120,7 @@ public class Program
     private static SystemInfo CreateSystemInfo(bool fixtureMode)
     {
         var systemInfo = new SystemInfo();
-        if (!fixtureMode || System.Environment.GetEnvironmentVariable("FGVM_E2E_ARCH_OVERRIDE") is not { Length: > 0 } archOverride)
+        if (!fixtureMode || System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_ARCH_OVERRIDE") is not { Length: > 0 } archOverride)
         {
             return systemInfo;
         }
@@ -129,7 +129,7 @@ public class Program
         {
             "x64" => Architecture.X64,
             "arm64" => Architecture.Arm64,
-            _ => throw new ConfigurationException("FGVM_E2E_ARCH_OVERRIDE must be either 'x64' or 'arm64'.")
+            _ => throw new ConfigurationException("FGVM_INTEGRATION_ARCH_OVERRIDE must be either 'x64' or 'arm64'.")
         };
 
         return new SystemInfo(systemInfo.CurrentOS, architecture);

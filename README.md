@@ -256,7 +256,7 @@ Or, with mise:
 ```shell
 mise run test
 mise run test:unit
-mise run test:e2e
+mise run test:integration
 ```
 
 ### Contributing

@@ -84,6 +84,27 @@ public sealed class SearchCommandTests
         Assert.Contains("4.5-stable", console.Output);
     }
 
+    [Fact]
+    public async Task SearchCommand_ManifestRefreshFailure_WithJson_WritesCachedJsonWithoutWarning()
+    {
+        var releases = new[] { "4.5-stable" };
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(new NetworkError.ManifestRefreshFailure(releases)));
+
+        var command = CreateCommand(releaseManager.Object, out var console);
+
+        await command.Search(json: true);
+
+        var json = console.Output.Trim();
+        Assert.DoesNotContain("Could not refresh the release cache", json);
+        Assert.DoesNotContain("[orange1]", json);
+
+        var entries = JsonSerializer.Deserialize<List<RemoteReleaseView>>(json, SerializerOptions);
+        var entry = Assert.Single(entries!);
+        Assert.Equal("4.5-stable", entry.Name);
+    }
+
     private static SearchCommand CreateCommand(IReleaseManager releaseManager, out TestConsole console)
     {
         var pathServiceMock = new Mock<IPathService>();
