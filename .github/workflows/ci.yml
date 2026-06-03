@@ -19,13 +19,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+      - name: Setup mise
+        uses: jdx/mise-action@v4
         with:
-          dotnet-version: '10.0.x'
+          install: true
+          cache: true
 
       - name: Build
-        run: dotnet build --configuration Release
+        run: mise run build:solution
 
       - name: Run Unit Tests
-        run: dotnet test Fgvm.Tests --configuration Release --no-build --verbosity normal --logger "console;verbosity=detailed"
+        run: mise run test:unit

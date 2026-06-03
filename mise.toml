@@ -1,5 +1,6 @@
 [tools]
 dotnet = "10.0.300"
+powershell = "7.5.4"
 
 [tasks.test]
 description = "Run the unit and integration suites."
@@ -17,18 +18,26 @@ dir = "."
 depends = ["test:integration:native"]
 
 [tasks."integration:prepare:native"]
-description = "Build native fixtures and publish the CLI for the current platform."
+description = "Publish the CLI used by integration tests."
 dir = "."
-run = [
-    "dotnet run Fgvm.Tests.Integration/Fixtures/BuildFixtures.cs",
-    "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs"
-]
+run = "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs"
 
 [tasks."test:integration:native"]
 description = "Run integration tests against the native platform."
 dir = "."
 depends = ["integration:prepare:native"]
 run = "dotnet test --nologo --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj"
+
+[tasks."e2e:prepare"]
+description = "Publish the CLI used by black-box e2e tests."
+dir = "."
+run = "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output .fgvm-e2e-cli"
+
+[tasks."test:e2e"]
+description = "Run black-box e2e smoke tests."
+dir = "."
+depends = ["e2e:prepare"]
+run = "pwsh -NoLogo -NoProfile -File e2e/run.ps1"
 
 [tasks.format]
 description = "Format the project with JetBrains cleanupcode."
@@ -51,6 +60,11 @@ run = [
 description = "Build the release configuration of the CLI."
 dir = "."
 run = "dotnet build --nologo --configuration Release Fgvm.Cli/Fgvm.Cli.csproj"
+
+[tasks."build:solution"]
+description = "Build all projects in release configuration."
+dir = "."
+run = "dotnet build --nologo --configuration Release"
 
 [tasks.restore]
 description = "Restore all NuGet packages."

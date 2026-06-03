@@ -13,21 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+      - name: Setup mise
+        uses: jdx/mise-action@v4
         with:
-          dotnet-version: '10.0.x'
+          install: true
+          cache: true
 
       - name: Build
-        run: dotnet build --configuration Release
-
-      - name: Prepare Integration Fixtures
-        run: |
-          dotnet run Fgvm.Tests.Integration/Fixtures/BuildFixtures.cs
-          dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs
+        run: mise run build:solution
 
       - name: Run Tests
-        run: dotnet test --configuration Release --no-build
+        run: mise run test
 
   build:
     needs: test
@@ -45,13 +41,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+      - name: Setup mise
+        uses: jdx/mise-action@v4
         with:
-          dotnet-version: '10.0.x'
+          install: true
+          cache: true
 
       - name: Build
-        run: dotnet publish -c Release -r ${{ matrix.rid }}
+        run: mise x -- dotnet publish -c Release -r ${{ matrix.rid }}
 
       - name: Package
         shell: pwsh

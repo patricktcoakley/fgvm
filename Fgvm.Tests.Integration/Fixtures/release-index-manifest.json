@@ -1,0 +1,37 @@
+{
+  "mockVersion": "release-index-only",
+  "platform": "integration",
+  "releases": [
+    {
+      "name": "4.7-dev1",
+      "version": "4.7",
+      "status": "dev1",
+      "gitReference": "mock-dev1"
+    },
+    {
+      "name": "4.6.2-stable",
+      "version": "4.6.2",
+      "status": "stable",
+      "gitReference": "mock-stable"
+    },
+    {
+      "name": "4.6.2-rc2",
+      "version": "4.6.2",
+      "status": "rc2",
+      "gitReference": "mock-rc2"
+    },
+    {
+      "name": "4.5-stable",
+      "version": "4.5",
+      "status": "stable",
+      "gitReference": "mock-4-5"
+    },
+    {
+      "name": "3.6.1-stable",
+      "version": "3.6.1",
+      "status": "stable",
+      "gitReference": "mock-3-6"
+    }
+  ],
+  "artifacts": []
+}

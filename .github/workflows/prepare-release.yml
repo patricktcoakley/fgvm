@@ -21,16 +21,17 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+      - name: Setup mise
+        uses: jdx/mise-action@v4
         with:
-          dotnet-version: '10.0.x'
+          install: true
+          cache: true
 
       - name: Restore Tools
-        run: dotnet tool restore
+        run: mise x -- dotnet tool restore
 
       - name: Dry Run
-        run: dotnet tool run versionize -- --dry-run --exit-insignificant-commits
+        run: mise x -- dotnet tool run versionize -- --dry-run --exit-insignificant-commits
 
       - name: Configure Git
         run: |
@@ -40,15 +41,15 @@ jobs:
       - name: Versionize
         id: version
         run: |
-          dotnet tool run versionize -- --skip-tag
-          dotnet tool run jb -- cleanupcode Fgvm.slnx --profile=Cleanup --no-build
+          mise x -- dotnet tool run versionize -- --skip-tag
+          mise x -- dotnet tool run jb -- cleanupcode Fgvm.slnx --profile=Cleanup --no-build
 
           git add -u # Stage changes made by cleanupcode, if any, then commit
           if ! git diff --cached --quiet; then
             git commit --amend --no-edit
           fi
 
-          version="$(dotnet tool run versionize -- inspect)"
+          version="$(mise x -- dotnet tool run versionize -- inspect)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
           echo "branch=release/v${version}" >> "$GITHUB_OUTPUT"
