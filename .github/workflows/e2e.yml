@@ -1,9 +1,10 @@
-name: Integration
+name: E2E
 permissions:
   contents: read
 
 on:
   workflow_dispatch:
+  workflow_call:
   pull_request:
     branches:
       - main
@@ -14,7 +15,7 @@ on:
 
 jobs:
   test:
-    name: Integration (${{ matrix.os }})
+    name: E2E (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,24 +30,18 @@ jobs:
           install: true
           cache: true
 
-      - name: Build
-        run: mise run build:solution
-
-      - name: Run Unit Tests
-        run: mise run test:unit
-
-      - name: Run Integration Tests
-        run: mise run test:integration
+      - name: Run E2E Tests
+        run: mise run test:e2e
 
   required:
-    name: Integration
+    name: E2E
     runs-on: ubuntu-24.04
     needs: test
     if: ${{ always() }}
     steps:
-      - name: Verify Integration Matrix Result
+      - name: Verify E2E Matrix Result
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "::error::Integration matrix finished with result '${{ needs.test.result }}'."
+            echo "::error::E2E matrix finished with result '${{ needs.test.result }}'."
             exit 1
           fi

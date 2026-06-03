@@ -7,7 +7,6 @@ namespace Fgvm.Tests.Integration;
 public sealed class TestFixture : IAsyncLifetime
 {
     private readonly Dictionary<string, string> _baseEnvironment = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _installedVersionsCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _repoRoot;
     private readonly string _testRoot;
     private string? _fgvmPath;
@@ -20,27 +19,12 @@ public sealed class TestFixture : IAsyncLifetime
         HomePath = Path.Combine(_testRoot, "home");
         TempPath = Path.Combine(_testRoot, "tmp");
         RootPath = Path.Combine(HomePath, "fgvm");
-        BinPath = Path.Combine(RootPath, "bin");
-        ShimPath = OperatingSystem.IsWindows()
-            ? Path.Combine(BinPath, "godot.cmd")
-            : Path.Combine(BinPath, "godot");
-        SelectedExecutablePath = OperatingSystem.IsWindows()
-            ? Path.Combine(RootPath, "Godot.exe")
-            : OperatingSystem.IsMacOS()
-                ? Path.Combine(RootPath, "Godot.app")
-                : Path.Combine(RootPath, "Godot");
     }
 
-    public string FgvmPath => _fgvmPath ?? throw new InvalidOperationException("Native fixture was not initialized.");
-    public string FixtureManifestPath => _fixtureManifestPath ?? throw new InvalidOperationException("Native fixture manifest was not initialized.");
-    public string HomePath { get; }
+    private string FgvmPath => _fgvmPath ?? throw new InvalidOperationException("Native fixture was not initialized.");
+    private string HomePath { get; }
     public string RootPath { get; }
     public string TempPath { get; }
-    public string BinPath { get; }
-    public string ShimPath { get; }
-    public string SelectedExecutablePath { get; }
-    public bool SupportsSymlinkAssertions => !OperatingSystem.IsWindows();
-    public bool IsArm64 => CurrentPlatform().EndsWith("-arm64", StringComparison.Ordinal);
 
     public Task InitializeAsync()
     {
@@ -51,7 +35,7 @@ public sealed class TestFixture : IAsyncLifetime
         _fgvmPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_CLI_PATH")
                     ?? Path.Combine(_repoRoot, ".fgvm-integration-cli", platform, ExecutableName("fgvm"));
         _fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_FIXTURE_MANIFEST")
-                               ?? Path.Combine(_repoRoot, ".fgvm-integration-fixtures", platform, "manifest.json");
+                               ?? Path.Combine(_repoRoot, "Fgvm.Tests.Integration", "Fixtures", "release-index-manifest.json");
 
         if (!File.Exists(_fgvmPath))
         {
@@ -62,7 +46,7 @@ public sealed class TestFixture : IAsyncLifetime
         if (!File.Exists(_fixtureManifestPath))
         {
             throw new InvalidOperationException(
-                $"Native fixture manifest was not found at '{_fixtureManifestPath}'. Run `mise run integration:prepare:native` before direct `dotnet test`.");
+                $"Integration fixture manifest was not found at '{_fixtureManifestPath}'.");
         }
 
         _baseEnvironment["FGVM_HOME"] = HomePath;
@@ -83,28 +67,8 @@ public sealed class TestFixture : IAsyncLifetime
     public async Task<CommandResult> ExecuteCommand(string[] args) =>
         await ExecuteProcess(FgvmPath, args, null, null);
 
-    public async Task<CommandResult> ExecuteCommandInDirectory(string workingDirectory, string[] args) =>
-        await ExecuteProcess(FgvmPath, args, workingDirectory, null);
-
     public async Task<CommandResult> ExecuteCommandWithEnvironment(string[] args, IReadOnlyDictionary<string, string> environment) =>
         await ExecuteProcess(FgvmPath, args, null, environment);
-
-    public async Task<CommandResult> ExecuteGodotShim(string[] args)
-    {
-        var currentPath = System.Environment.GetEnvironmentVariable("PATH");
-        var path = string.IsNullOrEmpty(currentPath)
-            ? BinPath
-            : $"{BinPath}{Path.PathSeparator}{currentPath}";
-        var launcher = OperatingSystem.IsWindows() ? "cmd.exe" : "env";
-        string[] launcherArgs = OperatingSystem.IsWindows()
-            ? ["/c", "godot", .. args]
-            : ["godot", .. args];
-
-        return await ExecuteProcess(launcher, launcherArgs, null, new Dictionary<string, string>
-        {
-            ["PATH"] = path
-        });
-    }
 
     public Task CreateDirectory(string path)
     {
@@ -130,28 +94,6 @@ public sealed class TestFixture : IAsyncLifetime
 
     public Task<bool> FileExists(string path) => Task.FromResult(File.Exists(path));
 
-    public Task<bool> PathIsSymlink(string path)
-    {
-        if (!File.Exists(path) && !Directory.Exists(path))
-        {
-            return Task.FromResult(false);
-        }
-
-        return Task.FromResult(File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint));
-    }
-
-    public Task<string?> ReadLink(string path)
-    {
-        if (File.Exists(path))
-        {
-            return Task.FromResult(new FileInfo(path).LinkTarget);
-        }
-
-        return Task.FromResult(Directory.Exists(path)
-            ? new DirectoryInfo(path).LinkTarget
-            : null);
-    }
-
     public async Task<string> ReadFile(string path) => await File.ReadAllTextAsync(path);
 
     public async Task WriteFile(string path, string content)
@@ -160,26 +102,7 @@ public sealed class TestFixture : IAsyncLifetime
         await File.WriteAllTextAsync(path, content);
     }
 
-    public async Task EnsureVersionInstalled(string version)
-    {
-        if (_installedVersionsCache.Contains(version))
-        {
-            return;
-        }
-
-        if (!await HasVersionInstalled(version))
-        {
-            var installResult = await ExecuteCommand(["install", version]);
-            await AssertSuccessfulExecutionAsync(installResult, "install");
-        }
-
-        _installedVersionsCache.Add(version);
-    }
-
-    public void MarkVersionUninstalled(string version) =>
-        _installedVersionsCache.Remove(version);
-
-    public async Task<string> GetLogs()
+    private async Task<string> GetLogs()
     {
         var result = await ExecuteCommand(["logs"]);
         return result.Stdout;
@@ -196,24 +119,6 @@ public sealed class TestFixture : IAsyncLifetime
         {
             result.AssertSuccessfulExecution(expectedOutput);
         }
-    }
-
-    public async Task AssertLogContains(string expectedText)
-    {
-        var logs = await GetLogs();
-        Assert.Contains(expectedText, logs, StringComparison.OrdinalIgnoreCase);
-    }
-
-    public async Task<bool> HasVersionInstalled(string version)
-    {
-        var result = await ExecuteCommand(["list"]);
-        return result.ExitCode == ExitCodes.Success && result.Stdout.Contains(version, StringComparison.OrdinalIgnoreCase);
-    }
-
-    public async Task<string> GetCurrentVersion()
-    {
-        var result = await ExecuteCommand(["which"]);
-        return result.ExitCode == ExitCodes.Success ? result.Stdout.Trim() : string.Empty;
     }
 
     private async Task<CommandResult> ExecuteProcess(string fileName,
