@@ -29,15 +29,36 @@ depends = ["integration:prepare:native"]
 run = "dotnet test --nologo --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj"
 
 [tasks."e2e:prepare"]
-description = "Publish the CLI used by black-box e2e tests."
+description = "Build fixtures and publish the CLI used by black-box e2e tests."
 dir = "."
-run = "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output .fgvm-e2e-cli"
+sources = [
+    "Fgvm/**/*.cs",
+    "Fgvm.Cli/**/*.cs",
+    "Fgvm/Fgvm.csproj",
+    "Fgvm.Cli/Fgvm.Cli.csproj",
+    "e2e/fixtures/*.cs",
+    "e2e/fixtures/*.json",
+    "Fgvm.Tests.Integration/Fixtures/PublishCli.cs",
+    "Fgvm.slnx",
+    "global.json"
+]
+outputs = { auto = true }
+run = [
+    "dotnet run e2e/fixtures/BuildFixtures.cs",
+    "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output .fgvm-e2e-cli"
+]
 
 [tasks."test:e2e"]
-description = "Run black-box e2e smoke tests."
+description = "Run black-box e2e tests."
 dir = "."
 depends = ["e2e:prepare"]
-run = "pwsh -NoLogo -NoProfile -File e2e/run.ps1"
+run = "pwsh -NoLogo -NoProfile -File e2e/run.ps1 -Parallel"
+
+[tasks."test:e2e:detailed"]
+description = "Run black-box e2e tests with per-test output."
+dir = "."
+depends = ["e2e:prepare"]
+run = "pwsh -NoLogo -NoProfile -File e2e/run.ps1 -Parallel -Verbosity Detailed"
 
 [tasks.format]
 description = "Format the project with JetBrains cleanupcode."

@@ -31,7 +31,7 @@ jobs:
           cache: true
 
       - name: Run E2E Tests
-        run: mise run test:e2e
+        run: mise run --force test:e2e:detailed
 
   required:
     name: E2E

@@ -258,6 +258,7 @@ mise run test
 mise run test:unit
 mise run test:integration
 mise run test:e2e
+mise run test:e2e:detailed
 ```
 
 ### Contributing
