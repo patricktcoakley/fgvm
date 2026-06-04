@@ -287,11 +287,11 @@ public class VersionManagementService(
 
             var godotRelease = CreateRelease(versionToSet);
 
-            // Create the `.fgvm-version` file
-            CreateOrUpdateVersionFile(godotRelease.ReleaseNameWithRuntime);
-
             var versionFilePath = Path.Combine(Directory.GetCurrentDirectory(), ".fgvm-version");
             var fileExists = File.Exists(versionFilePath);
+
+            // Create or update the `.fgvm-version` file
+            CreateOrUpdateVersionFile(godotRelease.ReleaseNameWithRuntime);
 
             logger.ZLogInformation($"Successfully set local version to {godotRelease.ReleaseNameWithRuntime}.");
             console.MarkupLine(fileExists ? Messages.UpdatedVersionFile : Messages.CreatedVersionFile);

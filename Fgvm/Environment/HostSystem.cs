@@ -712,7 +712,7 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
             case OS.Windows:
                 try
                 {
-                    // Create a .url shortcut instead of a symbolic link to avoid requiring Developer Mode
+                    // Use a .url shortcut
                     using var writer = new StreamWriter(pathService.WindowsShortcutPath);
                     writer.WriteLine("[InternetShortcut]");
                     writer.WriteLine("URL=" + new Uri(symlinkTargetPath).AbsoluteUri);

@@ -28,8 +28,8 @@ terminal, or, the preferred method of installation, using a [package manager](#p
 ## Installation
 
 > [!NOTE]
-> In order to use the optional symlink feature for **Windows**, you first need to enable [Developer Mode](https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development).
-> Without it, you can still install, remove, set, and launch versions with `fgvm godot`; only the `Godot.exe` symlink to the selected version is skipped.
+> On **Windows**, fgvm creates an optional `Godot.url` shortcut to the selected version for GUI launch compatibility.
+> You can still install, remove, set, and launch versions with `fgvm godot` if that shortcut cannot be created.
 >
 > In addition, Powershell, the default shell for Windows, doesn't support the emojis out of the box. To fix this, you simply need to update the `$PROFILE`/profile.ps1:
 > ```powershell 
@@ -100,10 +100,10 @@ See [Build](#build) for instructions on how to build fgvm from source.
 fgvm downloads and installs Godot into folders inside of `~/fgvm/` for macOS and Linux, and `$env:USERPROFILE\fgvm\` for Windows. You can customize this location using the `FGVM_HOME` environment variable (see [Environment Variables](#environment-variables)).
 New installations are stored under `installations/<VERSION>-<TYPE>-<RUNTIME>/<TARGET>/`, and fgvm tracks them in `installations.json`. For example, a 4.3 stable .NET install on Linux x64 is tracked as `installations/4.3-stable-mono/linux.x86_64/`.
 
-By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root symlink named `Godot` on Linux, `Godot.app` on macOS, or `Godot.exe` on Windows for GUI launch compatibility.
+By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root symlink named `Godot` on Linux, `Godot.app` on macOS, or a `Godot.url` shortcut on Windows for GUI launch compatibility.
 You can run `fgvm godot -i` to pick another installation to launch, or use `fgvm set` to pick the version you want to launch by default.
 
-Right now fvgm supports installing whatever your computer supports by CPU and OS, so if you're running Windows on a standard x86_64 CPU you are able to install
+Right now fgvm supports installing whatever your computer supports by CPU and OS, so if you're running Windows on a standard x86_64 CPU you are able to install
 and run versions of Godot all the way back to 1.x. macOS went through multiple architecture transitions since Godot 1 and so most modern Macs will only support releases
 as far back as ~3.3, but if you have an older Mac you should still be able to install whatever it supports (should fgvm itself be able to run on the system). An override to force downloads on
 unsupported systems may be added later, but it hasn't come up as a requested feature yet.
