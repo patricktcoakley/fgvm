@@ -148,7 +148,7 @@ but here is a detailed summary of the available commands:
 - `fgvm which` [`--json`] displays the executable path for the current default Godot installation. Use `--json` to output in JSON format.
 - `fgvm remove` or `fgvm r` `[<...strings>]` prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
-    - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if remove a specific version, like
+    - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if you remove a specific version, like
       `4.4.1-stable-mono`, it will just delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
 - `fgvm logs` [`--level|-l <string>`] [`--message|-m <string>`] [`--json`] displays all of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
 - `fgvm search` or `fgvm s` `[<...strings>]` [`--json|-j`] [`--no-cache|-F`] takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
@@ -275,10 +275,10 @@ When making changes:
 Example:
 
 ```shell
-git commit -m "feat(environment): Added suport for OpenBSD."
+git commit -m "feat(environment): Added support for OpenBSD."
 ```
 
-Also please make sure to run `dotnet format` before committing to ensure code style consistency.
+Also please make sure to run `mise run format` before committing to ensure code style consistency.
 
 See: https://github.com/patricktcoakley/fgvm
 
@@ -296,7 +296,7 @@ In an effort to differentiate this project I decided to change the name to stand
 
 What this means for you:
 - `gdvm` and `fgvm` are mostly the same workflow but there were minor changes to the commands that are breaking, so consult the updated documentation if you get stuck
-- If you are using a package manager (the recommend way to install), you will have to remove the `gdvm` package and install `fgvm`
+- If you are using a package manager (the recommended way to install), you will have to remove the `gdvm` package and install `fgvm`
   - Homebrew users: `brew update && brew uninstall gdvm && brew install fgvm`
   - Scoop users: `scoop update && scoop uninstall gdvm && scoop install fgvm`
 - If you want to keep your current installations, you can copy the existing `gdvm` directory to `fgvm`, which will preserve everything. Here are some one-liners that copy them over and delete the gdvm folder:

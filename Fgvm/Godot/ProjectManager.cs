@@ -161,7 +161,7 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
     /// <summary>
     ///     Finds the project version using the following priority:
     ///     1. `.fgvm-version` file (user override) or
-    ///     2. `project.godot` file (automatic detection) and creates a `.fgvm-version` file based on the contents.
+    ///     2. `project.godot` file (automatic detection).
     /// </summary>
     /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
     /// <returns>The version string if found, null otherwise.</returns>

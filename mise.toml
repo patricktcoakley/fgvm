@@ -5,7 +5,7 @@ powershell = "7.5.4"
 [tasks.test]
 description = "Run the unit and integration suites."
 dir = "."
-depends = ["test:unit", "test:integration:native"]
+depends = ["test:unit", "test:integration"]
 
 [tasks."test:unit"]
 description = "Run the faster unit tests only."
@@ -15,18 +15,13 @@ run = "dotnet test --nologo --configuration Release Fgvm.Tests/Fgvm.Tests.csproj
 [tasks."test:integration"]
 description = "Run only the integration tests."
 dir = "."
-depends = ["test:integration:native"]
+depends = ["integration:prepare"]
+run = "dotnet test --nologo --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj"
 
-[tasks."integration:prepare:native"]
+[tasks."integration:prepare"]
 description = "Publish the CLI used by integration tests."
 dir = "."
 run = "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs"
-
-[tasks."test:integration:native"]
-description = "Run integration tests against the native platform."
-dir = "."
-depends = ["integration:prepare:native"]
-run = "dotnet test --nologo --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj"
 
 [tasks."e2e:prepare"]
 description = "Build fixtures and publish the CLI used by black-box e2e tests."

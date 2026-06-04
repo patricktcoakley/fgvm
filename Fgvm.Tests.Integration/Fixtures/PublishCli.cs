@@ -68,7 +68,7 @@ internal readonly record struct BuildPlatform(string Name)
                 ? "macos"
                 : OperatingSystem.IsLinux()
                     ? "linux"
-                    : throw new PlatformNotSupportedException("Only Windows, macOS, and Linux are supported for native tests.");
+                    : throw new PlatformNotSupportedException("Only Windows, macOS, and Linux are supported for integration tests.");
 
         var arch = RuntimeInformation.ProcessArchitecture switch
         {
