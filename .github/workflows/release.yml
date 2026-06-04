@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup mise
         uses: jdx/mise-action@v4
@@ -39,7 +39,7 @@ jobs:
             rid: win-x64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup mise
         uses: jdx/mise-action@v4
@@ -65,7 +65,7 @@ jobs:
           "$hash  $ARTIFACT_NAME" | Out-File -FilePath "$ARTIFACT_NAME.sha256"
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fgvm-${{ matrix.rid }}
           path: |
@@ -79,10 +79,10 @@ jobs:
       contents: write
     
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             */fgvm-*.zip
