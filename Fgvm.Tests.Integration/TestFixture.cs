@@ -21,7 +21,7 @@ public sealed class TestFixture : IAsyncLifetime
         RootPath = Path.Combine(HomePath, "fgvm");
     }
 
-    private string FgvmPath => _fgvmPath ?? throw new InvalidOperationException("Native fixture was not initialized.");
+    private string FgvmPath => _fgvmPath ?? throw new InvalidOperationException("Integration fixture was not initialized.");
     private string HomePath { get; }
     public string RootPath { get; }
     public string TempPath { get; }
@@ -40,7 +40,7 @@ public sealed class TestFixture : IAsyncLifetime
         if (!File.Exists(_fgvmPath))
         {
             throw new InvalidOperationException(
-                $"Native CLI publish was not found at '{_fgvmPath}'. Run `mise run integration:prepare:native` before direct `dotnet test`.");
+                $"Integration CLI publish was not found at '{_fgvmPath}'. Run `mise run integration:prepare` before direct `dotnet test`.");
         }
 
         if (!File.Exists(_fixtureManifestPath))
@@ -190,7 +190,7 @@ public sealed class TestFixture : IAsyncLifetime
                 ? "macos"
                 : OperatingSystem.IsLinux()
                     ? "linux"
-                    : throw new PlatformNotSupportedException("Only Windows, macOS, and Linux are supported for native tests.");
+                    : throw new PlatformNotSupportedException("Only Windows, macOS, and Linux are supported for integration tests.");
 
         var arch = RuntimeInformation.ProcessArchitecture switch
         {
