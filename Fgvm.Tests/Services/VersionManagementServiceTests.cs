@@ -361,8 +361,10 @@ public class VersionManagementServiceTests
         const string matchedVersion = "4.3.0-stable";
         var query = new[] { queryVersion };
         var installedVersions = new[] { matchedVersion };
+        var tempDir = Path.Combine(Path.GetTempPath(), $"fgvm-local-version-{Guid.NewGuid():N}");
 
         SetupInstallations(installedVersions);
+        SetupCreateVersionFileWritesFile();
 
         var mockRelease = CreateMockRelease(matchedVersion);
         _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, installedVersions))
@@ -371,11 +373,66 @@ public class VersionManagementServiceTests
         _mockReleaseManager.Setup(x => x.CreateRelease(mockRelease.ReleaseNameWithRuntime))
             .Returns(mockRelease);
 
-        var result = await _service.SetLocalVersionAsync(query);
+        Directory.CreateDirectory(tempDir);
+        var originalDir = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
 
-        Assert.Equal(mockRelease, result);
+            var result = await _service.SetLocalVersionAsync(query);
 
-        Assert.Contains("`.fgvm-version` file in current directory", _console.Output);
+            Assert.Equal(mockRelease, result);
+
+            Assert.Contains("Created `.fgvm-version` file in current directory", _console.Output);
+            Assert.DoesNotContain("Updated `.fgvm-version` file in current directory", _console.Output);
+            Assert.Equal(mockRelease.ReleaseNameWithRuntime, File.ReadAllText(Path.Combine(tempDir, ".fgvm-version")).Trim());
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDir);
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task SetLocalVersionAsync_WithExistingVersionFile_WritesUpdatedMessage()
+    {
+        const string queryVersion = "4.3.0";
+        const string matchedVersion = "4.3.0-stable";
+        var query = new[] { queryVersion };
+        var installedVersions = new[] { matchedVersion };
+        var tempDir = Path.Combine(Path.GetTempPath(), $"fgvm-local-version-{Guid.NewGuid():N}");
+
+        SetupInstallations(installedVersions);
+        SetupCreateVersionFileWritesFile();
+
+        var mockRelease = CreateMockRelease(matchedVersion);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, installedVersions))
+            .Returns(mockRelease);
+
+        _mockReleaseManager.Setup(x => x.CreateRelease(mockRelease.ReleaseNameWithRuntime))
+            .Returns(mockRelease);
+
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, ".fgvm-version"), "4.2-stable-standard" + System.Environment.NewLine);
+        var originalDir = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+
+            var result = await _service.SetLocalVersionAsync(query);
+
+            Assert.Equal(mockRelease, result);
+
+            Assert.Contains("Updated `.fgvm-version` file in current directory", _console.Output);
+            Assert.DoesNotContain("Created `.fgvm-version` file in current directory", _console.Output);
+            Assert.Equal(mockRelease.ReleaseNameWithRuntime, File.ReadAllText(Path.Combine(tempDir, ".fgvm-version")).Trim());
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDir);
+            Directory.Delete(tempDir, true);
+        }
     }
 
     [Fact]
@@ -918,6 +975,18 @@ public class VersionManagementServiceTests
             _mockInstallationRegistry.Setup(x => x.SetDefault(installation.Key))
                 .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
         }
+    }
+
+    private void SetupCreateVersionFileWritesFile()
+    {
+        _mockProjectManager.Setup(x => x.CreateVersionFile(It.IsAny<string>(), It.IsAny<string?>()))
+            .Callback<string, string?>((version, directory) =>
+            {
+                var targetDirectory = directory ?? Directory.GetCurrentDirectory();
+                Directory.CreateDirectory(targetDirectory);
+                File.WriteAllText(Path.Combine(targetDirectory, ".fgvm-version"), version + System.Environment.NewLine);
+            })
+            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
     }
 
     private static Installation CreateInstallation(string releaseName) =>

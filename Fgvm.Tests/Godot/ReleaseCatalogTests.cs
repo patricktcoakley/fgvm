@@ -207,7 +207,8 @@ public sealed class ReleaseCatalogTests : IDisposable
 
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
-                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403, "rate limit")));
+                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403,
+                    "rate limit")));
 
         var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
 
@@ -234,7 +235,8 @@ public sealed class ReleaseCatalogTests : IDisposable
 
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
-                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403, "rate limit")));
+                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403,
+                    "rate limit")));
 
         var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.ForceRemote, CancellationToken.None);
 
