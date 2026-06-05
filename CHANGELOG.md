@@ -1,5 +1,18 @@
 # Changelog
 
+<a name="2.1.0"></a>
+## [2.1.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.1.0) (2026-06-05)
+
+### ✨ Features
+
+* Add `--no-cache` flag to search to force a refresh; migrate `.releases` to `releases.json` to capture more metadata. ([076c79f](https://github.com/patricktcoakley/fgvm/commit/076c79f4c0a9b148876ebe722d426a38ef34b62c))
+* Introduce an installation manifest to scaffold future improvements and to allow a shim-based launcher approach instead of relying solely on symlinks; wrap standard IO calls into Result types for cleaner and safer operations; add env var support for configurations; minor cleanup and refactoring. ([3ce783b](https://github.com/patricktcoakley/fgvm/commit/3ce783b6a24566ab2c4318f306fd893c47ff34fa))
+* Support shortcuts on Windows, removing the need for Developer Mode to be enabled. ([8c35543](https://github.com/patricktcoakley/fgvm/commit/8c35543e1f5828d9f6c256732fe71d5a56ddcf4b))
+
+### 🐛 Bug Fixes
+
+* On manifest refresh failure the existing manifest will be used. ([e9ec2c8](https://github.com/patricktcoakley/fgvm/commit/e9ec2c8c7721fe86fced61844c80e038cdd2a60e))
+
 <a name="2.0.2"></a>
 ## [2.0.2](https://github.com/patricktcoakley/fgvm/releases/tag/v2.0.2) (2026-03-01)
 
