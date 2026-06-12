@@ -59,12 +59,18 @@ function InvokeProcess {
 
         $process.WaitForExit()
 
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+
+        $stdout = $stdout -replace "\e\[[0-9;]*m", "" -replace '\\', '/'
+        $stderr = $stderr -replace "\e\[[0-9;]*m", "" -replace '\\', '/'
+
         [pscustomobject]@{
             FilePath  = $FilePath
             Arguments = $Arguments
             ExitCode  = $process.ExitCode
-            Stdout    = $stdoutTask.GetAwaiter().GetResult()
-            Stderr    = $stderrTask.GetAwaiter().GetResult()
+            Stdout    = $stdout
+            Stderr    = $stderr
         }
     }
     finally {
@@ -232,4 +238,27 @@ function Invoke-GodotShim {
         -Environment $processEnvironment `
         -WorkingDirectory $script:Config.RepoRoot `
         -TimeoutSeconds $script:Config.TimeoutSeconds
+}
+
+<#
+.SYNOPSIS
+    Read and parse a mock Godot invocation JSON file, normalizing paths to forward slashes.
+.DESCRIPTION
+    The mock Godot binary writes BaseDirectory and WorkingDirectory with OS-native
+    separators (backslashes on Windows). This helper normalizes them to forward slashes
+    so callers can compare against fixture paths (always forward-slash) without
+    inline separator replacements.
+.PARAMETER Path
+    Path to the invocation JSON file written by the mock binary.
+#>
+function Read-MockInvocation {
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string] $Path
+    )
+
+    $invocation = Json (File.Read $Path)
+    $invocation.BaseDirectory = $invocation.BaseDirectory -replace '\\', '/'
+    $invocation.WorkingDirectory = $invocation.WorkingDirectory -replace '\\', '/'
+    $invocation
 }

@@ -25,7 +25,7 @@ Suite "launch artifacts" {
         Assert.ExitCode 0 $set "fgvm set 4.6"
         Assert.True (Test-Path -LiteralPath $Context.ShimPath -PathType Leaf) "set should create the stable Godot shim."
         Assert.True (Test-Path -LiteralPath $Context.SelectedArtifactPath) "set should create the selected-version artifact."
-        Assert.Equal $seeded.ShortcutTargetPath (Read-SelectedArtifactTarget)
+        Assert.Equal ([System.IO.Path]::GetFullPath($seeded.ShortcutTargetPath)) ([System.IO.Path]::GetFullPath((Read-SelectedArtifactTarget)))
 
         if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
             $mode = [System.IO.File]::GetUnixFileMode($Context.ShimPath)
@@ -37,9 +37,9 @@ Suite "launch artifacts" {
 
         Assert.ExitCode 0 $shim "Godot PATH shim"
         File.WaitFor $invocationPath
-        $invocation = Json (File.Read $invocationPath)
+        $invocation = Read-MockInvocation $invocationPath
         Process.WaitForExit $invocation.ProcessId
-        Assert.Contains ($seeded.RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar) $invocation.BaseDirectory
+        Assert.Contains $seeded.RelativePath $invocation.BaseDirectory
         Assert.Equal @("shim-probe") @($invocation.Arguments)
     }
 
@@ -48,20 +48,20 @@ Suite "launch artifacts" {
         $older = Add-FixtureInstallation "4.5-stable"
 
         Assert.ExitCode 0 (Run "set" "4.6") "fgvm set 4.6"
-        Assert.Equal $stable.ShortcutTargetPath (Read-SelectedArtifactTarget)
+        Assert.Equal ([System.IO.Path]::GetFullPath($stable.ShortcutTargetPath)) ([System.IO.Path]::GetFullPath((Read-SelectedArtifactTarget)))
 
         Assert.ExitCode 0 (Run "set" "4.5") "fgvm set 4.5"
-        Assert.Equal $older.ShortcutTargetPath (Read-SelectedArtifactTarget)
+        Assert.Equal ([System.IO.Path]::GetFullPath($older.ShortcutTargetPath)) ([System.IO.Path]::GetFullPath((Read-SelectedArtifactTarget)))
 
         $invocationPath = Join-Path $Context.WorkPath "switched-shim-invocation.json"
         $shim = Invoke-GodotShim -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } -Arguments @("switch-probe")
 
         Assert.ExitCode 0 $shim "Godot PATH shim after switching versions"
         File.WaitFor $invocationPath
-        $invocation = Json (File.Read $invocationPath)
+        $invocation = Read-MockInvocation $invocationPath
         Process.WaitForExit $invocation.ProcessId
-        Assert.Contains ($older.RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar) $invocation.BaseDirectory
-        Assert.NotContains ($stable.RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar) $invocation.BaseDirectory
+        Assert.Contains $older.RelativePath $invocation.BaseDirectory
+        Assert.NotContains $stable.RelativePath $invocation.BaseDirectory
     }
 
     Test "removing the default clears the selected artifact but keeps the shim" {

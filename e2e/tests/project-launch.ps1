@@ -16,13 +16,13 @@ Suite "project launch" {
         Assert.NotContains "attached mode due to arguments" $godot.Stdout
 
         File.WaitFor $invocationPath
-        $invocation = Json (File.Read $invocationPath)
+        $invocation = Read-MockInvocation $invocationPath
         Process.WaitForExit $invocation.ProcessId
         Assert.Equal "--editor" $invocation.Arguments[0]
         Assert.Equal "--path" $invocation.Arguments[1]
         Assert.Equal (Split-Path -Leaf $projectPath) (Split-Path -Leaf $invocation.Arguments[2])
         Assert.True (Test-Path -LiteralPath (Join-Path $invocation.Arguments[2] "project.godot") -PathType Leaf) "The project path passed to Godot should resolve to the detected project."
-        Assert.Contains ($seeded.RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar) $invocation.WorkingDirectory
+        Assert.Contains $seeded.RelativePath $invocation.WorkingDirectory
 
         $entry = (Manifest.From $Context.InstallationsPath)["installations"][$seeded.Key]
         Assert.NotEqual $null $entry["lastLaunchedAt"]

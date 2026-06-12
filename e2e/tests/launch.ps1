@@ -7,8 +7,7 @@ Suite "godot launch" {
         $godot = Run "godot" "--attached" "--args" "--fgvm-mock-print-directory"
 
         Assert.ExitCode 0 $godot "fgvm godot --fgvm-mock-print-directory"
-        $relativePath = $seeded.RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar
-        Assert.Contains $relativePath ($godot.Stdout -replace '\r?\n', '' -replace '[ \t]+', ' ').Trim()
+        Assert.Contains $seeded.RelativePath ($godot.Stdout -replace '\r?\n', '' -replace '[ \t]+', ' ').Trim()
 
         $entry = (Manifest.From $Context.InstallationsPath)["installations"][$seeded.Key]
         Assert.NotEqual $null $entry["lastLaunchedAt"]
@@ -25,10 +24,8 @@ Suite "godot launch" {
 
         Assert.ExitCode 0 $godot "fgvm godot with local version"
         $compactOutput = ($godot.Stdout -replace '\r?\n', '' -replace '[ \t]+', ' ').Trim()
-        $olderPath = $older.RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar
-        $stablePath = $stable.RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar
-        Assert.Contains $olderPath $compactOutput
-        Assert.NotContains $stablePath $compactOutput
+        Assert.Contains $older.RelativePath $compactOutput
+        Assert.NotContains $stable.RelativePath $compactOutput
     }
 
     Test "forwards arguments to mock godot" {
