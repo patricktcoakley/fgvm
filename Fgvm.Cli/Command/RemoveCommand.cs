@@ -109,13 +109,13 @@ public sealed class RemoveCommand(
 
             if (!removedSymlinks && ListInstallations().Length == 0)
             {
-                logger.LogInformation("No installations remaining, removing Godot symlinks.");
+                logger.ZLogInformation($"No installations remaining, removing Godot symlinks.");
                 RemoveSymbolicLinks();
             }
         }
         catch (TaskCanceledException)
         {
-            logger.LogError("User cancelled removal.");
+            logger.ZLogError($"User cancelled removal.");
             console.MarkupLine(Messages.UserCancelled("removal"));
 
             throw;

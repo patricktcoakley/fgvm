@@ -36,7 +36,9 @@ public sealed class SearchCommand(
     {
         var searchQuery = query ?? [];
         var fetchMode = noCache ? ReleaseFetchMode.ForceRemote : ReleaseFetchMode.UseCache;
-        var result = await releaseManager.SearchRemoteReleases(searchQuery, fetchMode, cancellationToken);
+        var result = await console.Status()
+            .StartAsync("Fetching available versions...", async _ =>
+                await releaseManager.SearchRemoteReleases(searchQuery, fetchMode, cancellationToken));
 
         switch (result)
         {
@@ -88,7 +90,7 @@ public sealed class SearchCommand(
             }
             else
             {
-                console.Write(releases.ToPanel(searchQuery));
+                console.Write(releases.ToColumns());
             }
         }
     }
@@ -103,21 +105,9 @@ internal static class RemoteReleaseViewExtensions
 {
     extension(IReadOnlyList<RemoteReleaseView> releases)
     {
-        public Panel ToPanel(IReadOnlyList<string> query)
+        public Columns ToColumns()
         {
-            var content = releases.Count > 0
-                ? string.Join("\n", releases.Select(r => r.Name))
-                : "[dim]No releases found.[/]";
-
-            var header = query.Count == 0
-                ? Messages.AvailableVersionsHeader
-                : "[green]List Of Available Versions[/]";
-
-            return new Panel(content)
-            {
-                Header = new PanelHeader(header),
-                Width = 40
-            };
+            return new Columns(releases.Select(r => new Markup(r.Name)));
         }
     }
 }

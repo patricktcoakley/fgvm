@@ -59,7 +59,7 @@ internal readonly record struct WhichView : IJsonView<WhichView>
         Result<Installation, InstallationRegistryError>.Success(var installation) =>
             CreateSuccess(installation, releaseManager, pathService),
         Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound) =>
-            new WhichView(false, null, "No Godot version is currently set."),
+            new WhichView(false, null, Messages.NoCurrentVersionSet),
         _ => new WhichView(false, null, "Unknown installation registry error.")
     };
 
