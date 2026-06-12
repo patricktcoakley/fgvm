@@ -58,7 +58,8 @@ public sealed class ListCommand(
                 return;
             }
 
-            console.Write(installations.ToPanel());
+            console.MarkupLine(Messages.ListPanelHeader);
+            console.Write(installations.ToColumns());
         }
         catch (Exception e)
         {
@@ -93,16 +94,9 @@ internal static class ListViewExtensions
 {
     extension(IReadOnlyList<ListView> views)
     {
-        public Panel ToPanel()
+        public Columns ToColumns()
         {
-            var content = string.Join("\n", views.Select(view => view.ToDisplay()));
-
-            return new Panel(content)
-            {
-                Header = new PanelHeader(Messages.ListPanelHeader),
-                Width = 40,
-                Border = BoxBorder.Rounded
-            };
+            return new Columns(views.Select(v => new Markup(v.ToDisplay())));
         }
     }
 }

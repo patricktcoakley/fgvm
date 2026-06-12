@@ -95,7 +95,7 @@ public static class Messages
 
     public static string InstallationFailed(string reason) => $"[red]Installation failed: {reason}[/]";
     public static string InstallationSuccessBase(string releaseNameWithRuntime) =>
-        $"Finished installing {releaseNameWithRuntime}! :party_popper:";
+        $"[green]Finished installing {releaseNameWithRuntime}! :party_popper:[/]";
     public static string SuccessfullyInstalled(string releaseNameWithRuntime) =>
         $"[green]Successfully installed {releaseNameWithRuntime}.[/]";
 
@@ -157,7 +157,7 @@ public static class Messages
         $"[yellow]Found exactly one version matching your query: {versionToRemove}[/]";
     public static string NoVersionsMatchingQuery(string queryJoin) =>
         $"[orange1]Couldn't find any versions with query `{queryJoin}`. Please try again. [/]";
-    public static string SuccessfullyRemoved(string selectionPath) => $"Successfully removed {selectionPath} :wastebasket: ";
+    public static string SuccessfullyRemoved(string selectionPath) => $"[green]Successfully removed {selectionPath} :wastebasket:[/]";
     public static string LogLevelOutOfRange(string level) =>
         $"{level} is not valid. Accepted values include: default, debug, info, warning, error, or critical";
     public static string LogPathNotFound(string logPath) => $"Path to logs {logPath} doesn't exist.";
