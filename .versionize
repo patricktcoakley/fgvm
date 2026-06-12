@@ -1,5 +1,5 @@
 {
-    "projectFile": "Fgvm.Cli/Fgvm.csproj",
+    "projectFile": "Fgvm.Cli/Fgvm.Cli.csproj",
     "tagPrefix": "v",
     "ignoreInsignificantCommits": true,
     "changelog": {
