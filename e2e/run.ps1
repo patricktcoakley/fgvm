@@ -25,6 +25,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$InformationPreference = "Continue"
 
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $repoRoot = Split-Path -Parent $scriptRoot
@@ -54,11 +55,11 @@ function NewSyntheticResult {
     )
 
     [pscustomobject]@{
-        Suite = [System.IO.Path]::GetFileNameWithoutExtension($TestFile.Name)
-        Name = "process"
-        Passed = $false
+        Suite                = [System.IO.Path]::GetFileNameWithoutExtension($TestFile.Name)
+        Name                 = "process"
+        Passed               = $false
         DurationMilliseconds = [int] $Duration.TotalMilliseconds
-        Message = $Message
+        Message              = $Message
     }
 }
 
@@ -83,11 +84,11 @@ function WriteResultsFile {
     $serializable = @(
         foreach ($result in $Results) {
             [pscustomobject]@{
-                Suite = $result.Suite
-                Name = $result.Name
-                Passed = $result.Passed
+                Suite                = $result.Suite
+                Name                 = $result.Name
+                Passed               = $result.Passed
                 DurationMilliseconds = [int] $result.Duration.TotalMilliseconds
-                Message = $result.Message
+                Message              = $result.Message
             }
         }
     )
@@ -166,12 +167,12 @@ function StartSuiteProcess {
     }
 
     [pscustomobject]@{
-        TestFile = $TestFile
+        TestFile   = $TestFile
         ResultPath = $ResultPath
-        Process = $process
+        Process    = $process
         StdoutTask = $process.StandardOutput.ReadToEndAsync()
         StderrTask = $process.StandardError.ReadToEndAsync()
-        Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        Stopwatch  = [System.Diagnostics.Stopwatch]::StartNew()
     }
 }
 
@@ -188,11 +189,11 @@ function CompleteSuiteProcess {
     $stderr = $Worker.StderrTask.GetAwaiter().GetResult()
 
     if (-not [string]::IsNullOrWhiteSpace($stdout)) {
-        Write-Host $stdout.TrimEnd()
+        Write-Information $stdout.TrimEnd()
     }
 
     if (-not [string]::IsNullOrWhiteSpace($stderr)) {
-        Write-Host $stderr.TrimEnd()
+        Write-Information $stderr.TrimEnd()
     }
 
     $results = @(ReadResultsFile $Worker.TestFile $Worker.ResultPath $Worker.Stopwatch.Elapsed)
@@ -209,7 +210,10 @@ function CompleteSuiteProcess {
 function RunSuitesInParallel {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
-        [System.IO.FileInfo[]] $TestFiles
+        [System.IO.FileInfo[]] $TestFiles,
+
+        [Parameter(Position = 1)]
+        [int] $MaxParallel = [System.Math]::Max(1, [System.Environment]::ProcessorCount)
     )
 
     $pending = [System.Collections.Generic.Queue[System.IO.FileInfo]]::new()
@@ -269,11 +273,11 @@ function RunSuitesInParallel {
     $failures = @($results | Where-Object { -not $_.Passed })
     if ($failures.Count -gt 0) {
         $passedCount = $results.Count - $failures.Count
-        Write-Host "$passedCount/$($results.Count) e2e test(s) passed."
+        Write-Information "$passedCount/$($results.Count) e2e test(s) passed."
         throw "$($failures.Count) e2e test(s) failed."
     }
 
-    Write-Host "$($results.Count) e2e test(s) passed."
+    Write-Information "$($results.Count) e2e test(s) passed."
 }
 
 if ([string]::IsNullOrWhiteSpace($FgvmPath)) {
@@ -320,7 +324,7 @@ if ($testFiles.Count -eq 0) {
 }
 
 if ($Parallel -and $testFiles.Count -gt 1) {
-    RunSuitesInParallel $testFiles
+    RunSuitesInParallel $testFiles $MaxParallel
     return
 }
 
@@ -336,8 +340,8 @@ foreach ($testFile in $testFiles) {
         $stopwatch.Stop()
         $suiteName = [System.IO.Path]::GetFileNameWithoutExtension($testFile.Name)
         AddResult $suiteName "load" $false $stopwatch.Elapsed $_.Exception.Message
-        Write-Host "not ok - $suiteName - load ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
-        Write-Host $_.Exception.Message
+        Write-Information "not ok - $suiteName - load ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
+        Write-Information $_.Exception.Message
     }
 }
 
@@ -353,12 +357,12 @@ if ($results.Count -eq 0) {
 if ($failures.Count -gt 0) {
     $passedCount = $results.Count - $failures.Count
     if (-not $NoSummary) {
-        Write-Host "$passedCount/$($results.Count) e2e test(s) passed."
+        Write-Information "$passedCount/$($results.Count) e2e test(s) passed."
     }
 
     throw "$($failures.Count) e2e test(s) failed."
 }
 
 if (-not $NoSummary) {
-    Write-Host "$($results.Count) e2e test(s) passed."
+    Write-Information "$($results.Count) e2e test(s) passed."
 }

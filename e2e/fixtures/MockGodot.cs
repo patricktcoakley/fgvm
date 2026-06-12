@@ -1,7 +1,32 @@
 #:property TargetFramework=net10.0
 #:property LangVersion=14
 
-const string Version = "4.6.2.stable.standard.mock";
+using System.Reflection;
+using System.Text.Json;
+
+var version = Assembly.GetExecutingAssembly()
+                  .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                  ?.InformationalVersion
+              ?? throw new InvalidOperationException("Mock Godot version metadata is missing.");
+
+if (System.Environment.GetEnvironmentVariable("FGVM_MOCK_INVOCATION_PATH") is { Length: > 0 } invocationPath)
+{
+    var invocationDirectory = Path.GetDirectoryName(Path.GetFullPath(invocationPath));
+    if (invocationDirectory is not null)
+    {
+        Directory.CreateDirectory(invocationDirectory);
+    }
+
+    var tempPath = $"{invocationPath}.{Guid.NewGuid():N}.tmp";
+    File.WriteAllText(tempPath, JsonSerializer.Serialize(new
+    {
+        ProcessId = System.Environment.ProcessId,
+        Arguments = args,
+        BaseDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+        WorkingDirectory = Directory.GetCurrentDirectory()
+    }));
+    File.Move(tempPath, invocationPath, true);
+}
 
 if (args.Contains("--fgvm-mock-invalid-arg", StringComparer.OrdinalIgnoreCase))
 {
@@ -15,9 +40,15 @@ if (args.Contains("--fgvm-mock-fail", StringComparer.OrdinalIgnoreCase))
     return 42;
 }
 
+if (args.Contains("--fgvm-mock-print-directory", StringComparer.OrdinalIgnoreCase))
+{
+    Console.WriteLine(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    return 0;
+}
+
 if (args.Contains("--version", StringComparer.OrdinalIgnoreCase))
 {
-    Console.WriteLine(Version);
+    Console.WriteLine(version);
     return 0;
 }
 
