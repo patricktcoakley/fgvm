@@ -36,7 +36,7 @@ Suite "startup" {
 
     Test "prints help for every command" {
         $help = Run "--help"
-        $commands = @($help.Stdout -split "`n" | ForEach-Object {
+        $commands = @($help.Stdout.Split("`n", [System.StringSplitOptions]::None) | ForEach-Object {
                 if ($_ -match '^\s{2}(\w+)') { $Matches[1] }
             })
 

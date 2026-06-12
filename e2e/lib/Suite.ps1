@@ -83,7 +83,7 @@ function FormatStepFailureLocation {
         [System.Management.Automation.ErrorRecord] $ErrorRecord
     )
 
-    foreach ($frame in @([string] $ErrorRecord.ScriptStackTrace -split [System.Environment]::NewLine)) {
+    foreach ($frame in @([string] $ErrorRecord.ScriptStackTrace).Split([string[]] @([System.Environment]::NewLine), [System.StringSplitOptions]::None)) {
         if ($frame -notmatch '^\s*at .+, (?<path>.*): line (?<line>\d+)$') {
             continue
         }

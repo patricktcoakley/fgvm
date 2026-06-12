@@ -62,8 +62,8 @@ function InvokeProcess {
         $stdout = $stdoutTask.GetAwaiter().GetResult()
         $stderr = $stderrTask.GetAwaiter().GetResult()
 
-        $stdout = $stdout -replace "\e\[[0-9;]*m", "" -replace '\\', '/'
-        $stderr = $stderr -replace "\e\[[0-9;]*m", "" -replace '\\', '/'
+        $stdout = ($stdout -replace "\e\[[0-9;]*m", "").Replace('\', '/')
+        $stderr = ($stderr -replace "\e\[[0-9;]*m", "").Replace('\', '/')
 
         [pscustomobject]@{
             FilePath  = $FilePath
@@ -258,7 +258,7 @@ function Read-MockInvocation {
     )
 
     $invocation = Json (File.Read $Path)
-    $invocation.BaseDirectory = $invocation.BaseDirectory -replace '\\', '/'
-    $invocation.WorkingDirectory = $invocation.WorkingDirectory -replace '\\', '/'
+    $invocation.BaseDirectory = $invocation.BaseDirectory.Replace('\', '/')
+    $invocation.WorkingDirectory = $invocation.WorkingDirectory.Replace('\', '/')
     $invocation
 }
