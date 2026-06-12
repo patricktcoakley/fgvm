@@ -56,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           $ARTIFACT_NAME = "fgvm-${{ matrix.rid }}.zip"
-          $TARGET = "${{ matrix.os }}" -eq "windows-latest" ? "fgvm.exe" : "fgvm"
+          $TARGET = "${{ matrix.rid }}".StartsWith("win") ? "fgvm.exe" : "fgvm"
           $SOURCE = Join-Path "Fgvm.Cli" "bin" "Release" "net10.0" "${{ matrix.rid }}" "publish" "$TARGET"
 
           # Create ZIP
