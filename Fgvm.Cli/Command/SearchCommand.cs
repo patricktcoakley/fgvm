@@ -36,9 +36,14 @@ public sealed class SearchCommand(
     {
         var searchQuery = query ?? [];
         var fetchMode = noCache ? ReleaseFetchMode.ForceRemote : ReleaseFetchMode.UseCache;
-        var result = await console.Status()
-            .StartAsync("Fetching available versions...", async _ =>
-                await releaseManager.SearchRemoteReleases(searchQuery, fetchMode, cancellationToken));
+
+        Task<Result<IEnumerable<string>, NetworkError>> SearchAsync() =>
+            releaseManager.SearchRemoteReleases(searchQuery, fetchMode, cancellationToken);
+
+        var result = json
+            ? await SearchAsync()
+            : await console.Status()
+                .StartAsync("Fetching available versions...", async _ => await SearchAsync());
 
         switch (result)
         {

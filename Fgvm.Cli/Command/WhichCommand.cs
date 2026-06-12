@@ -59,7 +59,7 @@ internal readonly record struct WhichView : IJsonView<WhichView>
         Result<Installation, InstallationRegistryError>.Success(var installation) =>
             CreateSuccess(installation, releaseManager, pathService),
         Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound) =>
-            new WhichView(false, null, Messages.NoCurrentVersionSet),
+            new WhichView(false, null, "No Godot version is currently set."),
         _ => new WhichView(false, null, "Unknown installation registry error.")
     };
 
@@ -70,7 +70,7 @@ internal readonly record struct WhichView : IJsonView<WhichView>
             return Messages.CurrentVersionSetTo(ExecutablePath);
         }
 
-        return Message ?? Messages.UnknownSymlinkError;
+        return Message is not null ? $"[red]{Message}[/]" : Messages.UnknownSymlinkError;
     }
 
     private static WhichView CreateSuccess(Installation installation, IReleaseManager releaseManager, IPathService pathService)
