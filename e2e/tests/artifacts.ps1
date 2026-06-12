@@ -2,15 +2,14 @@ Set-StrictMode -Version Latest
 
 function Read-SelectedArtifactTarget {
     if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
-        $urlLine = File.Read $Context.SelectedArtifactPath |
-            Select-String -Pattern '^URL=(?<url>.+)$' |
-            Select-Object -First 1
+        $lines = Get-Content -LiteralPath $Context.SelectedArtifactPath
+        $urlLine = $lines | Where-Object { $_.StartsWith('URL=') } | Select-Object -First 1
 
-        if ($null -eq $urlLine) {
+        if (-not $urlLine) {
             throw "Windows selected-version shortcut does not contain a URL."
         }
 
-        return ([uri] $urlLine.Matches[0].Groups["url"].Value).LocalPath
+        return ([uri] $urlLine.Substring(4)).LocalPath
     }
 
     (Get-Item -LiteralPath $Context.SelectedArtifactPath -Force).LinkTarget

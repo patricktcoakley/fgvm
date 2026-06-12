@@ -273,14 +273,14 @@ function Add-FixtureInstallation {
     $artifact = $artifact[0]
     $releaseNameWithRuntime = "$Release-$Runtime"
     $relativePath = "installations/$releaseNameWithRuntime/$Target"
-    $installationPath = Join-Path $script:CurrentContext.FgvmRootPath ($relativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    $installationPath = Join-Path $script:CurrentContext.FgvmRootPath ($relativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
     $manifestRoot = Split-Path -Parent $script:CurrentContext.FixtureManifestPath
-    $zipPath = Join-Path $manifestRoot ($artifact["zipPath"] -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    $zipPath = Join-Path $manifestRoot ($artifact["zipPath"].Replace('/', [System.IO.Path]::DirectorySeparatorChar))
 
     New-Item -ItemType Directory -Path $installationPath -Force | Out-Null
     [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $installationPath, $true)
 
-    $executablePath = Join-Path $installationPath ($artifact["executablePath"] -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    $executablePath = Join-Path $installationPath ($artifact["executablePath"].Replace('/', [System.IO.Path]::DirectorySeparatorChar))
     if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
         throw "Seeded fixture executable was not found: $executablePath"
     }
@@ -302,7 +302,7 @@ function Add-FixtureInstallation {
     else {
         $artifact["executablePath"]
     }
-    $shortcutTargetPath = Join-Path $installationPath ($shortcutRelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    $shortcutTargetPath = Join-Path $installationPath ($shortcutRelativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
 
     $registry = if (File.Exists $script:CurrentContext.InstallationsPath) {
         Manifest.From $script:CurrentContext.InstallationsPath

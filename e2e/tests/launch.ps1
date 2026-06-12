@@ -7,7 +7,7 @@ Suite "godot launch" {
         $godot = Run "godot" "--attached" "--args" "--fgvm-mock-print-directory"
 
         Assert.ExitCode 0 $godot "fgvm godot --fgvm-mock-print-directory"
-        Assert.Contains $seeded.RelativePath ($godot.Stdout -replace '\r?\n', '' -replace '[ \t]+', ' ').Trim()
+        Assert.Contains $seeded.RelativePath ($godot.Stdout.Replace("`r`n", "").Replace("`n", "").Split(@("`t", " "), [System.StringSplitOptions]::RemoveEmptyEntries) -join ' ').Trim()
 
         $entry = (Manifest.From $Context.InstallationsPath)["installations"][$seeded.Key]
         Assert.NotEqual $null $entry["lastLaunchedAt"]
@@ -23,7 +23,7 @@ Suite "godot launch" {
         $godot = Run -Cwd $projectPath "godot" "--attached" "--args" "--fgvm-mock-print-directory"
 
         Assert.ExitCode 0 $godot "fgvm godot with local version"
-        $compactOutput = ($godot.Stdout -replace '\r?\n', '' -replace '[ \t]+', ' ').Trim()
+        $compactOutput = ($godot.Stdout.Replace("`r`n", "").Replace("`n", "").Split(@("`t", " "), [System.StringSplitOptions]::RemoveEmptyEntries) -join ' ').Trim()
         Assert.Contains $older.RelativePath $compactOutput
         Assert.NotContains $stable.RelativePath $compactOutput
     }
