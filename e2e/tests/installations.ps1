@@ -29,6 +29,6 @@ Suite "installed versions" {
         Assert.ExitCode 0 $which "fgvm which --json"
         $view = Json $which.Stdout
         Assert.True $view.hasVersion
-        Assert.Equal $seeded.ExecutablePath $view.executablePath
+        Assert.Equal ([System.IO.Path]::GetFullPath($seeded.ExecutablePath)) ([System.IO.Path]::GetFullPath($view.executablePath))
     }
 }

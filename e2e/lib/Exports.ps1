@@ -9,6 +9,7 @@ Export-ModuleMember -Function @(
     "Step",
     "Run",
     "Invoke-GodotShim",
+    "Read-MockInvocation",
     "Process.WaitForExit",
     "Json",
     "File.Exists",

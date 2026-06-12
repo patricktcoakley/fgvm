@@ -29,8 +29,8 @@ Suite "workflow" {
 
         $selected = Json $which.Stdout
         Assert.True $selected.hasVersion
-        Assert.Equal $stable.ExecutablePath $selected.executablePath
-        Assert.NotEqual $older.ExecutablePath $selected.executablePath
+        Assert.Equal ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
+        Assert.NotEqual ([System.IO.Path]::GetFullPath($older.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
     }
 
     Test "selects a seeded mono runtime" {
@@ -42,8 +42,9 @@ Suite "workflow" {
 
         Assert.ExitCode 0 $set "fgvm set 4.6 mono"
         Assert.ExitCode 0 $which "fgvm which --json"
-        Assert.Equal $mono.ExecutablePath (Json $which.Stdout).executablePath
-        Assert.NotEqual $standard.ExecutablePath (Json $which.Stdout).executablePath
+        $selected = Json $which.Stdout
+        Assert.Equal ([System.IO.Path]::GetFullPath($mono.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
+        Assert.NotEqual ([System.IO.Path]::GetFullPath($standard.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
     }
 
     Test "keeps the current default when a set query does not match" {
@@ -53,6 +54,6 @@ Suite "workflow" {
         $which = Run "which" "--json"
 
         Assert.ExitCode 1 $set "fgvm set 9.999"
-        Assert.Equal $stable.ExecutablePath (Json $which.Stdout).executablePath
+        Assert.Equal ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath((Json $which.Stdout).executablePath))
     }
 }
