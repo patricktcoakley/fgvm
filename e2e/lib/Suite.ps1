@@ -1,3 +1,9 @@
+<#
+.SYNOPSIS
+    Check whether the current verbosity level matches the given value.
+.PARAMETER Verbosity
+    The verbosity level to test (Quiet, Normal, or Detailed).
+#>
 function VerbosityIs {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
@@ -7,6 +13,16 @@ function VerbosityIs {
     $null -ne $script:Config -and $script:Config.Verbosity -eq $Verbosity
 }
 
+<#
+.SYNOPSIS
+    Print a summary line for a completed suite.
+.PARAMETER Name
+    Suite name.
+.PARAMETER StartIndex
+    Index into $script:Results where this suite's results begin.
+.PARAMETER Duration
+    Wall-clock time the suite took to run.
+#>
 function WriteSuiteSummary {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
@@ -32,7 +48,7 @@ function WriteSuiteSummary {
     }
 
     if ($suiteResults.Count -eq 0) {
-        Write-Host "suite - ${Name}: 0 tests ($([int] $Duration.TotalMilliseconds)ms)"
+        Write-Information "suite - ${Name}: 0 tests ($([int] $Duration.TotalMilliseconds)ms)"
         return
     }
 
@@ -45,13 +61,22 @@ function WriteSuiteSummary {
 
     $passedCount = $suiteResults.Count - $failedCount
     if ($failedCount -eq 0) {
-        Write-Host "suite - ${Name}: $passedCount passed ($([int] $Duration.TotalMilliseconds)ms)"
+        Write-Information "suite - ${Name}: $passedCount passed ($([int] $Duration.TotalMilliseconds)ms)"
         return
     }
 
-    Write-Host "suite - ${Name}: $passedCount/$($suiteResults.Count) passed ($([int] $Duration.TotalMilliseconds)ms)"
+    Write-Information "suite - ${Name}: $passedCount/$($suiteResults.Count) passed ($([int] $Duration.TotalMilliseconds)ms)"
 }
 
+<#
+.SYNOPSIS
+    Extract the first user-script location from an error record's stack trace.
+.DESCRIPTION
+    Walks the script stack trace and returns the first frame outside the
+    library directory. Falls back to InvocationInfo if no external frame is found.
+.PARAMETER ErrorRecord
+    The error record to analyse.
+#>
 function FormatStepFailureLocation {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
@@ -76,6 +101,7 @@ function FormatStepFailureLocation {
             }
         }
         catch {
+            Write-Debug "Path resolution failed for '$scriptPath': $($_.Exception.Message)"
         }
 
         return "at ${scriptPath}:$($Matches["line"])"
@@ -89,6 +115,17 @@ function FormatStepFailureLocation {
     ""
 }
 
+<#
+.SYNOPSIS
+    Run a named step inside a test.
+.DESCRIPTION
+    Steps provide named substeps within a test. Failures include the step
+    name and a source-location hint in the error message.
+.PARAMETER Name
+    Step name for display and error reporting.
+.PARAMETER Body
+    Script block containing the step logic.
+#>
 function Step {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
@@ -101,7 +138,7 @@ function Step {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     if (VerbosityIs "Detailed") {
-        Write-Host "step - $Name"
+        Write-Information "step - $Name"
     }
 
     try {
@@ -109,14 +146,14 @@ function Step {
         $stopwatch.Stop()
 
         if (VerbosityIs "Detailed") {
-            Write-Host "ok - step - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
+            Write-Information "ok - step - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
         }
     }
     catch {
         $stopwatch.Stop()
 
         if (VerbosityIs "Detailed") {
-            Write-Host "not ok - step - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
+            Write-Information "not ok - step - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
         }
 
         $location = FormatStepFailureLocation $_
@@ -129,6 +166,18 @@ function Step {
     }
 }
 
+<#
+.SYNOPSIS
+    Define a test suite with a name and body.
+.DESCRIPTION
+    Suites group related tests together for reporting. The body typically
+    contains Test and Step calls. Timing and pass/fail summary is printed
+    automatically.
+.PARAMETER Name
+    Suite name displayed in output.
+.PARAMETER Body
+    Script block containing Test definitions.
+#>
 function Suite {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
@@ -144,7 +193,7 @@ function Suite {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     if (VerbosityIs "Detailed") {
-        Write-Host "suite - $Name"
+        Write-Information "suite - $Name"
     }
 
     try {
@@ -157,6 +206,19 @@ function Suite {
     }
 }
 
+<#
+.SYNOPSIS
+    Define an individual test with automatic context setup and teardown.
+.DESCRIPTION
+    Creates an isolated E2EContext (with temp directories) before running the
+    body, and tears it down afterwards. The $Context global variable is set
+    so test scripts can access paths. Failures in the body or cleanup are
+    recorded as test results.
+.PARAMETER Name
+    Test name displayed in output and used in result tracking.
+.PARAMETER Body
+    Script block containing test logic and assertions.
+#>
 function Test {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
@@ -228,7 +290,7 @@ function Test {
     if ($null -eq $bodyError -and $null -eq $cleanupError) {
         AddResult $suite $Name $true $stopwatch.Elapsed
         if (VerbosityIs "Detailed") {
-            Write-Host "ok - $suite - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
+            Write-Information "ok - $suite - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
         }
         return
     }
@@ -241,6 +303,6 @@ function Test {
     }
 
     AddResult $suite $Name $false $stopwatch.Elapsed $message
-    Write-Host "not ok - $suite - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
-    Write-Host $message
+    Write-Information "not ok - $suite - $Name ($([int] $stopwatch.Elapsed.TotalMilliseconds)ms)"
+    Write-Information $message
 }

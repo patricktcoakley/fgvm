@@ -22,7 +22,7 @@ internal sealed class FixtureBuilder(BuildContext context)
 
         outputs.Recreate();
 
-        var publishedApps = await PublishMockAppsAsync(platform, outputs.PublishRoot);
+        var publishedApps = await PublishMockAppsAsync(recipe, platform, outputs.PublishRoot);
         var manifest = await CreateManifestAsync(recipe, platform, outputs, publishedApps);
 
         await WriteManifestAsync(outputs.ManifestPath, manifest);
@@ -36,7 +36,11 @@ internal sealed class FixtureBuilder(BuildContext context)
                ?? throw new InvalidOperationException($"Fixture recipe '{recipePath}' is empty or invalid.");
     }
 
-    private async Task<IReadOnlyDictionary<string, PublishedMockApp>> PublishMockAppsAsync(FixturePlatform platform, string publishRoot)
+    private async Task<IReadOnlyDictionary<string, PublishedMockApp>> PublishMockAppsAsync(
+        FixtureRecipe recipe,
+        FixturePlatform platform,
+        string publishRoot
+    )
     {
         var publishedApps = new Dictionary<string, PublishedMockApp>(StringComparer.OrdinalIgnoreCase);
         var buildPlatforms = platform.Fixtures
@@ -51,7 +55,8 @@ internal sealed class FixtureBuilder(BuildContext context)
             await DotNet.PublishFileAppAsync(
                 context.MockSourcePath,
                 buildPlatform.RuntimeIdentifier,
-                publishDirectory);
+                publishDirectory,
+                recipe.MockVersion);
 
             publishedApps[buildPlatform.Name] = PublishedMockApp.FromDirectory(publishDirectory, buildPlatform);
         }
@@ -88,6 +93,7 @@ internal sealed class FixtureBuilder(BuildContext context)
                     Target = fixture.Target,
                     FileName = zipName,
                     ZipPath = PortablePath.FromRelative(outputs.PlatformRoot, zipPath),
+                    ExecutablePath = ZipFixture.GetExecutablePath(platform.OS, executableName),
                     Sha512 = await Checksum.Sha512Async(zipPath)
                 });
             }
@@ -190,6 +196,11 @@ internal static class ZipFixture
             AddPublishedFile(zip, filePath, app.ExecutableFileName, os, executableName);
         }
     }
+
+    public static string GetExecutablePath(string os, string executableName) =>
+        IsMacOS(os)
+            ? PortablePath.ToZip(Path.Combine(executableName, "Contents", "MacOS", "Godot"))
+            : executableName;
 
     private static void CreateMacAppDirectories(ZipArchive zip, string appName)
     {
@@ -319,7 +330,7 @@ internal readonly record struct BuildPlatform(string Name)
 
 internal static class DotNet
 {
-    public static Task PublishFileAppAsync(string sourcePath, string rid, string outputPath) =>
+    public static Task PublishFileAppAsync(string sourcePath, string rid, string outputPath, string mockVersion) =>
         CommandRunner.RunAsync("dotnet",
         [
             "publish",
@@ -337,6 +348,8 @@ internal static class DotNet
             "-p:PublishTrimmed=false",
             "-p:DebugType=None",
             "-p:DebugSymbols=false",
+            $"-p:InformationalVersion={mockVersion}",
+            "-p:IncludeSourceRevisionInInformationalVersion=false",
             "-o",
             outputPath
         ]);
@@ -566,6 +579,9 @@ internal sealed class GeneratedFixtureArtifact
 
     [JsonPropertyName("zipPath")]
     public required string ZipPath { get; init; }
+
+    [JsonPropertyName("executablePath")]
+    public required string ExecutablePath { get; init; }
 
     [JsonPropertyName("sha512")]
     public required string Sha512 { get; init; }
