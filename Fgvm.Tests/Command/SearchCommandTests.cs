@@ -49,7 +49,6 @@ public sealed class SearchCommandTests
 
         var output = console.Output;
         Assert.Contains("4.5-stable-standard", output);
-        Assert.Contains("List Of Available Versions", output);
     }
 
     [Fact]

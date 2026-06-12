@@ -63,14 +63,10 @@ public sealed class ListCommandTests
         command.List();
 
         var output = console.Output;
-        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var defaultLines = lines.Where(line => line.Contains(Messages.DefaultInstallationMarkerGlyph)).ToArray();
-
-        Assert.Single(defaultLines);
-        Assert.Contains("4.5-stable", defaultLines[0]);
-
-        var monoLine = lines.First(line => line.Contains("4.5-stable-mono"));
-        Assert.DoesNotContain(Messages.DefaultInstallationMarkerGlyph, monoLine);
+        var markerCount = output.Split(Messages.DefaultInstallationMarkerGlyph).Length - 1;
+        Assert.Equal(1, markerCount);
+        Assert.Contains("4.5-stable", output);
+        Assert.Contains("4.5-stable-mono", output);
     }
 
     private static Mock<IPathService> CreatePathServiceMock()

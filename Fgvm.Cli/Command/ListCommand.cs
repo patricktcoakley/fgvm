@@ -80,14 +80,12 @@ internal readonly record struct ListView(
     bool IsDefault
 ) : IJsonView<ListView>
 {
-    private string ToDisplayString() => IsDefault
+    public string ToDisplay() => IsDefault
         ? $"{Messages.DefaultInstallationMarkerMarkup}  {Name}"
         : $"{Messages.NonDefaultInstallationIndent}{Name}";
 
     public static ListView Create(Installation installation, string defaultInstallation) =>
         new(installation.ReleaseNameWithRuntime, string.Equals(installation.Key, defaultInstallation, StringComparison.Ordinal));
-
-    public string ToDisplay() => ToDisplayString();
 }
 
 internal static class ListViewExtensions
