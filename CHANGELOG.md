@@ -1,5 +1,12 @@
 # Changelog
 
+<a name="2.1.1"></a>
+## [2.1.1](https://github.com/patricktcoakley/fgvm/releases/tag/v2.1.1) (2026-06-12)
+
+### 🐛 Bug Fixes
+
+* Improve UX for search using a columnar output by default; add a progress indicator for searching remote without cache. ([f3ae05a](https://github.com/patricktcoakley/fgvm/commit/f3ae05ac7aefc0c660cf4110c42d38785fd4faf5))
+
 <a name="2.1.0"></a>
 ## [2.1.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.1.0) (2026-06-05)
 
