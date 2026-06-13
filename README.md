@@ -10,8 +10,8 @@
 
 fgvm is a friendly Godot version manager that lets users install and manage multiple versions of Godot with ease. It uses a hybrid CLI/TUI design, meaning that in certain places where it makes sense
 it will prompt you to let you select what you're looking for instead of having to pass in confusing arguments, as well as support for [passing it unstructured queries](#usage) to help find the
-appropriate version based on your input, like `4 dev` or `latest`. It's released as a static binary that can work on Windows, macOS, and Linux by just putting it somewhere and calling it in the
-terminal, or, the preferred method of installation, using a [package manager](#package-managers).
+appropriate version based on your input, like `4 dev` or `latest`. It's released as a self-contained native executable for Windows, macOS, and Linux that can be run without installing the .NET runtime,
+either by putting it somewhere on your `PATH` or, preferably, using a [package manager](#package-managers).
 
 ## Features
 
@@ -23,7 +23,7 @@ terminal, or, the preferred method of installation, using a [package manager](#p
   or let you manually choose one, and will prompt to install missing versions when needed. `fgvm godot` uses `.fgvm-version` when present, otherwise falls back to the global default, and can launch the
   current project directly from the terminal.
 - **Smart Argument Handling**: Detection of arguments passed to Godot that contextually switch to an attached mode when necessary to display terminal output.
-- **CI-Ready**: Perfect for remote installations, CI/CD pipelines, WSL, and containerized environments with its single static binary.
+- **CI-Ready**: Suitable for remote installations, CI/CD pipelines, WSL, and containerized environments with its single self-contained native executable.
 
 ## Installation
 
@@ -31,7 +31,7 @@ terminal, or, the preferred method of installation, using a [package manager](#p
 > On **Windows**, fgvm creates an optional `Godot.url` shortcut to the selected version for GUI launch compatibility.
 > You can still install, remove, set, and launch versions with `fgvm godot` if that shortcut cannot be created.
 >
-> In addition, Powershell, the default shell for Windows, doesn't support the emojis out of the box. To fix this, you simply need to update the `$PROFILE`/profile.ps1:
+> In addition, PowerShell, the default shell for Windows, doesn't support the emojis out of the box. To fix this, you simply need to update the `$PROFILE`/profile.ps1:
 > ```powershell 
 > '[console]::InputEncoding = [console]::OutputEncoding = [System.Text.UTF8Encoding]::new()' | Add-Content -Path $PROFILE
 > ```
@@ -55,6 +55,9 @@ brew install fgvm
 
 Note that you may periodically need to run `brew update` if any changes are applied to the formula.
 
+Alternatively, macOS users can [download the release with `curl`](#macos-command-line-installation). This avoids the browser-added quarantine attribute that can cause Gatekeeper warnings for the
+non-notarized binaries.
+
 #### Scoop (Windows)
 
 If you're on Windows, you can install fgvm using [Scoop](https://scoop.sh) by running the following commands:
@@ -66,7 +69,7 @@ scoop install patricktcoakley/fgvm
 
 ### fgvmup (Currently Windows only)
 
-There is also an **experimental** tool called `fgvmup` that can manage your installations on **Windows** using a Powershell script. I've only done preliminary testing and am open to feedback, but be
+There is also an **experimental** tool called `fgvmup` that can manage your installations on **Windows** using a PowerShell script. I've only done preliminary testing and am open to feedback, but be
 aware things there may be issues. To try it out, you can do the following:
 
 ```powershell
@@ -85,9 +88,73 @@ Usage:
 As of now I really only created it as a proof-of-concept but could expand it later in the future. If there is interest I will also consider a macOS/Linux version of this tool using a traditional shell
 script.
 
-### Pre-built Binaries (Windows/Linux)
+### Pre-built Binaries
 
-If you don't want to use a package manager you can download the latest pre-built binary release from the [releases page](https://github.com/patricktcoakley/fgvm/releases).
+If you don't want to use a package manager, download the archive for your platform from the [latest release](https://github.com/patricktcoakley/fgvm/releases/latest):
+
+| Platform | Architecture | Archive |
+| --- | --- | --- |
+| Windows | x64 | [`fgvm-win-x64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-win-x64.zip) |
+| macOS | Intel x64 | [`fgvm-osx-x64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-x64.zip) |
+| macOS | Apple Silicon ARM64 | [`fgvm-osx-arm64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-arm64.zip) |
+| Linux | x64 | [`fgvm-linux-x64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-linux-x64.zip) |
+| Linux | ARM64 | [`fgvm-linux-arm64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-linux-arm64.zip) |
+
+Each archive has a matching `.sha256` file on the release. Extract the executable into a directory on your `PATH`; on macOS and Linux, run `chmod +x fgvm` if the executable bit was not preserved.
+
+The Linux binaries require glibc and do not support musl-based distributions such as Alpine Linux.
+
+#### macOS command-line installation
+
+The macOS binaries require macOS 12 or later and are not currently notarized. Downloads made through a browser may be quarantined by Gatekeeper. Downloading with `curl` does not apply the browser
+quarantine attribute, so you can verify and run the release directly:
+
+```shell
+case "$(uname -m)" in
+  arm64) archive=fgvm-osx-arm64.zip ;;
+  x86_64) archive=fgvm-osx-x64.zip ;;
+  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+base_url=https://github.com/patricktcoakley/fgvm/releases/latest/download
+curl -LO "$base_url/$archive"
+curl -LO "$base_url/$archive.sha256"
+shasum -a 256 -c "$archive.sha256"
+unzip "$archive"
+chmod +x fgvm
+./fgvm --version
+```
+
+After confirming it runs, move `fgvm` into a directory on your `PATH`.
+
+#### Downloading with GitHub CLI
+
+The [GitHub CLI](https://cli.github.com/) can download both the archive and its checksum from the latest release:
+
+```shell
+archive=fgvm-osx-arm64.zip # Replace with the archive for your platform.
+gh release download --repo patricktcoakley/fgvm \
+  --pattern "$archive" \
+  --pattern "$archive.sha256"
+```
+
+Verify the downloaded archive before extracting it:
+
+```shell
+# macOS
+shasum -a 256 -c "$archive.sha256"
+
+# Linux
+sha256sum -c "$archive.sha256"
+```
+
+On Windows, verify the expected hash from `fgvm-win-x64.zip.sha256` against the downloaded archive:
+
+```powershell
+$expected = (Get-Content .\fgvm-win-x64.zip.sha256).Split()[0]
+$actual = (Get-FileHash .\fgvm-win-x64.zip -Algorithm SHA256).Hash
+if ($actual -ne $expected) { throw "Checksum verification failed." }
+```
 
 ### Build From Source
 
@@ -97,16 +164,21 @@ See [Build](#build) for instructions on how to build fgvm from source.
 
 ### Getting Started
 
+Install the latest stable standard build, set it as the global default, and launch Godot:
+
+```shell
+fgvm install latest --default
+fgvm godot
+```
+
 fgvm downloads and installs Godot into folders inside of `~/fgvm/` for macOS and Linux, and `$env:USERPROFILE\fgvm\` for Windows. You can customize this location using the `FGVM_HOME` environment variable (see [Environment Variables](#environment-variables)).
 New installations are stored under `installations/<VERSION>-<TYPE>-<RUNTIME>/<TARGET>/`, and fgvm tracks them in `installations.json`. For example, a 4.3 stable .NET install on Linux x64 is tracked as `installations/4.3-stable-mono/linux.x86_64/`.
 
 By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root symlink named `Godot` on Linux, `Godot.app` on macOS, or a `Godot.url` shortcut on Windows for GUI launch compatibility.
 You can run `fgvm godot -i` to pick another installation to launch, or use `fgvm set` to pick the version you want to launch by default.
 
-Right now fgvm supports installing whatever your computer supports by CPU and OS, so if you're running Windows on a standard x86_64 CPU you are able to install
-and run versions of Godot all the way back to 1.x. macOS went through multiple architecture transitions since Godot 1 and so most modern Macs will only support releases
-as far back as ~3.3, but if you have an older Mac you should still be able to install whatever it supports (should fgvm itself be able to run on the system). An override to force downloads on
-unsupported systems may be added later, but it hasn't come up as a requested feature yet.
+Godot installation availability is separate from fgvm's own release matrix. fgvm selects Godot artifacts for the detected operating system and CPU architecture, so older Godot releases may not be
+available on newer targets, particularly macOS ARM64. Downloading an artifact for a different target is not currently supported.
 
 ### Commands
 
@@ -155,7 +227,7 @@ but here is a detailed summary of the available commands:
   and `--no-cache` or `-F` to force a remote refresh instead of using the local release cache.
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
-        - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2.-rc3`
+        - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2-rc3`
 
 ### Project Version Management
 
@@ -226,15 +298,20 @@ fgvm g -i                     # Same as above
 
 ### Build
 
-In order to build this project, you just need the .NET 10 SDK. Running `dotnet run --project Fgvm.Cli -- <command> [args]` will let you run commands immediately, but you can also run `dotnet build -c Release` to get a
-release build and just copy to a directory in your PATH:
+Building the project requires the .NET 10 SDK. Publishing the Native AOT executable also requires the native compiler toolchain for the target platform: Visual Studio with the Desktop development
+with C++ workload on Windows, Xcode Command Line Tools on macOS, or Clang and the required development libraries on Linux. See the [.NET Native AOT prerequisites](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#prerequisites)
+for platform-specific setup.
+
+Run `dotnet run --project Fgvm.Cli -- <command> [args]` during development, or publish a self-contained release binary for a specific runtime identifier:
 
 ```shell
 git clone https://github.com/patricktcoakley/fgvm.git
 cd fgvm
 dotnet restore
-dotnet build -c Release
+dotnet publish Fgvm.Cli/Fgvm.Cli.csproj -c Release -r <RID>
 ```
+
+Use one of the release RIDs: `win-x64`, `osx-x64`, `osx-arm64`, `linux-x64`, or `linux-arm64`. The executable is written to `Fgvm.Cli/bin/Release/net10.0/<RID>/publish/`.
 
 This repo also includes an optional [mise](https://mise.jdx.dev/) setup for installing the expected .NET SDK and running common development tasks:
 
@@ -247,18 +324,35 @@ mise run test
 
 ### Test
 
+The mise tasks are the recommended way to run tests because they install the expected tool versions and prepare the integration and end-to-end fixtures:
+
 ```shell
-dotnet test
+mise install
+mise run test
+mise run test:e2e
 ```
 
-Or, with mise:
+The more specific tasks are also available:
 
 ```shell
-mise run test
 mise run test:unit
 mise run test:integration
-mise run test:e2e
 mise run test:e2e:detailed
+```
+
+Without mise, install the .NET 10 SDK and PowerShell 7, make sure `dotnet` and `pwsh` are on your `PATH`, and run the equivalent preparation and test commands directly:
+
+```shell
+dotnet restore
+
+dotnet test --configuration Release Fgvm.Tests/Fgvm.Tests.csproj
+
+dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs
+dotnet test --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj
+
+dotnet run e2e/fixtures/BuildFixtures.cs
+dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output .fgvm-e2e-cli
+pwsh -NoLogo -NoProfile -File e2e/run.ps1 -Parallel
 ```
 
 ### Contributing
