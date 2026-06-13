@@ -57,26 +57,22 @@ jobs:
         run: mise x -- dotnet publish -c Release -r ${{ matrix.rid }}
 
       - name: Package
+        id: package
         shell: pwsh
         run: |
-          $ARTIFACT_NAME = "fgvm-${{ matrix.rid }}.zip"
           $TARGET = "${{ matrix.rid }}".StartsWith("win") ? "fgvm.exe" : "fgvm"
           $SOURCE = Join-Path "Fgvm.Cli" "bin" "Release" "net10.0" "${{ matrix.rid }}" "publish" "$TARGET"
-
-          # Create ZIP
-          Compress-Archive -Path $SOURCE -DestinationPath $ARTIFACT_NAME -Force
-
-          # Generate SHA256
-          $hash = (Get-FileHash -Algorithm SHA256 $ARTIFACT_NAME).Hash.ToLower()
-          "$hash  $ARTIFACT_NAME" | Out-File -FilePath "$ARTIFACT_NAME.sha256"
+          $package = ./scripts/package-release.ps1 -Rid "${{ matrix.rid }}" -Source $SOURCE
+          "artifact_name=$($package.ArtifactName)" >> $env:GITHUB_OUTPUT
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
           name: fgvm-${{ matrix.rid }}
           path: |
-            fgvm-${{ matrix.rid }}.zip
-            fgvm-${{ matrix.rid }}.zip.sha256
+            ${{ steps.package.outputs.artifact_name }}
+            ${{ steps.package.outputs.artifact_name }}.sha256
+          if-no-files-found: error
 
   release:
     needs: build
@@ -92,5 +88,6 @@ jobs:
         with:
           files: |
             */fgvm-*.zip
+            */fgvm-*.tar.gz
             */fgvm-*.sha256
           generate_release_notes: false
