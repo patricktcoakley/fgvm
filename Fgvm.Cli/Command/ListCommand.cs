@@ -43,6 +43,7 @@ public sealed class ListCommand(
 
             var installations = installationRecords
                 .Select(installation => ListView.Create(installation, defaultInstallation))
+                .OrderByDescending(installation => installation.IsDefault)
                 .ToList();
 
             // Always render JSON if the flag is set
@@ -58,8 +59,10 @@ public sealed class ListCommand(
                 return;
             }
 
-            console.MarkupLine(Messages.ListPanelHeader);
-            console.Write(installations.ToColumns());
+            foreach (var installation in installations)
+            {
+                console.MarkupLine(installation.ToDisplay());
+            }
         }
         catch (Exception e)
         {
@@ -86,15 +89,4 @@ internal readonly record struct ListView(
 
     public static ListView Create(Installation installation, string defaultInstallation) =>
         new(installation.ReleaseNameWithRuntime, string.Equals(installation.Key, defaultInstallation, StringComparison.Ordinal));
-}
-
-internal static class ListViewExtensions
-{
-    extension(IReadOnlyList<ListView> views)
-    {
-        public Columns ToColumns()
-        {
-            return new Columns(views.Select(v => new Markup(v.ToDisplay())));
-        }
-    }
 }

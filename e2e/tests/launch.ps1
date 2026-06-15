@@ -48,4 +48,50 @@ Suite "godot launch" {
         Assert.ExitCode 42 $failure "mock Godot process failure"
         Assert.Contains "failure" $failure.Stdout
     }
+
+    Test "returns before a detached godot process exits" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        $invocationPath = Join-Path $Context.WorkPath "detached-lifecycle.json"
+
+        $godot = Run -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } `
+            -Arguments @("godot", "--args", "--fgvm-mock-delay-ms 5000")
+
+        Assert.ExitCode 0 $godot "fgvm detached Godot launch"
+        File.WaitFor $invocationPath
+        $invocation = Read-MockInvocation $invocationPath
+        $process = $null
+
+        try {
+            try {
+                $process = [System.Diagnostics.Process]::GetProcessById($invocation.ProcessId)
+            }
+            catch [System.ArgumentException] {
+                throw "Detached launch should return while the mock Godot process is still running."
+            }
+
+            Assert.False $process.HasExited "Detached Godot process should still be running after fgvm exits."
+        }
+        finally {
+            if ($null -ne $process -and -not $process.HasExited) {
+                $process.Kill($true)
+                [void] $process.WaitForExit(5000)
+            }
+
+            if ($null -ne $process) {
+                $process.Dispose()
+            }
+        }
+    }
+
+    Test "does not record a launch when godot fails to start" {
+        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
+        Remove-Item -LiteralPath $seeded.ExecutablePath -Force
+
+        $godot = Run "godot" "--args" "--windowed"
+
+        Assert.ExitCode 1 $godot "fgvm launch with a missing Godot executable"
+        Assert.Contains "Something went wrong when trying to launch Godot" $godot.Stdout
+        $entry = (Manifest.From $Context.InstallationsPath)["installations"][$seeded.Key]
+        Assert.Equal $null $entry["lastLaunchedAt"]
+    }
 }

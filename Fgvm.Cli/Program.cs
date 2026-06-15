@@ -83,6 +83,7 @@ public class Program
         services.AddSingleton<IInstallationOrchestrator, InstallationOrchestrator>();
         services.AddSingleton<IVersionManagementService, VersionManagementService>();
         services.AddSingleton<IGodotArgumentService, GodotArgumentService>();
+        services.AddSingleton<IGodotLauncher, GodotLauncher>();
         services.AddSingleton<IAnsiConsole>(_ => AnsiConsole.Console);
 
         // Progress handling

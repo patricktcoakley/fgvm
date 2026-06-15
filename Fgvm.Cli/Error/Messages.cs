@@ -38,8 +38,6 @@ public static class Messages
     public static string ChooseFromInstalled => "[dim]Choose from installed versions:[/]";
 
     // List
-    public static string ListPanelHeader => "List Of Installed Versions";
-
     // Search
     public static string AvailableVersionsHeader => "[green]List Of Available Versions[/]";
     public static string ReleaseCacheRefreshFailed =>
