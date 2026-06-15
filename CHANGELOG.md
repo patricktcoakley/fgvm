@@ -1,5 +1,12 @@
 # Changelog
 
+<a name="2.2.0"></a>
+## [2.2.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.2.0) (2026-06-15)
+
+### ✨ Features
+
+* **list:** Clean up the standard output. ([7b37d4a](https://github.com/patricktcoakley/fgvm/commit/7b37d4a55a868d5c77122d8d08e816966702e810))
+
 <a name="2.1.1"></a>
 ## [2.1.1](https://github.com/patricktcoakley/fgvm/releases/tag/v2.1.1) (2026-06-12)
 
