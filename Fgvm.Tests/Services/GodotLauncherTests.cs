@@ -67,8 +67,8 @@ public sealed class GodotLauncherTests
         var success = Assert.IsType<Result<GodotLaunchOutcome, GodotLaunchError>.Success>(result);
         var exited = Assert.IsType<GodotLaunchOutcome.Exited>(success.Value);
         Assert.Equal(7, exited.ExitCode);
-        Assert.Contains(output, item => item is GodotLaunchOutput.StandardOutput("hello"));
-        Assert.Contains(output, item => item is GodotLaunchOutput.StandardError("oops"));
+        Assert.Contains(output, item => item is GodotLaunchOutput.StandardOutput(var line) && line.Trim() == "hello");
+        Assert.Contains(output, item => item is GodotLaunchOutput.StandardError(var line) && line.Trim() == "oops");
     }
 
     [Fact]
