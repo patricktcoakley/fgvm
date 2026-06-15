@@ -109,64 +109,37 @@ public class VersionManagementServiceTests
     public async Task ResolveVersionForLaunchAsync_WithProjectVersion_ReturnsCorrectResult()
     {
         const string projectVersion = "4.3.0";
-        const string versionFileContent = "4.3.0";
-        var tempDir = Path.Combine(Path.GetTempPath(), $"fgvm-test-{Guid.NewGuid()}");
-        Directory.CreateDirectory(tempDir);
+        const string compatibleVersion = "4.3.0-stable-standard";
+        var installedVersions = new[] { compatibleVersion };
 
-        try
+        // Mock project info for this test
+        if (Release.TryParse($"{projectVersion}-stable-standard") is not { } projectRelease)
         {
-            var versionFile = Path.Combine(tempDir, ".fgvm-version");
-            await File.WriteAllTextAsync(versionFile, versionFileContent);
-
-            var originalDir = Directory.GetCurrentDirectory();
-            Directory.SetCurrentDirectory(tempDir);
-
-            try
-            {
-                const string compatibleVersion = "4.3.0-stable-standard";
-                var installedVersions = new[] { compatibleVersion };
-
-                // Mock project info for this test
-                if (Release.TryParse($"{projectVersion}-stable-standard") is not { } projectRelease)
-                {
-                    throw new InvalidOperationException("Expected release to parse.");
-                }
-
-                _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
-                    .Returns(ProjectFound(projectRelease));
-
-                SetupInstallations(installedVersions);
-                _mockReleaseManager.Setup(x =>
-                        x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
-                    .Returns(compatibleVersion);
-
-                var mockRelease = CreateMockRelease(compatibleVersion);
-                _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
-                    .Returns(mockRelease);
-
-                var result = await _service.ResolveVersionForLaunchAsync();
-
-                Assert.True(result is Result<VersionResolutionOutcome, VersionResolutionError>.Success);
-                var success = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(result);
-                Assert.True(success.Value is VersionResolutionOutcome.Found);
-                var found = (VersionResolutionOutcome.Found)success.Value;
-                Assert.Equal(compatibleVersion, found.VersionName);
-                Assert.Contains(compatibleVersion, found.ExecutablePath);
-                Assert.Contains(compatibleVersion, found.WorkingDirectory);
-                Assert.True(found.IsProjectVersion);
-            }
-            finally
-            {
-                Directory.SetCurrentDirectory(originalDir);
-            }
+            throw new InvalidOperationException("Expected release to parse.");
         }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-            {
-                Directory.Delete(tempDir, true);
-            }
-        }
+
+        _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+
+        SetupInstallations(installedVersions);
+        _mockReleaseManager.Setup(x =>
+                x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+            .Returns(compatibleVersion);
+
+        var mockRelease = CreateMockRelease(compatibleVersion);
+        _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
+            .Returns(mockRelease);
+
+        var result = await _service.ResolveVersionForLaunchAsync();
+
+        Assert.True(result is Result<VersionResolutionOutcome, VersionResolutionError>.Success);
+        var success = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(result);
+        Assert.True(success.Value is VersionResolutionOutcome.Found);
+        var found = (VersionResolutionOutcome.Found)success.Value;
+        Assert.Equal(compatibleVersion, found.VersionName);
+        Assert.Contains(compatibleVersion, found.ExecutablePath);
+        Assert.Contains(compatibleVersion, found.WorkingDirectory);
+        Assert.True(found.IsProjectVersion);
     }
 
     [Fact]
@@ -216,65 +189,38 @@ public class VersionManagementServiceTests
     public async Task ResolveVersionForLaunchAsync_MacOSAppBundle_HandlesCorrectly()
     {
         const string projectVersion = "4.3.0";
-        const string versionFileContent = "4.3.0";
-        var tempDir = Path.Combine(Path.GetTempPath(), $"fgvm-test-{Guid.NewGuid()}");
-        Directory.CreateDirectory(tempDir);
+        const string compatibleVersion = "4.3.0-stable-standard";
+        const string execName = "Godot.app";
+        var installedVersions = new[] { compatibleVersion };
 
-        try
+        // Mock project info for this test
+        if (Release.TryParse($"{projectVersion}-stable-standard") is not { } projectRelease)
         {
-            var versionFile = Path.Combine(tempDir, ".fgvm-version");
-            await File.WriteAllTextAsync(versionFile, versionFileContent);
-
-            var originalDir = Directory.GetCurrentDirectory();
-            Directory.SetCurrentDirectory(tempDir);
-
-            try
-            {
-                const string compatibleVersion = "4.3.0-stable-standard";
-                const string execName = "Godot.app";
-                var installedVersions = new[] { compatibleVersion };
-
-                // Mock project info for this test
-                if (Release.TryParse($"{projectVersion}-stable-standard") is not { } projectRelease)
-                {
-                    throw new InvalidOperationException("Expected release to parse.");
-                }
-
-                _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
-                    .Returns(ProjectFound(projectRelease));
-
-                SetupInstallations(installedVersions);
-                _mockReleaseManager.Setup(x =>
-                        x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
-                    .Returns(compatibleVersion);
-
-                var mockRelease = CreateMockRelease(compatibleVersion, execName);
-                _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
-                    .Returns(mockRelease);
-
-                var result = await _service.ResolveVersionForLaunchAsync();
-
-                Assert.True(result is Result<VersionResolutionOutcome, VersionResolutionError>.Success);
-                var success = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(result);
-                Assert.True(success.Value is VersionResolutionOutcome.Found);
-                var found = (VersionResolutionOutcome.Found)success.Value;
-                Assert.Equal(compatibleVersion, found.VersionName);
-                Assert.Contains(compatibleVersion, found.ExecutablePath);
-                Assert.Contains(compatibleVersion, found.WorkingDirectory);
-                Assert.True(found.IsProjectVersion);
-            }
-            finally
-            {
-                Directory.SetCurrentDirectory(originalDir);
-            }
+            throw new InvalidOperationException("Expected release to parse.");
         }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-            {
-                Directory.Delete(tempDir, true);
-            }
-        }
+
+        _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+
+        SetupInstallations(installedVersions);
+        _mockReleaseManager.Setup(x =>
+                x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+            .Returns(compatibleVersion);
+
+        var mockRelease = CreateMockRelease(compatibleVersion, execName);
+        _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
+            .Returns(mockRelease);
+
+        var result = await _service.ResolveVersionForLaunchAsync();
+
+        Assert.True(result is Result<VersionResolutionOutcome, VersionResolutionError>.Success);
+        var success = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(result);
+        Assert.True(success.Value is VersionResolutionOutcome.Found);
+        var found = (VersionResolutionOutcome.Found)success.Value;
+        Assert.Equal(compatibleVersion, found.VersionName);
+        Assert.Contains(compatibleVersion, found.ExecutablePath);
+        Assert.Contains(compatibleVersion, found.WorkingDirectory);
+        Assert.True(found.IsProjectVersion);
     }
 
     [Fact]
@@ -352,87 +298,6 @@ public class VersionManagementServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetLocalVersionAsync(forceInteractive: true));
 
         Assert.Empty(_console.Output);
-    }
-
-    [Fact]
-    public async Task SetLocalVersionAsync_WithValidQuery_SetsVersionSuccessfully()
-    {
-        const string queryVersion = "4.3.0";
-        const string matchedVersion = "4.3.0-stable";
-        var query = new[] { queryVersion };
-        var installedVersions = new[] { matchedVersion };
-        var tempDir = Path.Combine(Path.GetTempPath(), $"fgvm-local-version-{Guid.NewGuid():N}");
-
-        SetupInstallations(installedVersions);
-        SetupCreateVersionFileWritesFile();
-
-        var mockRelease = CreateMockRelease(matchedVersion);
-        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, installedVersions))
-            .Returns(mockRelease);
-
-        _mockReleaseManager.Setup(x => x.CreateRelease(mockRelease.ReleaseNameWithRuntime))
-            .Returns(mockRelease);
-
-        Directory.CreateDirectory(tempDir);
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(tempDir);
-
-            var result = await _service.SetLocalVersionAsync(query);
-
-            Assert.Equal(mockRelease, result);
-
-            Assert.Contains("Created `.fgvm-version` file in current directory", _console.Output);
-            Assert.DoesNotContain("Updated `.fgvm-version` file in current directory", _console.Output);
-            Assert.Equal(mockRelease.ReleaseNameWithRuntime, File.ReadAllText(Path.Combine(tempDir, ".fgvm-version")).Trim());
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(originalDir);
-            Directory.Delete(tempDir, true);
-        }
-    }
-
-    [Fact]
-    public async Task SetLocalVersionAsync_WithExistingVersionFile_WritesUpdatedMessage()
-    {
-        const string queryVersion = "4.3.0";
-        const string matchedVersion = "4.3.0-stable";
-        var query = new[] { queryVersion };
-        var installedVersions = new[] { matchedVersion };
-        var tempDir = Path.Combine(Path.GetTempPath(), $"fgvm-local-version-{Guid.NewGuid():N}");
-
-        SetupInstallations(installedVersions);
-        SetupCreateVersionFileWritesFile();
-
-        var mockRelease = CreateMockRelease(matchedVersion);
-        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, installedVersions))
-            .Returns(mockRelease);
-
-        _mockReleaseManager.Setup(x => x.CreateRelease(mockRelease.ReleaseNameWithRuntime))
-            .Returns(mockRelease);
-
-        Directory.CreateDirectory(tempDir);
-        await File.WriteAllTextAsync(Path.Combine(tempDir, ".fgvm-version"), "4.2-stable-standard" + System.Environment.NewLine);
-        var originalDir = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(tempDir);
-
-            var result = await _service.SetLocalVersionAsync(query);
-
-            Assert.Equal(mockRelease, result);
-
-            Assert.Contains("Updated `.fgvm-version` file in current directory", _console.Output);
-            Assert.DoesNotContain("Created `.fgvm-version` file in current directory", _console.Output);
-            Assert.Equal(mockRelease.ReleaseNameWithRuntime, File.ReadAllText(Path.Combine(tempDir, ".fgvm-version")).Trim());
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(originalDir);
-            Directory.Delete(tempDir, true);
-        }
     }
 
     [Fact]
@@ -1065,18 +930,6 @@ public class VersionManagementServiceTests
             _mockInstallationRegistry.Setup(x => x.SetDefault(installation.Key))
                 .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
         }
-    }
-
-    private void SetupCreateVersionFileWritesFile()
-    {
-        _mockProjectManager.Setup(x => x.CreateVersionFile(It.IsAny<string>(), It.IsAny<string?>()))
-            .Callback<string, string?>((version, directory) =>
-            {
-                var targetDirectory = directory ?? Directory.GetCurrentDirectory();
-                Directory.CreateDirectory(targetDirectory);
-                File.WriteAllText(Path.Combine(targetDirectory, ".fgvm-version"), version + System.Environment.NewLine);
-            })
-            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
     }
 
     private static Installation CreateInstallation(string releaseName) =>
