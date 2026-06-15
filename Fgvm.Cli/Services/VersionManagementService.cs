@@ -91,9 +91,9 @@ public interface IVersionManagementService
     /// <param name="isDotNet">Whether the project uses .NET</param>
     /// <param name="promptForInstallation">Whether to prompt user for automatic installation if not found</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The compatible version if found/installed, null otherwise</returns>
+    /// <returns>The compatible-version outcome, or a typed acquisition error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when installation or interactive confirmation is canceled.</exception>
-    Task<string?> FindOrInstallCompatibleVersionAsync(string projectVersion,
+    Task<Result<CompatibleVersionOutcome, CompatibleVersionError>> FindOrInstallCompatibleVersionAsync(string projectVersion,
         bool isDotNet,
         bool promptForInstallation = true,
         CancellationToken cancellationToken = default
@@ -305,9 +305,8 @@ public class VersionManagementService(
         }
     }
 
-    // TODO: Replace with Task<Result<string, VersionError>> FindOrInstallCompatibleVersionAsync(...)
     /// <inheritdoc />
-    public async Task<string?> FindOrInstallCompatibleVersionAsync(string projectVersion,
+    public async Task<Result<CompatibleVersionOutcome, CompatibleVersionError>> FindOrInstallCompatibleVersionAsync(string projectVersion,
         bool isDotNet,
         bool promptForInstallation = true,
         CancellationToken cancellationToken = default
@@ -315,19 +314,32 @@ public class VersionManagementService(
     {
         try
         {
-            var installed = ListInstallations();
+            IReadOnlyList<string> installed;
+            switch (installationRegistry.ListInstallations())
+            {
+                case Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(var installations):
+                    installed = installations.Select(installation => installation.ReleaseNameWithRuntime).ToArray();
+                    break;
+                case Result<IReadOnlyList<Installation>, InstallationRegistryError>.Failure(var error):
+                    return new Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(
+                        new CompatibleVersionError.RegistryFailed(error));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
 
             // First try to find a compatible installed version
-            var compatibleVersion = TryFindCompatibleVersion(projectVersion, isDotNet, installed);
-            if (compatibleVersion is not null)
+            if (releaseManager.FindCompatibleVersionResult(projectVersion, isDotNet, installed) is
+                Result<string, CompatibilityError>.Success(var compatibleVersion))
             {
-                return compatibleVersion;
+                return new Result<CompatibleVersionOutcome, CompatibleVersionError>.Success(
+                    new CompatibleVersionOutcome.Found(compatibleVersion));
             }
 
             // No compatible version found, prompt only when requested
             if (promptForInstallation && !await PromptForInstallationAsync(projectVersion, isDotNet, cancellationToken))
             {
-                return null;
+                return new Result<CompatibleVersionOutcome, CompatibleVersionError>.Success(
+                    new CompatibleVersionOutcome.Declined());
             }
 
             console.MarkupLine(Messages.InstallingAutoDetected(projectVersion, isDotNet ? " (.NET)" : ""));
@@ -352,30 +364,43 @@ public class VersionManagementService(
                 case Result<InstallationOutcome, InstallationError>.Success(var outcome):
                     installOutcome = outcome;
                     break;
-                case Result<InstallationOutcome, InstallationError>.Failure:
-                    return null;
+                case Result<InstallationOutcome, InstallationError>.Failure(var error):
+                    return new Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(
+                        new CompatibleVersionError.InstallationFailed(error));
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
 
-            // Re-check for a compatible version after installation
-            installed = ListInstallations();
-            compatibleVersion = TryFindCompatibleVersion(projectVersion, isDotNet, installed);
-
-            // If installation succeeded but compatibility check failed, return the installed version name
-            if (compatibleVersion == null)
+            var installedVersion = installOutcome switch
             {
-                var releaseNameWithRuntime = installOutcome switch
-                {
-                    InstallationOutcome.NewInstallation(var name, _, _) => name,
-                    InstallationOutcome.AlreadyInstalled(var name) => name,
-                    _ => throw new InvalidOperationException(Messages.UnknownInstallationOutcome)
-                };
+                InstallationOutcome.NewInstallation(var name, _, _) => name,
+                InstallationOutcome.AlreadyInstalled(var name) => name,
+                _ => throw new InvalidOperationException(Messages.UnknownInstallationOutcome)
+            };
 
-                return releaseNameWithRuntime;
+            // Re-check for a compatible version after installation
+            switch (installationRegistry.ListInstallations())
+            {
+                case Result<IReadOnlyList<Installation>, InstallationRegistryError>.Success(var installations):
+                    installed = installations.Select(installation => installation.ReleaseNameWithRuntime).ToArray();
+                    break;
+                case Result<IReadOnlyList<Installation>, InstallationRegistryError>.Failure(var error):
+                    return new Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(
+                        new CompatibleVersionError.RegistryFailed(error));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
 
-            return compatibleVersion;
+            return releaseManager.FindCompatibleVersionResult(projectVersion, isDotNet, installed) switch
+            {
+                Result<string, CompatibilityError>.Success(var version) =>
+                    new Result<CompatibleVersionOutcome, CompatibleVersionError>.Success(
+                        new CompatibleVersionOutcome.Installed(version)),
+                Result<string, CompatibilityError>.Failure(var error) =>
+                    new Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(
+                        new CompatibleVersionError.ResolutionFailed(projectVersion, installedVersion, error)),
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            };
         }
         catch (OperationCanceledException)
         {
@@ -384,7 +409,8 @@ public class VersionManagementService(
         catch (Exception e)
         {
             logger.ZLogError(e, $"Error finding or installing compatible version {projectVersion}");
-            return null;
+            return new Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(
+                new CompatibleVersionError.Unexpected(e.Message));
         }
     }
 
@@ -430,33 +456,36 @@ public class VersionManagementService(
 
         logger.ZLogWarning($"Project version {projectVersion} is not installed.");
 
-        // Prompt user for automatic installation
-        if (!await PromptForInstallationAsync(projectVersion, projectRelease.IsDotNet, cancellationToken))
-        {
-            console.MarkupLine(Messages.ProjectVersionNotInstalled(projectVersion, projectRelease.RuntimeDisplaySuffix));
-            console.MarkupLine(Messages.InstallationInstructions(projectVersion, projectRelease.IsDotNet));
+        var compatibleResult =
+            await FindOrInstallCompatibleVersionAsync(projectVersion, projectRelease.IsDotNet, true, cancellationToken);
 
-            return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
-                new VersionResolutionError.NotFound(projectVersion));
+        string compatibleInstalled;
+        switch (compatibleResult)
+        {
+            case Result<CompatibleVersionOutcome, CompatibleVersionError>.Success(
+                CompatibleVersionOutcome.Found(var foundVersion)):
+                compatibleInstalled = foundVersion;
+                break;
+            case Result<CompatibleVersionOutcome, CompatibleVersionError>.Success(
+                CompatibleVersionOutcome.Installed(var installedVersion)):
+                compatibleInstalled = installedVersion;
+                break;
+            case Result<CompatibleVersionOutcome, CompatibleVersionError>.Success(CompatibleVersionOutcome.Declined):
+                console.MarkupLine(Messages.ProjectVersionNotInstalled(projectVersion, projectRelease.RuntimeDisplaySuffix));
+                console.MarkupLine(Messages.InstallationInstructions(projectVersion, projectRelease.IsDotNet));
+                return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
+                    new VersionResolutionError.NotFound(projectVersion));
+            case Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(var error):
+                console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
+                console.MarkupLine(Messages.ManualInstallInstructions(projectVersion, projectRelease.IsDotNet));
+                return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
+                    new VersionResolutionError.Failed(DescribeCompatibleVersionError(error)));
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
-        var compatibleInstalled =
-            await FindOrInstallCompatibleVersionAsync(projectVersion, projectRelease.IsDotNet, false, cancellationToken);
-        if (compatibleInstalled is null)
-        {
-            console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
-            console.MarkupLine(Messages.ManualInstallInstructions(projectVersion, projectRelease.IsDotNet));
-            return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
-                new VersionResolutionError.Failed($"Failed to install {projectVersion}{projectRelease.RuntimeDisplaySuffix}"));
-        }
-
-        // Re-get installed versions and resolve again
-        var updatedInstalled = ListInstallations();
-        var newCompatibleVersion = TryFindCompatibleVersion(projectVersion, projectRelease.IsDotNet, updatedInstalled);
-
-        if (newCompatibleVersion is null ||
-            releaseManager.CreateRelease(newCompatibleVersion) is not
-                Result<Release, ReleaseParseError>.Success(var newProjectGodotRelease))
+        if (releaseManager.CreateRelease(compatibleInstalled) is not
+            Result<Release, ReleaseParseError>.Success(var newProjectGodotRelease))
         {
             console.MarkupLine(Messages.InstallationSucceededButNotFound);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
@@ -466,11 +495,23 @@ public class VersionManagementService(
         var (execPath, workingDirectory, installationKey) = GetExecutionPaths(newProjectGodotRelease);
 
         console.MarkupLine(
-            Messages.SuccessfullyInstalledAndUsing(projectVersion, projectRelease.RuntimeDisplaySuffix, newCompatibleVersion));
+            Messages.SuccessfullyInstalledAndUsing(projectVersion, projectRelease.RuntimeDisplaySuffix, compatibleInstalled));
 
         return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
-            new VersionResolutionOutcome.Found(execPath, workingDirectory, newCompatibleVersion, true, installationKey));
+            new VersionResolutionOutcome.Found(execPath, workingDirectory, compatibleInstalled, true, installationKey));
     }
+
+    private static string DescribeCompatibleVersionError(CompatibleVersionError error) => error switch
+    {
+        CompatibleVersionError.RegistryFailed(var registryError) =>
+            $"Unable to read installed versions: {registryError}",
+        CompatibleVersionError.InstallationFailed(var installationError) =>
+            $"Failed to install a compatible version: {installationError}",
+        CompatibleVersionError.ResolutionFailed(var projectVersion, var installedVersion, _) =>
+            $"Installed {installedVersion}, but it is not compatible with {projectVersion}.",
+        CompatibleVersionError.Unexpected(var reason) => reason,
+        _ => "Unable to find or install a compatible version."
+    };
 
     private Result<VersionResolutionOutcome, VersionResolutionError> ResolveDefaultVersion()
     {
@@ -801,6 +842,10 @@ public class VersionManagementService(
                 };
 
             return await confirmPrompt.ShowAsync(console, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {

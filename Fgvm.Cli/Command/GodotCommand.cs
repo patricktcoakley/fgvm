@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
@@ -15,6 +14,7 @@ namespace Fgvm.Cli.Command;
 public sealed class GodotCommand(
     IVersionManagementService versionManagementService,
     IGodotArgumentService argumentService,
+    IGodotLauncher godotLauncher,
     IProjectManager projectManager,
     IInstallationRegistry installationRegistry,
     IAnsiConsole console,
@@ -38,24 +38,8 @@ public sealed class GodotCommand(
     )
     {
         var error = new StringBuilder();
-        var process = new Process();
         Result<VersionResolutionOutcome, VersionResolutionError>? versionResult = null;
-
-        // Register cancellation callback
-        await using var cancellationRegistration = cancellationToken.Register(() =>
-        {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill();
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.ZLogWarning($"Failed to kill process during cancellation: {ex.Message}");
-            }
-        });
+        GodotLaunchTarget? launchTarget = null;
 
         try
         {
@@ -104,11 +88,12 @@ public sealed class GodotCommand(
                     return;
             }
 
-            var (execPath, workingDirectory, versionName) = resolutionOutcome switch
+            var found = resolutionOutcome switch
             {
-                VersionResolutionOutcome.Found found => (found.ExecutablePath, found.WorkingDirectory, found.VersionName),
+                VersionResolutionOutcome.Found value => value,
                 _ => throw new InvalidOperationException("Expected Found outcome for successful resolution")
             };
+            launchTarget = GodotLaunchTarget.FromResolution(found);
 
             // Check if this is a help or version command that should output directly to console
             var argumentString = args;
@@ -140,92 +125,58 @@ public sealed class GodotCommand(
             var forceAttached = argumentService.ShouldForceAttachedMode(argumentString);
             var useAttachedMode = attached || forceAttached;
 
-            if (!useAttachedMode)
-            {
-                // In detached mode (default), completely disconnect from terminal
-                process.StartInfo = new ProcessStartInfo
-                {
-                    Arguments = argumentString,
-                    FileName = execPath,
-                    UseShellExecute = false,
-                    CreateNoWindow = false,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    WorkingDirectory = workingDirectory
-                };
-
-                process.Start();
-                RecordLaunch(resolutionOutcome);
-
-                // Close the streams to fully disconnect from terminal
-                process.StandardInput.Close();
-
-                console.MarkupLine(Messages.LaunchedGodotDetached(versionName, process.Id));
-                return;
-            }
-
-            // For attached mode, redirect and handle output through Spectre.Console
-            process.StartInfo = new ProcessStartInfo
-            {
-                Arguments = argumentString,
-                FileName = execPath,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = workingDirectory
-            };
-
             if (forceAttached && !attached)
             {
-                console.MarkupLine(Messages.RunningAttachedMode(versionName));
+                console.MarkupLine(Messages.RunningAttachedMode(launchTarget.VersionName));
             }
 
-            process.EnableRaisingEvents = true;
+            var request = new GodotLaunchRequest(
+                launchTarget,
+                argumentString,
+                useAttachedMode ? GodotLaunchMode.Attached : GodotLaunchMode.Detached);
 
-            process.OutputDataReceived += (_, e) =>
-            {
-                if (e.Data is { } data)
+            var launchResult = await godotLauncher.LaunchAsync(
+                request,
+                output =>
                 {
-                    console.MarkupLine($"[green]{data.EscapeMarkup()}[/]");
-                }
-            };
+                    switch (output)
+                    {
+                        case GodotLaunchOutput.StandardOutput(var line):
+                            console.MarkupLine($"[green]{line.EscapeMarkup()}[/]");
+                            break;
+                        case GodotLaunchOutput.StandardError(var line):
+                            console.MarkupLine(line.EscapeMarkup());
+                            error.Append(line + " ");
+                            break;
+                    }
+                },
+                cancellationToken);
 
-            process.ErrorDataReceived += (_, e) =>
+            switch (launchResult)
             {
-                if (e.Data is not { } data)
-                {
+                case Result<GodotLaunchOutcome, GodotLaunchError>.Failure(var launchError):
+                    throw new InvalidOperationException(DescribeLaunchError(launchError));
+                case Result<GodotLaunchOutcome, GodotLaunchError>.Success(GodotLaunchOutcome.Detached(var processId)):
+                    RecordLaunch(launchTarget);
+                    console.MarkupLine(Messages.LaunchedGodotDetached(launchTarget.VersionName, processId));
                     return;
-                }
+                case Result<GodotLaunchOutcome, GodotLaunchError>.Success(GodotLaunchOutcome.Exited(var exitCode)):
+                    RecordLaunch(launchTarget);
+                    if (exitCode != 0)
+                    {
+                        logger.ZLogError(
+                            $"Godot exited with code {exitCode} and stderr: {error.ToString().EscapeMarkup()}");
 
-                console.MarkupLine(data.EscapeMarkup());
-                error.Append(data + " ");
-            };
+                        console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
+                        throw new ProcessExitCodeException(exitCode);
+                    }
 
-            process.Start();
-            RecordLaunch(resolutionOutcome);
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            await process.WaitForExitAsync(CancellationToken.None);
-            process.CancelOutputRead();
-            process.CancelErrorRead();
-            var godotExitCode = process.ExitCode;
-
-            // Check if cancellation was requested after process completed
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (godotExitCode != 0)
-            {
-                logger.ZLogError(
-                    $"Godot exited with code {godotExitCode} and stderr: {error.ToString().EscapeMarkup()}");
-
-                console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
-                throw new ProcessExitCodeException(godotExitCode);
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Godot launch result.");
             }
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.ZLogError($"User cancelled running Godot.");
             console.MarkupLine(Messages.UserCancelled("godot"));
@@ -238,13 +189,8 @@ public sealed class GodotCommand(
         }
         catch (Exception e)
         {
-            var (execPath, workingDir) = versionResult switch
-            {
-                Result<VersionResolutionOutcome, VersionResolutionError>.Success { Value: VersionResolutionOutcome.Found found } => (
-                    found.ExecutablePath,
-                    found.WorkingDirectory),
-                _ => ("unknown", "unknown")
-            };
+            var execPath = launchTarget?.ExecutablePath ?? "unknown";
+            var workingDir = launchTarget?.WorkingDirectory ?? "unknown";
 
             logger.ZLogError(
                 $"Error running Godot at path {execPath} and working directory {workingDir} with the following error: {e.Message}");
@@ -257,16 +203,20 @@ public sealed class GodotCommand(
         }
     }
 
-    private void RecordLaunch(VersionResolutionOutcome outcome)
+    private static string DescribeLaunchError(GodotLaunchError error) => error switch
     {
-        if (outcome is not VersionResolutionOutcome.Found { InstallationKey: { } installationKey })
-        {
-            return;
-        }
+        GodotLaunchError.StartFailed(var executablePath, var reason) =>
+            $"Unable to start Godot at `{executablePath}`: {reason}",
+        GodotLaunchError.ProcessFailed(var executablePath, var reason) =>
+            $"Godot process at `{executablePath}` failed: {reason}",
+        _ => "Unable to launch Godot."
+    };
 
-        if (installationRegistry.RecordLaunch(installationKey) is Result<Unit, InstallationRegistryError>.Failure(var error))
+    private void RecordLaunch(GodotLaunchTarget target)
+    {
+        if (installationRegistry.RecordLaunch(target.InstallationKey) is Result<Unit, InstallationRegistryError>.Failure(var error))
         {
-            logger.ZLogWarning($"Failed to record launch for {installationKey}: {error}");
+            logger.ZLogWarning($"Failed to record launch for {target.InstallationKey}: {error}");
         }
     }
 }

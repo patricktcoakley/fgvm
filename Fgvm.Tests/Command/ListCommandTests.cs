@@ -16,7 +16,7 @@ public sealed class ListCommandTests
     [Fact]
     public void ListCommand_WritesJsonOutput()
     {
-        var registry = CreateRegistryMock(["4.5-stable", "3.5-stable"]);
+        var registry = CreateRegistryMock(["4.5-stable", "3.5-stable"], "3.5-stable@linux.x86_64");
 
         var pathService = CreatePathServiceMock().Object;
         var console = new TestConsole();
@@ -30,13 +30,14 @@ public sealed class ListCommandTests
         var entries = JsonSerializer.Deserialize<List<ListView>>(json, JsonView.Options);
         Assert.NotNull(entries);
         Assert.Equal(2, entries.Count);
-        Assert.Contains(entries, entry => entry.Name == "4.5-stable");
+        Assert.Equal("3.5-stable", entries[0].Name);
+        Assert.True(entries[0].IsDefault);
     }
 
     [Fact]
-    public void ListCommand_WritesPanelOutput()
+    public void ListCommand_WritesVerticalOutputWithoutHeading()
     {
-        var registry = CreateRegistryMock(["4.5-stable"]);
+        var registry = CreateRegistryMock(["4.7-rc2-standard", "4.7-beta5-standard", "4.6.3-stable-mono"]);
 
         var pathService = CreatePathServiceMock().Object;
         var console = new TestConsole();
@@ -45,14 +46,21 @@ public sealed class ListCommandTests
         command.List();
 
         var output = console.Output;
-        Assert.Contains("4.5-stable", output);
-        Assert.Contains(Messages.ListPanelHeader, output);
+        Assert.DoesNotContain("List Of Installed Versions", output);
+
+        var lines = output.Split(System.Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(3, lines.Length);
+        Assert.Contains("4.7-rc2-standard", lines[0]);
+        Assert.Contains("4.7-beta5-standard", lines[1]);
+        Assert.Contains("4.6.3-stable-mono", lines[2]);
     }
 
     [Fact]
-    public void ListCommand_MarksOnlyExactDefaultInstallation()
+    public void ListCommand_PutsExactDefaultInstallationFirst()
     {
-        var registry = CreateRegistryMock(["4.5-stable", "4.5-stable-mono"], "4.5-stable@linux.x86_64");
+        var registry = CreateRegistryMock(
+            ["4.7-rc2-standard", "4.7-beta5-standard", "4.6.3-stable-mono"],
+            "4.6.3-stable-mono@linux.x86_64");
 
         var pathServiceMock = CreatePathServiceMock();
         var pathService = pathServiceMock.Object;
@@ -65,8 +73,12 @@ public sealed class ListCommandTests
         var output = console.Output;
         var markerCount = output.Split(Messages.DefaultInstallationMarkerGlyph).Length - 1;
         Assert.Equal(1, markerCount);
-        Assert.Contains("4.5-stable", output);
-        Assert.Contains("4.5-stable-mono", output);
+
+        var lines = output.Split(System.Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains(Messages.DefaultInstallationMarkerGlyph, lines[0]);
+        Assert.Contains("4.6.3-stable-mono", lines[0]);
+        Assert.Contains("4.7-rc2-standard", lines[1]);
+        Assert.Contains("4.7-beta5-standard", lines[2]);
     }
 
     private static Mock<IPathService> CreatePathServiceMock()

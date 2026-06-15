@@ -478,7 +478,7 @@ public class VersionManagementServiceTests
     }
 
     [Fact]
-    public async Task FindOrInstallCompatibleVersionAsync_CompatibleVersionExists_ReturnsVersion()
+    public async Task FindOrInstallCompatibleVersionAsync_CompatibleVersionExists_ReturnsFound()
     {
         const string projectVersion = "4.3.0";
         const string compatibleVersion = "4.3.0-stable";
@@ -490,11 +490,13 @@ public class VersionManagementServiceTests
 
         var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, false);
 
-        Assert.Equal(compatibleVersion, result);
+        var success = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Success>(result);
+        var found = Assert.IsType<CompatibleVersionOutcome.Found>(success.Value);
+        Assert.Equal(compatibleVersion, found.Version);
     }
 
     [Fact]
-    public async Task FindOrInstallCompatibleVersionAsync_NoCompatibleVersion_ReturnsNull()
+    public async Task FindOrInstallCompatibleVersionAsync_InstallationFails_ReturnsTypedError()
     {
         const string projectVersion = "4.3.0";
         var installedVersions = Array.Empty<string>();
@@ -512,7 +514,10 @@ public class VersionManagementServiceTests
 
         var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, false, false);
 
-        Assert.Null(result);
+        var failure = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure>(result);
+        var installationFailed = Assert.IsType<CompatibleVersionError.InstallationFailed>(failure.Error);
+        var notFound = Assert.IsType<InstallationError.NotFound>(installationFailed.Error);
+        Assert.Equal(projectVersion, notFound.Version);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
@@ -523,7 +528,7 @@ public class VersionManagementServiceTests
     }
 
     [Fact]
-    public async Task FindOrInstallCompatibleVersionAsync_InstallationSucceeds_ReturnsVersion()
+    public async Task FindOrInstallCompatibleVersionAsync_InstallationSucceeds_ReturnsInstalled()
     {
         const string projectVersion = "4.3.0";
         const string compatibleVersion = "4.3.0-stable";
@@ -551,7 +556,9 @@ public class VersionManagementServiceTests
 
         var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, false);
 
-        Assert.Equal(compatibleVersion, result);
+        var success = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Success>(result);
+        var installed = Assert.IsType<CompatibleVersionOutcome.Installed>(success.Value);
+        Assert.Equal(compatibleVersion, installed.Version);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
@@ -580,7 +587,8 @@ public class VersionManagementServiceTests
 
         var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, true, false);
 
-        Assert.Null(result);
+        var failure = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure>(result);
+        Assert.IsType<CompatibleVersionError.InstallationFailed>(failure.Error);
         _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(projectVersion, true, installedVersions), Times.Once);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { "4.3.0-stable", "mono" })),
@@ -618,7 +626,9 @@ public class VersionManagementServiceTests
 
         var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, false);
 
-        Assert.Equal(compatibleVersion, result);
+        var success = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Success>(result);
+        var installed = Assert.IsType<CompatibleVersionOutcome.Installed>(success.Value);
+        Assert.Equal(compatibleVersion, installed.Version);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
@@ -627,6 +637,86 @@ public class VersionManagementServiceTests
 
         Assert.Contains("Project requires", _console.Output);
         Assert.Contains("Installing", _console.Output);
+    }
+
+    [Fact]
+    public async Task FindOrInstallCompatibleVersionAsync_WithPromptDeclined_ReturnsDeclined()
+    {
+        const string projectVersion = "4.3.0";
+        SetupInstallations([]);
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectVersion, false, It.IsAny<IEnumerable<string>>()))
+            .Returns(CompatibleVersion(null));
+
+        _console.Interactive();
+        _console.Input.PushKey(ConsoleKey.N);
+        _console.Input.PushKey(ConsoleKey.Enter);
+
+        var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, false);
+
+        var success = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Success>(result);
+        Assert.IsType<CompatibleVersionOutcome.Declined>(success.Value);
+        _mockInstallationService.Verify(
+            x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task FindOrInstallCompatibleVersionAsync_PromptCancellation_RemainsCancellation()
+    {
+        SetupInstallations([]);
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult("4.3.0", false, It.IsAny<IEnumerable<string>>()))
+            .Returns(CompatibleVersion(null));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            _service.FindOrInstallCompatibleVersionAsync("4.3.0", false, cancellationToken: cancellation.Token));
+
+        _mockInstallationService.Verify(
+            x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task FindOrInstallCompatibleVersionAsync_RegistryReadFails_ReturnsTypedError()
+    {
+        var registryError = new InstallationRegistryError.ReadFailed(new FileOperationError.IoFailure("installations.json"));
+        _mockInstallationRegistry.Setup(x => x.ListInstallations())
+            .Returns(new Result<IReadOnlyList<Installation>, InstallationRegistryError>.Failure(registryError));
+
+        var result = await _service.FindOrInstallCompatibleVersionAsync("4.3", false, false);
+
+        var failure = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure>(result);
+        var registryFailed = Assert.IsType<CompatibleVersionError.RegistryFailed>(failure.Error);
+        Assert.Equal(registryError, registryFailed.Error);
+    }
+
+    [Fact]
+    public async Task FindOrInstallCompatibleVersionAsync_PostInstallCompatibilityFails_ReturnsResolutionError()
+    {
+        const string projectVersion = "4.3.0";
+        const string installedVersion = "4.3.0-stable-standard";
+        var initialInstalled = Array.Empty<string>();
+        var postInstallInstalled = new[] { installedVersion };
+
+        SetupInstallationsSequence(initialInstalled, initialInstalled, postInstallInstalled);
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectVersion, false, It.IsAny<IEnumerable<string>>()))
+            .Returns(CompatibleVersion(null));
+
+        _mockInstallationService.Setup(x =>
+                x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
+                new InstallationOutcome.NewInstallation(installedVersion, new ChecksumVerification.Verified())));
+
+        var result = await _service.FindOrInstallCompatibleVersionAsync(projectVersion, false, false);
+
+        var failure = Assert.IsType<Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure>(result);
+        var resolutionFailed = Assert.IsType<CompatibleVersionError.ResolutionFailed>(failure.Error);
+        Assert.Equal(projectVersion, resolutionFailed.ProjectVersion);
+        Assert.Equal(installedVersion, resolutionFailed.InstalledVersion);
     }
 
     [Fact]

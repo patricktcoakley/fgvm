@@ -46,6 +46,23 @@ if (args.Contains("--fgvm-mock-print-directory", StringComparer.OrdinalIgnoreCas
     return 0;
 }
 
+var delayArgumentIndex = Array.FindIndex(
+    args,
+    argument => string.Equals(argument, "--fgvm-mock-delay-ms", StringComparison.OrdinalIgnoreCase));
+if (delayArgumentIndex >= 0)
+{
+    if (delayArgumentIndex + 1 >= args.Length ||
+        !int.TryParse(args[delayArgumentIndex + 1], out var delayMilliseconds) ||
+        delayMilliseconds < 0)
+    {
+        Console.Error.WriteLine("Mock Godot requires a non-negative delay in milliseconds.");
+        return 2;
+    }
+
+    await Task.Delay(delayMilliseconds);
+    return 0;
+}
+
 if (args.Contains("--version", StringComparer.OrdinalIgnoreCase))
 {
     Console.WriteLine(version);
