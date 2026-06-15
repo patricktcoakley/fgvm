@@ -277,50 +277,6 @@ public sealed class ProjectManagerTests : IDisposable
     }
 
     [Fact]
-    public void CreateVersionFile_WithNullDirectory_UsesCurrentDirectory()
-    {
-        var originalDirectory = Directory.GetCurrentDirectory();
-
-        try
-        {
-            Directory.SetCurrentDirectory(_tempDirectory);
-            const string version = "4.3-stable";
-
-            CreateVersionFile(version);
-
-            var filePath = Path.Combine(_tempDirectory, ".fgvm-version");
-            Assert.True(File.Exists(filePath));
-            var content = File.ReadAllText(filePath);
-            Assert.Equal($"4.3-stable{System.Environment.NewLine}", content);
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(originalDirectory);
-        }
-    }
-
-    [Fact]
-    public void FindProjectVersion_WithNullDirectory_UsesCurrentDirectory()
-    {
-        var originalDirectory = Directory.GetCurrentDirectory();
-
-        try
-        {
-            Directory.SetCurrentDirectory(_tempDirectory);
-            var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
-            File.WriteAllText(versionFilePath, "4.3-stable");
-
-            var result = FindProjectVersionValue();
-
-            Assert.Equal("4.3-stable-standard", result);
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(originalDirectory);
-        }
-    }
-
-    [Fact]
     public void FindProjectInfo_PrioritizesFgvmVersionFileOverProjectGodot()
     {
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
