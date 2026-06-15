@@ -48,7 +48,7 @@ public sealed class ListCommandTests
         var output = console.Output;
         Assert.DoesNotContain("List Of Installed Versions", output);
 
-        var lines = output.Split(System.Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        var lines = SplitLines(output);
         Assert.Equal(3, lines.Length);
         Assert.Contains("4.7-rc2-standard", lines[0]);
         Assert.Contains("4.7-beta5-standard", lines[1]);
@@ -74,7 +74,7 @@ public sealed class ListCommandTests
         var markerCount = output.Split(Messages.DefaultInstallationMarkerGlyph).Length - 1;
         Assert.Equal(1, markerCount);
 
-        var lines = output.Split(System.Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        var lines = SplitLines(output);
         Assert.Contains(Messages.DefaultInstallationMarkerGlyph, lines[0]);
         Assert.Contains("4.6.3-stable-mono", lines[0]);
         Assert.Contains("4.7-rc2-standard", lines[1]);
@@ -94,6 +94,22 @@ public sealed class ListCommandTests
         mock.SetupGet(x => x.MacAppSymlinkPath).Returns(Path.Combine(rootPath, "Godot.app"));
         mock.SetupGet(x => x.LogPath).Returns(Path.Combine(rootPath, ".log"));
         return mock;
+    }
+
+    private static string[] SplitLines(string output)
+    {
+        using var reader = new StringReader(output);
+        var lines = new List<string>();
+
+        while (reader.ReadLine() is { } line)
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                lines.Add(line);
+            }
+        }
+
+        return [.. lines];
     }
 
     private static Mock<IInstallationRegistry> CreateRegistryMock(string[] releaseNames, string? defaultKey = null)
