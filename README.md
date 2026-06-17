@@ -50,13 +50,27 @@ If you're on macOS or Linux, you can install fgvm using [Homebrew](https://brew.
 
 ```shell
 brew tap patricktcoakley/formulae
+brew trust patricktcoakley/formulae
 brew install fgvm
 ```
+
+Homebrew 5 requires third-party taps to be explicitly trusted before their formulae can be installed; `brew trust` marks the tap as trusted so `brew install fgvm` succeeds. See the [`brew trust` documentation](https://docs.brew.sh/Manpage#trust-options-target) for more details.
 
 Note that you may periodically need to run `brew update` if any changes are applied to the formula.
 
 Alternatively, macOS users can [download the release with `curl`](#macos-command-line-installation). This avoids the browser-added quarantine attribute that can cause Gatekeeper warnings for the
 non-notarized binaries.
+
+#### mise (macOS/Linux)
+
+[mise](https://mise.jdx.dev/) can install fgvm directly from the GitHub release artifacts using its GitHub backend:
+
+```shell
+mise use -g github:patricktcoakley/fgvm@2.2.0
+fgvm --version
+```
+
+For now, use the full `github:patricktcoakley/fgvm` tool name. The shorter `mise use -g fgvm` form will only work after fgvm is added to mise's registry.
 
 #### Scoop (Windows)
 
@@ -95,12 +109,13 @@ If you don't want to use a package manager, download the archive for your platfo
 | Platform | Architecture | Archive |
 | --- | --- | --- |
 | Windows | x64 | [`fgvm-win-x64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-win-x64.zip) |
-| macOS | Intel x64 | [`fgvm-osx-x64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-x64.zip) |
-| macOS | Apple Silicon ARM64 | [`fgvm-osx-arm64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-arm64.zip) |
-| Linux | x64 | [`fgvm-linux-x64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-linux-x64.zip) |
-| Linux | ARM64 | [`fgvm-linux-arm64.zip`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-linux-arm64.zip) |
+| macOS | Intel x64 | [`fgvm-osx-x64.tar.gz`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-x64.tar.gz) |
+| macOS | Apple Silicon ARM64 | [`fgvm-osx-arm64.tar.gz`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-arm64.tar.gz) |
+| Linux | x64 | [`fgvm-linux-x64.tar.gz`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-linux-x64.tar.gz) |
+| Linux | ARM64 | [`fgvm-linux-arm64.tar.gz`](https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-linux-arm64.tar.gz) |
 
-Each archive has a matching `.sha256` file on the release. Extract the executable into a directory on your `PATH`; on macOS and Linux, run `chmod +x fgvm` if the executable bit was not preserved.
+Each archive has a matching `.sha256` file on the release. Windows uses ZIP files; macOS and Linux use tarballs.
+Extract the executable into a directory on your `PATH`; on macOS and Linux, `chmod +x fgvm` is only needed if your filesystem or extraction tool strips executable permissions.
 
 The Linux binaries require glibc and do not support musl-based distributions such as Alpine Linux.
 
@@ -111,17 +126,16 @@ quarantine attribute, so you can verify and run the release directly:
 
 ```shell
 case "$(uname -m)" in
-  arm64) archive=fgvm-osx-arm64.zip ;;
-  x86_64) archive=fgvm-osx-x64.zip ;;
+  arm64) archive=fgvm-osx-arm64.tar.gz ;;
+  x86_64) archive=fgvm-osx-x64.tar.gz ;;
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
 base_url=https://github.com/patricktcoakley/fgvm/releases/latest/download
-curl -LO "$base_url/$archive"
-curl -LO "$base_url/$archive.sha256"
+curl -fLO "$base_url/$archive"
+curl -fLO "$base_url/$archive.sha256"
 shasum -a 256 -c "$archive.sha256"
-unzip "$archive"
-chmod +x fgvm
+tar -xzf "$archive"
 ./fgvm --version
 ```
 
@@ -132,7 +146,7 @@ After confirming it runs, move `fgvm` into a directory on your `PATH`.
 The [GitHub CLI](https://cli.github.com/) can download both the archive and its checksum from the latest release:
 
 ```shell
-archive=fgvm-osx-arm64.zip # Replace with the archive for your platform.
+archive=fgvm-osx-arm64.tar.gz # Replace with the archive for your platform.
 gh release download --repo patricktcoakley/fgvm \
   --pattern "$archive" \
   --pattern "$archive.sha256"
@@ -146,6 +160,13 @@ shasum -a 256 -c "$archive.sha256"
 
 # Linux
 sha256sum -c "$archive.sha256"
+```
+
+Extract macOS and Linux archives with `tar`:
+
+```shell
+tar -xzf "$archive"
+./fgvm --version
 ```
 
 On Windows, verify the expected hash from `fgvm-win-x64.zip.sha256` against the downloaded archive:
