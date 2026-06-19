@@ -85,6 +85,27 @@ public sealed class GodotCommandTests
     }
 
     [Fact]
+    public async Task Launch_ProjectFlag_PrependsDetectedProjectPathToExplicitArguments()
+    {
+        var projectFilePath = Path.Combine(Path.GetTempPath(), "fgvm-project", "project.godot");
+        var projectDirectory = Path.GetDirectoryName(projectFilePath)!;
+        GodotLaunchRequest? captured = null;
+        _launcher.Setup(x => x.LaunchAsync(
+                It.IsAny<GodotLaunchRequest>(),
+                It.IsAny<Action<GodotLaunchOutput>?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<GodotLaunchRequest, Action<GodotLaunchOutput>?, CancellationToken>((request, _, _) => captured = request)
+            .ReturnsAsync(new Result<GodotLaunchOutcome, GodotLaunchError>.Success(new GodotLaunchOutcome.Exited(0)));
+
+        await CreateCommand(projectFilePath).Launch(attached: true, project: true, args: "--dump-extension-api --quit");
+
+        Assert.NotNull(captured);
+        Assert.Equal($"--path \"{projectDirectory}\" --dump-extension-api --quit", captured.Arguments);
+        Assert.Contains("Auto-detected project file", _console.Output);
+        _registry.Verify(x => x.RecordLaunch(InstallationKey, null), Times.Once);
+    }
+
+    [Fact]
     public async Task Launch_NonZeroExit_PropagatesGodotExitCode()
     {
         _launcher.Setup(x => x.LaunchAsync(
@@ -134,11 +155,13 @@ public sealed class GodotCommandTests
         _registry.Verify(x => x.RecordLaunch(It.IsAny<string>(), It.IsAny<DateTimeOffset?>()), Times.Never);
     }
 
-    private GodotCommand CreateCommand()
+    private GodotCommand CreateCommand(string? projectFilePath = null)
     {
         var projectManager = new Mock<IProjectManager>();
         projectManager.Setup(x => x.FindProjectFilePath(It.IsAny<string>()))
-            .Returns(new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Missing()));
+            .Returns(projectFilePath is null
+                ? new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Missing())
+                : new Result<ProjectLookup<string>, ProjectError>.Success(new ProjectLookup<string>.Found(projectFilePath)));
 
         return new GodotCommand(
             _versionService.Object,

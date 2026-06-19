@@ -18,7 +18,7 @@ public sealed class TestFixture : IAsyncLifetime
         _testRoot = Path.Combine(Path.GetTempPath(), "fgvm-integration", Guid.NewGuid().ToString("N"));
         HomePath = Path.Combine(_testRoot, "home");
         TempPath = Path.Combine(_testRoot, "tmp");
-        RootPath = Path.Combine(HomePath, "fgvm");
+        RootPath = HomePath;
     }
 
     private string FgvmPath => _fgvmPath ?? throw new InvalidOperationException("Integration fixture was not initialized.");
@@ -49,7 +49,7 @@ public sealed class TestFixture : IAsyncLifetime
                 $"Integration fixture manifest was not found at '{_fixtureManifestPath}'.");
         }
 
-        _baseEnvironment["FGVM_HOME"] = HomePath;
+        _baseEnvironment["FGVM_HOME"] = RootPath;
         _baseEnvironment["FGVM_INTEGRATION_FIXTURE_MANIFEST"] = _fixtureManifestPath;
         return Task.CompletedTask;
     }

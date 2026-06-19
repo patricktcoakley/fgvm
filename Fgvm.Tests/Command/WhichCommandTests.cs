@@ -1,9 +1,7 @@
 using System.Text.Json;
 using Fgvm.Cli.Command;
+using Fgvm.Cli.Services;
 using Fgvm.Cli.ViewModels;
-using Fgvm.Environment;
-using Fgvm.Godot;
-using Fgvm.Services;
 using Fgvm.Types;
 using Moq;
 using Spectre.Console.Testing;
@@ -13,47 +11,40 @@ namespace Fgvm.Tests.Command;
 public sealed class WhichCommandTests
 {
     [Fact]
-    public void WhichCommand_WritesJson_WhenVersionIsSet()
+    public async Task WhichCommand_WritesJson_WhenVersionIsSet()
     {
-        var installation = new Installation("4.5-stable-standard@linux.x86_64", "4.5-stable-standard", "linux.x86_64",
-            "4.5-stable-standard", null, null);
-        var registry = new Mock<IInstallationRegistry>();
-        registry.Setup(x => x.GetDefault()).Returns(new Result<Installation, InstallationRegistryError>.Success(installation));
-
-        if (Release.TryParse("4.5-stable-standard") is not { } release)
-        {
-            throw new InvalidOperationException("Expected release to parse.");
-        }
-
-        release = release with { OS = OS.Linux, PlatformString = "linux.x86_64" };
-        var releaseManager = new Mock<IReleaseManager>();
-        releaseManager.Setup(x => x.CreateRelease("4.5-stable-standard"))
-            .Returns(new Result<Release, ReleaseParseError>.Success(release));
-
-        var pathService = CreatePathService();
+        var executablePath = Path.Combine("/Users/test/fgvm", "installations", "4.5-stable-standard", "Godot");
+        var versionService = CreateVersionService(
+            new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(
+                new VersionResolutionOutcome.Found(
+                    executablePath,
+                    Path.GetDirectoryName(executablePath)!,
+                    "4.5-stable-standard",
+                    false,
+                    "4.5-stable-standard@linux.x86_64")));
 
         var console = new TestConsole();
-        var command = new WhichCommand(registry.Object, releaseManager.Object, pathService.Object, console);
+        var command = new WhichCommand(versionService.Object, console);
 
-        command.Which(true);
+        await command.Which(true);
 
         var json = console.Output.Trim();
         var view = JsonSerializer.Deserialize<WhichView>(json, JsonView.Options);
         Assert.True(view.HasVersion);
-        Assert.Equal(Path.Combine(pathService.Object.RootPath, installation.RelativePath, release.ExecName), view.ExecutablePath);
+        Assert.Equal(executablePath, view.ExecutablePath);
     }
 
     [Fact]
-    public void WhichCommand_WritesJson_WhenNoVersionSet()
+    public async Task WhichCommand_WritesJson_WhenNoVersionSet()
     {
-        var registry = new Mock<IInstallationRegistry>();
-        registry.Setup(x => x.GetDefault())
-            .Returns(new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound("default")));
+        var versionService = CreateVersionService(
+            new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                new VersionResolutionError.NotFound("No current version set")));
 
         var console = new TestConsole();
-        var command = new WhichCommand(registry.Object, new Mock<IReleaseManager>().Object, CreatePathService().Object, console);
+        var command = new WhichCommand(versionService.Object, console);
 
-        command.Which(true);
+        await command.Which(true);
 
         var json = console.Output.Trim();
         var view = JsonSerializer.Deserialize<WhichView>(json, JsonView.Options);
@@ -61,10 +52,13 @@ public sealed class WhichCommandTests
         Assert.Equal("No Godot version is currently set.", view.Message);
     }
 
-    private static Mock<IPathService> CreatePathService()
+    private static Mock<IVersionManagementService> CreateVersionService(
+        Result<VersionResolutionOutcome.Found, VersionResolutionError> result
+    )
     {
-        var pathService = new Mock<IPathService>();
-        pathService.SetupGet(x => x.RootPath).Returns("/Users/test/fgvm");
-        return pathService;
+        var versionService = new Mock<IVersionManagementService>();
+        versionService.Setup(x => x.ResolveEffectiveVersionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+        return versionService;
     }
 }

@@ -62,10 +62,24 @@ public sealed class PathService : IPathService
     private static string? _fgvmHomeEnvVar => System.Environment.GetEnvironmentVariable("FGVM_HOME");
 
     /// <inheritdoc />
-    public string RootPath =>
-        _fgvmHomeEnvVar is not null
-            ? Path.GetFullPath("fgvm", _fgvmHomeEnvVar)
-            : Path.GetFullPath("fgvm", System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile));
+    public string RootPath
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_fgvmHomeEnvVar))
+            {
+                return Path.GetFullPath("fgvm",
+                    System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile));
+            }
+
+            if (!Path.IsPathFullyQualified(_fgvmHomeEnvVar))
+            {
+                throw new InvalidOperationException("FGVM_HOME must be an absolute path.");
+            }
+
+            return Path.GetFullPath(_fgvmHomeEnvVar);
+        }
+    }
 
     /// <inheritdoc />
     public string ReleasesPath => Path.Combine(RootPath, "releases.json");

@@ -48,7 +48,6 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     public async Task UsesFgvmHomeEnvironmentVariableForRootPath()
     {
         var customHome = NewTempPath("fgvm-env-test");
-        var fgvmRoot = Path.Combine(customHome, "fgvm");
 
         try
         {
@@ -58,7 +57,7 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
             });
 
             await fixture.AssertSuccessfulExecutionAsync(result);
-            Assert.True(await fixture.DirectoryExists(fgvmRoot), $"Expected Fgvm root to be created at '{fgvmRoot}'.");
+            Assert.True(await fixture.DirectoryExists(customHome), $"Expected Fgvm root to be created at '{customHome}'.");
         }
         finally
         {
@@ -83,7 +82,7 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     public async Task SearchCommandCreatesReleasesJsonWhenMissing()
     {
         var home = NewTempPath("fgvm-cache-missing");
-        var releasesPath = Path.Combine(home, "fgvm", "releases.json");
+        var releasesPath = Path.Combine(home, "releases.json");
 
         try
         {
@@ -113,7 +112,7 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     public async Task SearchNoCacheRefreshesSeededReleasesJsonFromFixtures()
     {
         var home = NewTempPath("fgvm-no-cache-refresh");
-        var root = Path.Combine(home, "fgvm");
+        var root = home;
         var releasesPath = Path.Combine(root, "releases.json");
 
         try

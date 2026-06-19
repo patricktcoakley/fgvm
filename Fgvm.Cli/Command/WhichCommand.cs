@@ -1,27 +1,23 @@
 using System.Text.Json.Serialization;
+using Fgvm.Cli.Services;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
-using Fgvm.Environment;
-using Fgvm.Godot;
-using Fgvm.Services;
 using Fgvm.Types;
 using Spectre.Console;
 
 namespace Fgvm.Cli.Command;
 
 public sealed class WhichCommand(
-    IInstallationRegistry installationRegistry,
-    IReleaseManager releaseManager,
-    IPathService pathService,
+    IVersionManagementService versionManagementService,
     IAnsiConsole console
 )
 {
     /// <summary>
-    ///     Show the path to the current Godot version.
+    ///     Show the path to the effective Godot version for the current directory.
     /// </summary>
-    public void Which(bool json = false)
+    public async Task Which(bool json = false, CancellationToken cancellationToken = default)
     {
-        var view = WhichView.Create(installationRegistry.GetDefault(), releaseManager, pathService);
+        var view = WhichView.Create(await versionManagementService.ResolveEffectiveVersionAsync(cancellationToken));
 
         if (json)
         {
@@ -51,16 +47,17 @@ internal readonly record struct WhichView : IJsonView<WhichView>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 
-    public static WhichView Create(Result<Installation, InstallationRegistryError> result,
-        IReleaseManager releaseManager,
-        IPathService pathService
-    ) => result switch
+    public static WhichView Create(Result<VersionResolutionOutcome.Found, VersionResolutionError> result) => result switch
     {
-        Result<Installation, InstallationRegistryError>.Success(var installation) =>
-            CreateSuccess(installation, releaseManager, pathService),
-        Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound) =>
+        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(var found) =>
+            new WhichView(true, found.ExecutablePath, null),
+        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(VersionResolutionError.NotFound) =>
             new WhichView(false, null, "No Godot version is currently set."),
-        _ => new WhichView(false, null, "Unknown installation registry error.")
+        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(VersionResolutionError.InvalidVersion) =>
+            new WhichView(false, null, "Current Godot version is invalid."),
+        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(VersionResolutionError.Failed failed) =>
+            new WhichView(false, null, failed.Reason),
+        _ => new WhichView(false, null, "Unknown version resolution error.")
     };
 
     public string ToDisplay()
@@ -71,22 +68,5 @@ internal readonly record struct WhichView : IJsonView<WhichView>
         }
 
         return Message is not null ? $"[red]{Message}[/]" : Messages.UnknownSymlinkError;
-    }
-
-    private static WhichView CreateSuccess(Installation installation, IReleaseManager releaseManager, IPathService pathService)
-    {
-        if (releaseManager.CreateRelease(installation.ReleaseNameWithRuntime) is not
-            Result<Release, ReleaseParseError>.Success(var release))
-        {
-            return new WhichView(false, null, "Default Godot version is invalid.");
-        }
-
-        var executablePath = Path.Combine(pathService.RootPath, installation.RelativePath, release.ExecName);
-        if (executablePath.EndsWith(".app", StringComparison.Ordinal))
-        {
-            executablePath = Path.Combine(executablePath, "Contents", "MacOS", "Godot");
-        }
-
-        return new WhichView(true, executablePath, null);
     }
 }

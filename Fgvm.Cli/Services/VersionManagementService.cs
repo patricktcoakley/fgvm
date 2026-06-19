@@ -45,6 +45,17 @@ public interface IVersionManagementService
     );
 
     /// <summary>
+    ///     Resolves the effective Godot version for the current directory without side effects.
+    ///     Checks explicit `.fgvm-version` files first, then falls back to the global default.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The resolved version, or a typed resolution error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when version resolution is canceled.</exception>
+    Task<Result<VersionResolutionOutcome.Found, VersionResolutionError>> ResolveEffectiveVersionAsync(
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     ///     Sets the global Godot version in the installation registry and refreshes launch artifacts.
     /// </summary>
     /// <param name="query">Version query to search for</param>
@@ -200,6 +211,48 @@ public class VersionManagementService(
             console.MarkupLine(Messages.ErrorResolvingVersion);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Error resolving explicit version for launch: {e.Message}"));
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<Result<VersionResolutionOutcome.Found, VersionResolutionError>> ResolveEffectiveVersionAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var installed = ListInstallations();
+            var projectInfo = FindExplicitProjectInfo();
+
+            if (projectInfo is not null)
+            {
+                var projectVersion = projectInfo.ReleaseNameWithRuntime;
+                var compatibleVersion = TryFindCompatibleVersion(projectVersion, projectInfo.IsDotNet, installed);
+
+                if (compatibleVersion is null)
+                {
+                    return Task.FromResult<Result<VersionResolutionOutcome.Found, VersionResolutionError>>(
+                        new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                            new VersionResolutionError.NotFound(projectVersion)));
+                }
+
+                return Task.FromResult(CreateQuietVersionResolution(compatibleVersion, true));
+            }
+
+            return Task.FromResult(ResolveDefaultVersionQuietly());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.ZLogError(e, $"Error resolving effective version");
+            return Task.FromResult<Result<VersionResolutionOutcome.Found, VersionResolutionError>>(
+                new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                    new VersionResolutionError.Failed($"Error resolving effective version: {e.Message}")));
         }
     }
 
@@ -539,6 +592,46 @@ public class VersionManagementService(
 
         return new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
             new VersionResolutionOutcome.Found(execPath, workingDirectory, installation.ReleaseNameWithRuntime, false, installation.Key));
+    }
+
+    private Result<VersionResolutionOutcome.Found, VersionResolutionError> ResolveDefaultVersionQuietly()
+    {
+        Installation installation;
+        switch (installationRegistry.GetDefault())
+        {
+            case Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound):
+                return new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                    new VersionResolutionError.NotFound("No current version set"));
+            case Result<Installation, InstallationRegistryError>.Failure(var error):
+                return new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                    new VersionResolutionError.Failed($"Unable to read default installation: {error}"));
+            case Result<Installation, InstallationRegistryError>.Success(var value):
+                installation = value;
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
+        }
+
+        var release = CreateRelease(installation.ReleaseNameWithRuntime);
+        var (execPath, workingDirectory) = GetExecutionPaths(release, installation);
+
+        return new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(
+            new VersionResolutionOutcome.Found(execPath, workingDirectory, installation.ReleaseNameWithRuntime, false, installation.Key));
+    }
+
+    private Result<VersionResolutionOutcome.Found, VersionResolutionError> CreateQuietVersionResolution(string releaseNameWithRuntime,
+        bool isProjectVersion
+    )
+    {
+        if (releaseManager.CreateRelease(releaseNameWithRuntime) is not Result<Release, ReleaseParseError>.Success(var release))
+        {
+            return new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                new VersionResolutionError.InvalidVersion(releaseNameWithRuntime));
+        }
+
+        var (execPath, workingDirectory, installationKey) = GetExecutionPaths(release);
+        return new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(
+            new VersionResolutionOutcome.Found(execPath, workingDirectory, releaseNameWithRuntime, isProjectVersion, installationKey));
     }
 
     private Result<VersionResolutionOutcome, VersionResolutionError> CreateVersionResolutionResult(string compatibleVersion,

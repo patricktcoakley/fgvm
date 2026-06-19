@@ -26,13 +26,15 @@ public sealed class GodotCommand(
     /// </summary>
     /// <param name="interactive">-i, Creates a prompt to select and launch an installed Godot version.</param>
     /// <param name="attached">-a, Launches Godot in attached mode, keeping it connected to the terminal for output.</param>
-    /// <param name="args">Arguments to pass to the Godot executable (e.g., --args="--version --verbose").</param>
+    /// <param name="project">-P, Adds the detected project path to explicit Godot arguments.</param>
+    /// <param name="args">Arguments to pass to the Godot executable (e.g., --args "--version --verbose").</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <exception cref="InvalidOperationException">Thrown when version resolution or project-file lookup cannot continue.</exception>
     /// <exception cref="OperationCanceledException">Thrown when launch is canceled.</exception>
     [Command("godot|g")]
     public async Task Launch(bool interactive = false,
         bool attached = false,
+        bool project = false,
         string args = "",
         CancellationToken cancellationToken = default
     )
@@ -98,27 +100,9 @@ public sealed class GodotCommand(
             // Check if this is a help or version command that should output directly to console
             var argumentString = args;
 
-            // Auto-detect project file and add it to arguments if we're in a project directory
-            if (string.IsNullOrEmpty(argumentString))
+            if (project || string.IsNullOrEmpty(argumentString))
             {
-                switch (projectManager.FindProjectFilePath())
-                {
-                    case Result<ProjectLookup<string>, ProjectError>.Failure:
-                        throw new InvalidOperationException("Unable to read project file information.");
-                    case Result<ProjectLookup<string>, ProjectError>.Success
-                    {
-                        Value: ProjectLookup<string>.Found(var projectFilePath)
-                    }:
-                        // Godot expects the directory path, not the file path
-                        var projectDirectory = Path.GetDirectoryName(projectFilePath);
-                        argumentString = $"--editor --path \"{projectDirectory}\"";
-                        console.MarkupLine(Messages.AutoDetectedProject(Path.GetFileName(projectFilePath)));
-                        break;
-                    case Result<ProjectLookup<string>, ProjectError>.Success:
-                        break;
-                    default:
-                        throw new InvalidOperationException("Unexpected Result type");
-                }
+                argumentString = AddDetectedProjectArguments(argumentString, project);
             }
 
             // Force attached mode for certain arguments that need terminal output
@@ -211,6 +195,32 @@ public sealed class GodotCommand(
             $"Godot process at `{executablePath}` failed: {reason}",
         _ => "Unable to launch Godot."
     };
+
+    private string AddDetectedProjectArguments(string argumentString, bool required)
+    {
+        switch (projectManager.FindProjectFilePath())
+        {
+            case Result<ProjectLookup<string>, ProjectError>.Failure:
+                throw new InvalidOperationException("Unable to read project file information.");
+            case Result<ProjectLookup<string>, ProjectError>.Success
+            {
+                Value: ProjectLookup<string>.Found(var projectFilePath)
+            }:
+                // Godot expects the directory path, not the file path.
+                var projectDirectory = Path.GetDirectoryName(projectFilePath)
+                                       ?? throw new InvalidOperationException("Unable to determine project directory.");
+                console.MarkupLine(Messages.AutoDetectedProject(Path.GetFileName(projectFilePath)));
+                return string.IsNullOrEmpty(argumentString)
+                    ? $"--editor --path \"{projectDirectory}\""
+                    : $"--path \"{projectDirectory}\" {argumentString}";
+            case Result<ProjectLookup<string>, ProjectError>.Success when required:
+                throw new InvalidOperationException("No project.godot file found in the current directory.");
+            case Result<ProjectLookup<string>, ProjectError>.Success:
+                return argumentString;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
+        }
+    }
 
     private void RecordLaunch(GodotLaunchTarget target)
     {

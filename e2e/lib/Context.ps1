@@ -24,7 +24,7 @@ class E2EContext {
         $this.RootPath = $rootPath
         $this.HomePath = Join-Path $rootPath "home"
         $this.WorkPath = Join-Path $rootPath "work"
-        $this.FgvmRootPath = Join-Path $this.HomePath "fgvm"
+        $this.FgvmRootPath = $this.HomePath
         $this.ReleasesPath = Join-Path $this.FgvmRootPath "releases.json"
         $this.InstallationsPath = Join-Path $this.FgvmRootPath "installations.json"
         $this.InstallationsDirectoryPath = Join-Path $this.FgvmRootPath "installations"
