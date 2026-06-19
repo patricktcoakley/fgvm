@@ -48,6 +48,8 @@ public class VersionManagementServiceTests
         // Default mock setup - tests can override this
         _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
             .Returns(ProjectMissing());
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectMissing());
 
         _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<string>());
@@ -221,6 +223,84 @@ public class VersionManagementServiceTests
         Assert.Contains(compatibleVersion, found.ExecutablePath);
         Assert.Contains(compatibleVersion, found.WorkingDirectory);
         Assert.True(found.IsProjectVersion);
+    }
+
+    [Fact]
+    public async Task ResolveEffectiveVersionAsync_WithExplicitProjectVersion_ReturnsProjectVersionWithoutOutput()
+    {
+        const string defaultVersion = "4.6.2-stable-standard";
+        const string localVersion = "4.5-stable-standard";
+        var installedVersions = new[] { defaultVersion, localVersion };
+        var defaultInstallation = CreateInstallation(defaultVersion);
+        var projectRelease = CreateMockRelease(localVersion);
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        SetupInstallations(installedVersions);
+        _mockInstallationRegistry.Setup(x => x.GetDefault())
+            .Returns(new Result<Installation, InstallationRegistryError>.Success(defaultInstallation));
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(localVersion,
+                false,
+                It.Is<IEnumerable<string>>(versions => versions.SequenceEqual(installedVersions))))
+            .Returns(localVersion);
+        _mockReleaseManager.Setup(x => x.CreateRelease(localVersion))
+            .Returns(CreateMockRelease(localVersion));
+
+        var result = await _service.ResolveEffectiveVersionAsync();
+
+        var success = Assert.IsType<Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success>(result);
+        Assert.Equal(localVersion, success.Value.VersionName);
+        Assert.True(success.Value.IsProjectVersion);
+        Assert.Contains(localVersion, success.Value.ExecutablePath);
+        Assert.Empty(_console.Output);
+        _mockInstallationRegistry.Verify(x => x.GetDefault(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveEffectiveVersionAsync_WithoutExplicitProjectVersion_ReturnsDefaultWithoutOutput()
+    {
+        const string defaultVersion = "4.6.2-stable-standard";
+        var installation = CreateInstallation(defaultVersion);
+
+        SetupInstallations([defaultVersion]);
+        _mockInstallationRegistry.Setup(x => x.GetDefault())
+            .Returns(new Result<Installation, InstallationRegistryError>.Success(installation));
+        _mockReleaseManager.Setup(x => x.CreateRelease(defaultVersion))
+            .Returns(CreateMockRelease(defaultVersion));
+
+        var result = await _service.ResolveEffectiveVersionAsync();
+
+        var success = Assert.IsType<Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success>(result);
+        Assert.Equal(defaultVersion, success.Value.VersionName);
+        Assert.False(success.Value.IsProjectVersion);
+        Assert.Contains(defaultVersion, success.Value.ExecutablePath);
+        Assert.Empty(_console.Output);
+    }
+
+    [Fact]
+    public async Task ResolveEffectiveVersionAsync_DoesNotInstallMissingProjectVersion()
+    {
+        const string localVersion = "4.5-stable-standard";
+        var projectRelease = CreateMockRelease(localVersion);
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        SetupInstallations([]);
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(localVersion,
+                false,
+                It.Is<IEnumerable<string>>(versions => !versions.Any())))
+            .Returns(CompatibleVersion(null));
+
+        var result = await _service.ResolveEffectiveVersionAsync();
+
+        var failure = Assert.IsType<Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure>(result);
+        var notFound = Assert.IsType<VersionResolutionError.NotFound>(failure.Error);
+        Assert.Equal(localVersion, notFound.Version);
+        Assert.Empty(_console.Output);
+        _mockInstallationService.Verify(
+            x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

@@ -97,8 +97,8 @@ Suite "startup" {
         $list = Run -Environment @{ FGVM_HOME = $customHome } -Arguments @("list", "--json")
 
         Assert.ExitCode 0 $list "fgvm list --json with custom FGVM_HOME"
-        Assert.True (Test-Path -LiteralPath (Join-Path $customHome "fgvm") -PathType Container) "The custom FGVM_HOME should contain the fgvm root."
-        Assert.False (Test-Path -LiteralPath $Context.FgvmRootPath) "The default test FGVM_HOME should remain unused."
+        Assert.True (Test-Path -LiteralPath $customHome -PathType Container) "The custom FGVM_HOME should be the fgvm root."
+        Assert.False (Test-Path -LiteralPath $Context.BinPath) "The default test FGVM_HOME should remain unused."
     }
 
     Test "godot fails cleanly when no version is selected" {

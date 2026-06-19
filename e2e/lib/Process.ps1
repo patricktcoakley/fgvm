@@ -93,7 +93,7 @@ function Get-E2EProcessEnvironment {
     )
 
     $processEnvironment = @{
-        FGVM_HOME = $script:CurrentContext.HomePath
+        FGVM_HOME = $script:CurrentContext.FgvmRootPath
     }
 
     if (-not [string]::IsNullOrWhiteSpace($script:CurrentContext.FixtureManifestPath)) {

@@ -47,6 +47,22 @@ Suite "workflow" {
         Assert.NotEqual ([System.IO.Path]::GetFullPath($standard.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
     }
 
+    Test "which prefers a local version over the global default" {
+        $stable = Add-FixtureInstallation "4.6.2-stable" -Default
+        $older = Add-FixtureInstallation "4.5-stable"
+        $projectPath = Join-Path $Context.WorkPath "local-which"
+        New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $projectPath ".fgvm-version") -Value $older.Name -NoNewline
+
+        $which = Run -Cwd $projectPath "which" "--json"
+
+        Assert.ExitCode 0 $which "fgvm which --json with local version"
+        $selected = Json $which.Stdout
+        Assert.True $selected.hasVersion
+        Assert.Equal ([System.IO.Path]::GetFullPath($older.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
+        Assert.NotEqual ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
+    }
+
     Test "keeps the current default when a set query does not match" {
         $stable = Add-FixtureInstallation "4.6.2-stable" -Default
 

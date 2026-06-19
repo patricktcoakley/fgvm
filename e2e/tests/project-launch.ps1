@@ -45,4 +45,23 @@ Suite "project launch" {
         Assert.NotContains "--editor" @($invocation.Arguments)
         Assert.NotContains "--path" @($invocation.Arguments)
     }
+
+    Test "project flag adds detected project path to explicit arguments" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        $projectPath = Join-Path $Context.WorkPath "project-argument-project"
+        $invocationPath = Join-Path $Context.WorkPath "project-argument-launch.json"
+        New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $projectPath "project.godot") -Value '[application]' -NoNewline
+
+        $godot = Run -Cwd $projectPath -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } `
+            -Arguments @("godot", "--attached", "-P", "--args", "--dump-extension-api --quit")
+
+        Assert.ExitCode 0 $godot "fgvm godot -P with explicit arguments"
+        File.WaitFor $invocationPath
+        $invocation = Json (File.Read $invocationPath)
+        Assert.Equal "--path" $invocation.Arguments[0]
+        Assert.Equal (Split-Path -Leaf $projectPath) (Split-Path -Leaf $invocation.Arguments[1])
+        Assert.Equal "--dump-extension-api" $invocation.Arguments[2]
+        Assert.Equal "--quit" $invocation.Arguments[3]
+    }
 }

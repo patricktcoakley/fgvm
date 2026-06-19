@@ -228,8 +228,9 @@ but here is a detailed summary of the available commands:
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
   `project.godot` file is found.
     - Once a version is installed, it will launch the editor with the project directly from the terminal.
-    - Optionally, pass in arguments to the Godot executable directly using the `--args` parameter, such as `fgvm godot --args="--headless"` or `fgvm godot --args="--version"`. Multiple arguments should be
-      passed as a quoted string, such as `--args="--headless -v"`.
+    - Optionally, pass in arguments to the Godot executable directly using the `--args` parameter, such as `fgvm godot --args "--headless"` or `fgvm godot --args "--version"`. Multiple arguments should be
+      passed as a quoted string, such as `--args "--headless -v"`.
+    - Use `--project` or `-P` with explicit arguments to add the detected project path, such as `fgvm godot -P --args "--dump-extension-api --quit"`.
     - Use the `--attached` or `-a` flag to force Godot connected to the terminal for output; by default, Godot runs in detached mode and will launch in a separate instance. Using an argument detection
       system, certain arguments (like `--version`, `--help`, `--headless`) automatically trigger this mode since they would otherwise be useless without printing to standard out.
     - The command will only read existing `.fgvm-version` files for version selection, and does not create or modify version files. Use `fgvm local` to manage `.fgvm-version` files.
@@ -238,7 +239,7 @@ but here is a detailed summary of the available commands:
 - `fgvm local [<...strings>]` sets the Godot version for the current project by creating or updating a `.fgvm-version` file in the current directory. If no `.fgvm-version` file
   exists and no arguments are provided, it will automatically detect the project version from `project.godot` and install the most recent compatible version if not already installed.
     - If a list of arguments are provided, it will find the best matching version based on the query (including runtime preferences like `mono` or `standard`) and install it if necessary.
-- `fgvm which` [`--json`] displays the executable path for the current default Godot installation. Use `--json` to output in JSON format.
+- `fgvm which` [`--json`] displays the executable path for the effective Godot installation in the current directory: `.fgvm-version` first, then the global default. Use `--json` to output in JSON format.
 - `fgvm remove` or `fgvm r` `[<...strings>]` prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if you remove a specific version, like
@@ -296,21 +297,21 @@ fgvm g -i                     # Same as above
   macOS/Linux:
     ```bash
     # Temporary (current session only)
-    export FGVM_HOME=/custom/path
-    fgvm list  # Will use /custom/path/fgvm/ instead
+    export FGVM_HOME=/custom/path/fgvm
+    fgvm list  # Will use /custom/path/fgvm/ directly
 
     # Persistent (add to ~/.bashrc, ~/.zshrc, or ~/.profile)
-    echo 'export FGVM_HOME=/custom/path' >> ~/.bashrc
+    echo 'export FGVM_HOME=/custom/path/fgvm' >> ~/.bashrc
     ```
 
   Windows:
     ```powershell
     # Temporary (current session only)
-    $env:FGVM_HOME = "C:\custom\path"
-    fgvm list  # Will use C:\custom\path\fgvm\ instead
+    $env:FGVM_HOME = "C:\custom\path\fgvm"
+    fgvm list  # Will use C:\custom\path\fgvm\ directly
 
     # Persistent (for current user)
-    [System.Environment]::SetEnvironmentVariable('FGVM_HOME', 'C:\custom\path', 'User')
+    [System.Environment]::SetEnvironmentVariable('FGVM_HOME', 'C:\custom\path\fgvm', 'User')
     ```
 
   This is particularly useful for testing, CI/CD environments, or keeping your Godot installations on a separate storage device for backup purposes.
