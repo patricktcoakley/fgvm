@@ -1,5 +1,8 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Buffers;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
 using ConsoleAppFramework;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.Filter;
@@ -14,8 +17,10 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Events;
+using Serilog.Formatting;
 using Spectre.Console;
-using ZLogger;
 
 namespace Fgvm.Cli;
 
@@ -32,6 +37,11 @@ public class Program
         // Lazy logging - only opens file handle when first logger is created
         services.AddSingleton<Lazy<ILoggerFactory>>(_ => new Lazy<ILoggerFactory>(() =>
         {
+            var serilogLogger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.File(new SlogFormatter(), pathService.LogPath)
+                .CreateLogger();
+
             return LoggerFactory.Create(builder =>
             {
                 builder.ClearProviders();
@@ -40,8 +50,7 @@ public class Program
                 // Suppress automatic HTTP client logging - we'll add our own custom logging
                 builder.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 
-                builder.AddZLoggerFile(pathService.LogPath,
-                    opts => { opts.UseJsonFormatter(); });
+                builder.AddSerilog(serilogLogger);
             });
         }));
 
@@ -134,5 +143,28 @@ public class Program
         };
 
         return new SystemInfo(systemInfo.CurrentOS, architecture);
+    }
+}
+
+public class SlogFormatter : ITextFormatter
+{
+    public void Format(LogEvent logEvent, TextWriter output)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer);
+
+        writer.WriteStartObject();
+        writer.WriteString("Timestamp", logEvent.Timestamp.UtcDateTime.ToString("O"));
+        writer.WriteString("LogLevel", logEvent.Level.ToString());
+        writer.WriteString("Category",
+            logEvent.Properties.TryGetValue("SourceContext", out var sourceContext)
+                ? sourceContext.ToString().Trim('"')
+                : "");
+        writer.WriteString("Message", logEvent.RenderMessage());
+        writer.WriteEndObject();
+        writer.Flush();
+
+        output.Write(Encoding.UTF8.GetString(buffer.WrittenSpan));
+        output.WriteLine();
     }
 }

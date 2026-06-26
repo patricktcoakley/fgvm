@@ -7,7 +7,7 @@ using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
+
 
 namespace Fgvm.Cli.Command;
 
@@ -52,7 +52,7 @@ public sealed class SearchCommand(
                 return;
 
             case Result<IEnumerable<string>, NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseNames)):
-                logger.ZLogWarning($"Failed to refresh release cache. Showing cached releases.");
+                logger.LogWarning($"Failed to refresh release cache. Showing cached releases.");
                 if (!json)
                 {
                     console.MarkupLine(Messages.ReleaseCacheRefreshFailed);
@@ -75,7 +75,7 @@ public sealed class SearchCommand(
                     _ => "Unknown network error"
                 };
 
-                logger.ZLogError($"Error searching releases: {errorMessage}");
+                logger.LogError("Error searching releases: {ErrorMessage}", errorMessage);
                 console.MarkupLine(
                     Messages.SomethingWentWrong("when trying to search releases", pathService)
                 );

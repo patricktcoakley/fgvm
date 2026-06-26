@@ -3,7 +3,7 @@ using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
+
 
 namespace Fgvm.Cli.Command;
 
@@ -31,13 +31,13 @@ public sealed class LocalCommand(IVersionManagementService versionManagementServ
         }
         catch (TaskCanceledException)
         {
-            logger.ZLogError($"User cancelled setting local version.");
+            logger.LogError($"User cancelled setting local version.");
             console.MarkupLine(Messages.UserCancelled("setting local version"));
             throw;
         }
         catch (Exception e)
         {
-            logger.ZLogError($"Error setting local version: {e.Message}");
+            logger.LogError(e, "Error setting local version: {Message}", e.Message);
             console.MarkupLine(Messages.SomethingWentWrong("when trying to set the local version"));
             throw;
         }

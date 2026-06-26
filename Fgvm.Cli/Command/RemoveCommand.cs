@@ -6,7 +6,7 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
+
 
 namespace Fgvm.Cli.Command;
 
@@ -49,7 +49,7 @@ public sealed class RemoveCommand(
             if (filteredInstallations.Length == 0)
             {
                 var queryJoin = string.Join(' ', query);
-                logger.ZLogInformation($"Query didn't find any installations: {queryJoin}.");
+                logger.LogInformation("Query didn't find any installations: {QueryJoin}.", queryJoin);
                 console.MarkupLine(Messages.NoVersionsMatchingQuery(queryJoin));
                 return;
             }
@@ -58,7 +58,7 @@ public sealed class RemoveCommand(
             if (filteredInstallations.Length == 1)
             {
                 var versionToRemove = filteredInstallations[0];
-                logger.ZLogInformation($"Automatically removing single matched version: {versionToRemove}.");
+                logger.LogInformation("Automatically removing single matched version: {VersionToRemove}.", versionToRemove);
                 console.MarkupLine(Messages.FoundExactMatch(versionToRemove));
                 versionsToDelete = [versionToRemove];
             }
@@ -84,12 +84,13 @@ public sealed class RemoveCommand(
                             throw new InvalidOperationException($"Unable to remove installation `{selectionPath}`: {deleteError}");
                         }
 
-                        logger.ZLogInformation($"Removed installation: {version}");
+                        logger.LogInformation("Removed installation: {Version}", version);
                         console.MarkupLine(Messages.SuccessfullyRemoved(selectionPath));
                         break;
                     case Result<bool, FileOperationError>.Success { Value: false }:
                     case null:
-                        logger.ZLogWarning($"Installation {version} does not exist at {selectionPath}, skipping removal.");
+                        logger.LogWarning("Installation {Version} does not exist at {SelectionPath}, skipping removal.", version,
+                            selectionPath);
                         break;
                     default:
                         throw new InvalidOperationException("Unexpected Result type");
@@ -109,20 +110,20 @@ public sealed class RemoveCommand(
 
             if (!removedSymlinks && ListInstallations().Length == 0)
             {
-                logger.ZLogInformation($"No installations remaining, removing Godot symlinks.");
+                logger.LogInformation($"No installations remaining, removing Godot symlinks.");
                 RemoveSymbolicLinks();
             }
         }
         catch (TaskCanceledException)
         {
-            logger.ZLogError($"User cancelled removal.");
+            logger.LogError($"User cancelled removal.");
             console.MarkupLine(Messages.UserCancelled("removal"));
 
             throw;
         }
         catch (Exception e)
         {
-            logger.ZLogError($"Error removing installations: {e.Message}");
+            logger.LogError(e, "Error removing installations: {Message}", e.Message);
             console.MarkupLine(
                 Messages.SomethingWentWrong("when trying to remove installations", pathService)
             );

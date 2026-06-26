@@ -7,7 +7,7 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
+
 
 namespace Fgvm.Cli.Services;
 
@@ -51,8 +51,8 @@ public interface IVersionManagementService
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The resolved version, or a typed resolution error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when version resolution is canceled.</exception>
-    Task<Result<VersionResolutionOutcome.Found, VersionResolutionError>> ResolveEffectiveVersionAsync(
-        CancellationToken cancellationToken = default
+    Task<Result<VersionResolutionOutcome.Found, VersionResolutionError>> ResolveEffectiveVersionAsync(CancellationToken cancellationToken =
+        default
     );
 
     /// <summary>
@@ -168,7 +168,7 @@ public class VersionManagementService(
         }
         catch (Exception e)
         {
-            logger.ZLogError(e, $"Error resolving version for launch");
+            logger.LogError(e, $"Error resolving version for launch");
             console.MarkupLine(Messages.ErrorResolvingVersion);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Error resolving version for launch: {e.Message}"));
@@ -207,7 +207,7 @@ public class VersionManagementService(
         }
         catch (Exception e)
         {
-            logger.ZLogError(e, $"Error resolving version for launch");
+            logger.LogError(e, $"Error resolving version for launch");
             console.MarkupLine(Messages.ErrorResolvingVersion);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Error resolving explicit version for launch: {e.Message}"));
@@ -249,7 +249,7 @@ public class VersionManagementService(
         }
         catch (Exception e)
         {
-            logger.ZLogError(e, $"Error resolving effective version");
+            logger.LogError(e, $"Error resolving effective version");
             return Task.FromResult<Result<VersionResolutionOutcome.Found, VersionResolutionError>>(
                 new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
                     new VersionResolutionError.Failed($"Error resolving effective version: {e.Message}")));
@@ -267,7 +267,7 @@ public class VersionManagementService(
             var installed = ListInstallations().ToArray();
             if (installed.Length == 0)
             {
-                logger.ZLogWarning($"Tried to set a version when there were none installed.");
+                logger.LogWarning($"Tried to set a version when there were none installed.");
                 throw new InvalidOperationException(Messages.NoInstallationsFound);
             }
 
@@ -289,14 +289,14 @@ public class VersionManagementService(
             var fgvmExecutablePath = Path.GetFullPath(System.Environment.ProcessPath ?? System.Environment.GetCommandLineArgs().First());
             if (hostSystem.EnsureShim(fgvmExecutablePath) is Result<Unit, ShimError>.Failure(var shimError))
             {
-                logger.ZLogWarning($"Failed to update shim: {shimError}");
+                logger.LogWarning("Failed to update shim: {ShimError}", shimError);
             }
 
             var symlinkTargetPath = Path.Combine(pathService.RootPath, installation.RelativePath);
             symlinkTargetPath = Path.Combine(symlinkTargetPath, godotRelease.ExecName);
             if (hostSystem.CreateOrOverwriteShortcut(symlinkTargetPath) is Result<Unit, SymlinkError>.Failure(var symlinkError))
             {
-                logger.ZLogWarning($"Failed to refresh Godot symlink: {symlinkError}");
+                logger.LogWarning("Failed to refresh Godot symlink: {SymlinkError}", symlinkError);
 
                 switch (symlinkError)
                 {
@@ -307,22 +307,22 @@ public class VersionManagementService(
                         console.MarkupLine(Messages.SymlinkUnsupportedOS(os));
                         return godotRelease;
                     case SymlinkError.InvalidSymlink(var path, var target):
-                        logger.ZLogWarning($"Godot symlink {path} appears invalid: {target}");
+                        logger.LogWarning("Godot symlink {Path} appears invalid: {Target}", path, target);
                         return godotRelease;
                     case SymlinkError.RemoveFailed(var path):
-                        logger.ZLogWarning($"Unable to remove previous Godot symlink: {path}");
+                        logger.LogWarning("Unable to remove previous Godot symlink: {Path}", path);
                         return godotRelease;
                 }
             }
 
-            logger.ZLogInformation($"Successfully set version to {godotRelease.ReleaseNameWithRuntime}.");
+            logger.LogInformation("Successfully set version to {ReleaseNameWithRuntime}.", godotRelease.ReleaseNameWithRuntime);
             console.MarkupLine(Messages.SuccessfullySetVersion(godotRelease.ReleaseNameWithRuntime));
 
             return godotRelease;
         }
         catch (Exception e)
         {
-            logger.ZLogError($"Error setting a version: {e.Message}");
+            logger.LogError(e, "Error setting a version: {Message}", e.Message);
             throw;
         }
     }
@@ -346,14 +346,14 @@ public class VersionManagementService(
             // Create or update the `.fgvm-version` file
             CreateOrUpdateVersionFile(godotRelease.ReleaseNameWithRuntime);
 
-            logger.ZLogInformation($"Successfully set local version to {godotRelease.ReleaseNameWithRuntime}.");
+            logger.LogInformation("Successfully set local version to {ReleaseNameWithRuntime}.", godotRelease.ReleaseNameWithRuntime);
             console.MarkupLine(fileExists ? Messages.UpdatedVersionFile : Messages.CreatedVersionFile);
 
             return godotRelease;
         }
         catch (Exception e)
         {
-            logger.ZLogError($"Error setting local version: {e.Message}");
+            logger.LogError(e, "Error setting local version: {Message}", e.Message);
             throw;
         }
     }
@@ -461,7 +461,7 @@ public class VersionManagementService(
         }
         catch (Exception e)
         {
-            logger.ZLogError(e, $"Error finding or installing compatible version {projectVersion}");
+            logger.LogError(e, "Error finding or installing compatible version {ProjectVersion}", projectVersion);
             return new Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(
                 new CompatibleVersionError.Unexpected(e.Message));
         }
@@ -481,7 +481,7 @@ public class VersionManagementService(
     {
         if (releaseManager.CreateRelease(selection) is not Result<Release, ReleaseParseError>.Success(var godotRelease))
         {
-            logger.ZLogError($"Invalid Godot version selected: {selection}");
+            logger.LogError("Invalid Godot version selected: {Selection}", selection);
             console.MarkupLine($"[red]Invalid Godot version: {selection}[/]");
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.InvalidVersion(selection));
@@ -507,7 +507,7 @@ public class VersionManagementService(
             return CreateVersionResolutionResult(compatibleVersion, projectRelease, projectVersion, true);
         }
 
-        logger.ZLogWarning($"Project version {projectVersion} is not installed.");
+        logger.LogWarning("Project version {ProjectVersion} is not installed.", projectVersion);
 
         var compatibleResult =
             await FindOrInstallCompatibleVersionAsync(projectVersion, projectRelease.IsDotNet, true, cancellationToken);
@@ -572,7 +572,7 @@ public class VersionManagementService(
         switch (installationRegistry.GetDefault())
         {
             case Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound):
-                logger.ZLogError($"Tried to launch when no version is set.");
+                logger.LogError($"Tried to launch when no version is set.");
                 console.MarkupLine(Messages.NoCurrentVersionSet);
 
                 return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
@@ -642,7 +642,7 @@ public class VersionManagementService(
     {
         if (releaseManager.CreateRelease(compatibleVersion) is not Result<Release, ReleaseParseError>.Success(var projectGodotRelease))
         {
-            logger.ZLogError($"Invalid project version: {compatibleVersion}");
+            logger.LogError("Invalid project version: {CompatibleVersion}", compatibleVersion);
             console.MarkupLine(Messages.InvalidProjectVersion(compatibleVersion));
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.InvalidVersion(compatibleVersion));
@@ -758,7 +758,7 @@ public class VersionManagementService(
 
         if (installed.Length == 0)
         {
-            logger.ZLogWarning($"No versions installed and no `.fgvm-version` file found.");
+            logger.LogWarning($"No versions installed and no `.fgvm-version` file found.");
             throw new InvalidOperationException(Messages.NoInstallationsAndNoVersionFile);
         }
 
@@ -797,7 +797,7 @@ public class VersionManagementService(
         }
 
         // Not installed, auto-install
-        logger.ZLogInformation($"Project version {projectVersion} is not installed, automatically installing it.");
+        logger.LogInformation("Project version {ProjectVersion} is not installed, automatically installing it.", projectVersion);
         console.MarkupLine(Messages.ProjectVersionNotInstalled(projectVersion, projectRelease.RuntimeDisplaySuffix));
 
         // We already have projectRelease validated, no need to revalidate
@@ -852,7 +852,7 @@ public class VersionManagementService(
                 throw new InvalidOperationException("Unexpected Result type");
         }
 
-        logger.ZLogInformation($"Version matching '{string.Join(" ", query)}' not installed, attempting to install it.");
+        logger.LogInformation("Version matching '{Query}' not installed, attempting to install it.", string.Join(" ", query));
         console.MarkupLine(Messages.NoInstalledVersionMatching(string.Join(" ", query)));
         console.MarkupLine(Messages.Installing(string.Join(" ", query)));
 

@@ -5,7 +5,6 @@ using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
 using Messages = Fgvm.Cli.Error.Messages;
 
 namespace Fgvm.Cli.Command;
@@ -76,13 +75,13 @@ public sealed class InstallCommand(
         }
         catch (TaskCanceledException)
         {
-            logger.ZLogError($"User cancelled installation.");
+            logger.LogError($"User cancelled installation.");
             console.MarkupLine(Messages.UserCancelled("installation"));
             throw;
         }
         catch (Exception e)
         {
-            logger.ZLogError(e, $"Error downloading and installing Godot.");
+            logger.LogError(e, $"Error downloading and installing Godot.");
             console.MarkupLine(
                 Messages.SomethingWentWrong($"when trying to install Godot: {e.Message}", pathService)
             );

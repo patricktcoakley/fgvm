@@ -40,7 +40,7 @@ sources = [
 outputs = { auto = true }
 run = [
     "dotnet run e2e/fixtures/BuildFixtures.cs",
-    "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output .fgvm-e2e-cli"
+    "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output e2e/.cli"
 ]
 
 [tasks."test:e2e"]

@@ -7,7 +7,7 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
+
 
 namespace Fgvm.Cli.Command;
 
@@ -66,7 +66,7 @@ public sealed class ListCommand(
         }
         catch (Exception e)
         {
-            logger.ZLogError($"Error listing installations: {e.Message}");
+            logger.LogError(e, "Error listing installations: {Message}", e.Message);
             console.MarkupLine(
                 Messages.SomethingWentWrong("when trying to list installations", pathService)
             );
