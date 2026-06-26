@@ -7,7 +7,7 @@ using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
+
 
 namespace Fgvm.Cli.Command;
 
@@ -148,7 +148,7 @@ public sealed class GodotCommand(
                     RecordLaunch(launchTarget);
                     if (exitCode != 0)
                     {
-                        logger.ZLogError(
+                        logger.LogError(
                             $"Godot exited with code {exitCode} and stderr: {error.ToString().EscapeMarkup()}");
 
                         console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
@@ -162,7 +162,7 @@ public sealed class GodotCommand(
         }
         catch (OperationCanceledException)
         {
-            logger.ZLogError($"User cancelled running Godot.");
+            logger.LogError($"User cancelled running Godot.");
             console.MarkupLine(Messages.UserCancelled("godot"));
 
             throw;
@@ -176,7 +176,7 @@ public sealed class GodotCommand(
             var execPath = launchTarget?.ExecutablePath ?? "unknown";
             var workingDir = launchTarget?.WorkingDirectory ?? "unknown";
 
-            logger.ZLogError(
+            logger.LogError(
                 $"Error running Godot at path {execPath} and working directory {workingDir} with the following error: {e.Message}");
 
             console.MarkupLine(
@@ -226,7 +226,7 @@ public sealed class GodotCommand(
     {
         if (installationRegistry.RecordLaunch(target.InstallationKey) is Result<Unit, InstallationRegistryError>.Failure(var error))
         {
-            logger.ZLogWarning($"Failed to record launch for {target.InstallationKey}: {error}");
+            logger.LogWarning("Failed to record launch for {InstallationKey}: {Error}", target.InstallationKey, error);
         }
     }
 }

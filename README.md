@@ -373,7 +373,7 @@ dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs
 dotnet test --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj
 
 dotnet run e2e/fixtures/BuildFixtures.cs
-dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output .fgvm-e2e-cli
+dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs --output e2e/.cli
 pwsh -NoLogo -NoProfile -File e2e/run.ps1 -Parallel
 ```
 

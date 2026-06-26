@@ -8,7 +8,7 @@ using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
-using ZLogger;
+
 
 namespace Fgvm.Cli.Command;
 
@@ -111,14 +111,14 @@ public sealed class LogsCommand(
         }
         catch (TaskCanceledException)
         {
-            logger.ZLogError($"User cancelled reading the logs.");
+            logger.LogError($"User cancelled reading the logs.");
             console.MarkupLine(Messages.UserCancelled("reading logs"));
 
             throw;
         }
         catch (Exception e)
         {
-            logger.ZLogError($"Error reading the logs: {e.Message}");
+            logger.LogError(e, "Error reading the logs: {Message}", e.Message);
             console.MarkupLine(
                 Messages.SomethingWentWrong("when trying to read the logs", pathService)
             );

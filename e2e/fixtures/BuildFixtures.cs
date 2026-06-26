@@ -117,7 +117,7 @@ internal sealed record BuildContext(string RepoRoot, string RecipePath, string O
     {
         var repoRoot = options.RepoRoot ?? RepositoryPaths.FindRoot();
         var recipePath = options.RecipePath ?? Path.Combine(repoRoot, "e2e", "fixtures", "fixture-recipe.json");
-        var outputRoot = options.OutputRoot ?? Path.Combine(repoRoot, ".fgvm-e2e-fixtures");
+        var outputRoot = options.OutputRoot ?? Path.Combine(repoRoot, "e2e", ".fixtures");
         var platform = options.Platform is null ? BuildPlatform.Current() : BuildPlatform.Parse(options.Platform);
 
         return new BuildContext(repoRoot, recipePath, outputRoot, platform);

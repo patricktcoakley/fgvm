@@ -201,7 +201,7 @@ function ResolveCliPath {
         "fgvm"
     }
 
-    Join-Path $RepoRoot ".fgvm-e2e-cli" $platform $executable
+    Join-Path $RepoRoot "e2e" ".cli" $platform $executable
 }
 
 <#
@@ -216,7 +216,7 @@ function ResolveFixtureManifestPath {
         [string] $RepoRoot
     )
 
-    Join-Path $RepoRoot ".fgvm-e2e-fixtures" (Platform) "manifest.json"
+    Join-Path $RepoRoot "e2e" ".fixtures" (Platform) "manifest.json"
 }
 
 <#

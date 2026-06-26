@@ -97,7 +97,7 @@ internal static class DotNet
             projectPath,
             "--nologo",
             "-c",
-            "Debug",
+            "Release",
             "-r",
             rid,
             "-o",
