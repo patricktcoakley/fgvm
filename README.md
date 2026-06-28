@@ -58,7 +58,7 @@ Homebrew 5 requires third-party taps to be explicitly trusted before their formu
 
 Note that you may periodically need to run `brew update` if any changes are applied to the formula.
 
-Alternatively, macOS users can [download the release with `curl`](#macos-command-line-installation). This avoids the browser-added quarantine attribute that can cause Gatekeeper warnings for the
+Alternatively, macOS and Linux users can use the [install script](#install-scripts). On macOS, this avoids the browser-added quarantine attribute that can cause Gatekeeper warnings for the
 non-notarized binaries.
 
 #### mise (macOS/Linux)
@@ -81,30 +81,99 @@ scoop bucket add patricktcoakley https://github.com/patricktcoakley/scoop-bucket
 scoop install patricktcoakley/fgvm
 ```
 
-### fgvmup (Currently Windows only)
+### Install Scripts
 
-There is also an **experimental** tool called `fgvmup` that can manage your installations on **Windows** using a PowerShell script. I've only done preliminary testing and am open to feedback, but be
-aware things there may be issues. To try it out, you can do the following:
+If you do not want to use a package manager, the install scripts download the latest release, verify its SHA-256 checksum, install `fgvm`, and update your user environment.
+`FGVM_HOME` controls fgvm's runtime home and defaults to `~/fgvm`. `FGVM_INSTALL_DIR` controls where the `fgvm` binary is installed and defaults to `$FGVM_HOME/bin`.
+The installer adds both `FGVM_INSTALL_DIR` and `$FGVM_HOME/bin` to PATH so the `fgvm` binary and the `godot` shim work. If you override either variable, the installer persists it in your shell profile
+or Windows user environment unless you skip environment changes.
+
+macOS and Linux:
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.sh | sh
+```
+
+Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.ps1 | iex
 ```
 
-which will install the latest version and add fgvmup, fgvm, and the Godot alias directories to your PATH automatically. fgvmup
-can handle installation, upgrade, and deletion of the fgvm tool, but it's a WIP and may change or be integrated into the main application in the future.
+Re-run the installer to upgrade.
 
-Usage:
+If you prefer to inspect the installer before running it, download it first:
 
-- `install` [`--quiet`] [`--version VERSION`] [`--force`] installs fgvmup and fgvm, with the optional arguments for quiet output, a specific version, or forcing an installation.
-- `uninstall` removes **everything**, including fgvm, fgvmup, and all Godot installations.
-- `upgrade` just reinstalls everything and will likely be removed in the future unless I can think of a use case.
+macOS and Linux:
 
-As of now I really only created it as a proof-of-concept but could expand it later in the future. If there is interest I will also consider a macOS/Linux version of this tool using a traditional shell
-script.
+```shell
+curl -fsSLO https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.sh
+less installer.sh
+sh installer.sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.ps1 -OutFile installer.ps1
+notepad .\installer.ps1
+.\installer.ps1
+```
+
+To install a specific version, run the downloaded script with `--version VERSION` on macOS/Linux or `-Version VERSION` on Windows. Version overrides support
+`v2.2.0` or later only because older release artifacts use a different layout:
+
+```shell
+sh installer.sh --version v2.2.0
+```
+
+```powershell
+.\installer.ps1 -Version v2.2.0
+```
+
+Use `--no-modify-path` on macOS/Linux or `-NoModifyPath` on Windows to skip PATH and environment-variable changes:
+
+```shell
+sh installer.sh --version v2.2.0 --no-modify-path
+```
+
+```powershell
+.\installer.ps1 -Version v2.2.0 -NoModifyPath
+```
+
+To use a different fgvm home, set `FGVM_HOME` when using the one-line installer:
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.sh | FGVM_HOME="$HOME/dev/fgvm" sh
+```
+
+```powershell
+$env:FGVM_HOME = "$HOME\dev\fgvm"; irm https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.ps1 | iex
+```
+
+To install the `fgvm` binary somewhere outside `$FGVM_HOME/bin`, set `FGVM_INSTALL_DIR`:
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.sh | FGVM_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+```powershell
+$env:FGVM_INSTALL_DIR = "$HOME\.local\bin"; irm https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.ps1 | iex
+```
+
+Or pass the install directory to the downloaded script:
+
+```shell
+sh installer.sh --fgvm-home "$HOME/dev/fgvm" --install-dir "$HOME/.local/bin"
+```
+
+```powershell
+.\installer.ps1 -FgvmHome "$HOME\dev\fgvm" -InstallDir "$HOME\.local\bin"
+```
 
 ### Pre-built Binaries
 
-If you don't want to use a package manager, download the archive for your platform from the [latest release](https://github.com/patricktcoakley/fgvm/releases/latest):
+If you prefer to install manually, download the archive for your platform from the [latest release](https://github.com/patricktcoakley/fgvm/releases/latest):
 
 | Platform | Architecture | Archive |
 | --- | --- | --- |
@@ -119,7 +188,7 @@ Extract the executable into a directory on your `PATH`; on macOS and Linux, `chm
 
 The Linux binaries require glibc and do not support musl-based distributions such as Alpine Linux.
 
-#### macOS command-line installation
+#### macOS manual command-line download
 
 The macOS binaries require macOS 12 or later and are not currently notarized. Downloads made through a browser may be quarantined by Gatekeeper. Downloading with `curl` does not apply the browser
 quarantine attribute, so you can verify and run the release directly:
@@ -139,7 +208,7 @@ tar -xzf "$archive"
 ./fgvm --version
 ```
 
-After confirming it runs, move `fgvm` into a directory on your `PATH`.
+After confirming it runs, move `fgvm` into a directory on your `PATH`, such as `~/fgvm/bin`.
 
 #### Downloading with GitHub CLI
 
@@ -403,9 +472,9 @@ See: https://github.com/patricktcoakley/fgvm
 
 ### Planned Features For The Current Version
 
-- Add support for export templates
-- Add a command for releasing builds locally, including compressions for web exports
+- Add releases for Windows on ARM64
 - Create a GitHub Action to simplify using `fgvm` in CI
+- Add support for export templates
 
 ## Migrating from the original gdvm
 
@@ -421,4 +490,4 @@ What this means for you:
 - If you want to keep your current installations, you can copy the existing `gdvm` directory to `fgvm`, which will preserve everything. Here are some one-liners that copy them over and delete the gdvm folder:
   - macOS & Linux users: `mkdir -p ~/fgvm && cp -r ~/gdvm/* ~/fgvm/ && rm -rf ~/gdvm`
   - Windows users: `mkdir -Force $env:USERPROFILE\fgvm ; cp -r $env:USERPROFILE\gdvm\* $env:USERPROFILE\fgvm\ ; rm -r -Force $env:USERPROFILE\gdvm`
-  - `gdvmup` is now called `fgvmup`. If you were using the old `gdvmup` installer, run `gdvmup uninstall` first, which removes everything, then follow the [installation instructions](#installation) above. Be sure to copy over your existing installations using the above commands if you want to keep them.
+  - The old updater scripts have been replaced by the simpler [install scripts](#install-scripts), which install the standalone `fgvm` binary into `~/fgvm/bin`.
