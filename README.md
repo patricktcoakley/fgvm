@@ -66,7 +66,7 @@ non-notarized binaries.
 [mise](https://mise.jdx.dev/) can install fgvm directly from the GitHub release artifacts using its GitHub backend:
 
 ```shell
-mise use -g github:patricktcoakley/fgvm@2.2.0
+mise use -g github:patricktcoakley/fgvm
 fgvm --version
 ```
 
@@ -224,11 +224,12 @@ but here is a detailed summary of the available commands:
         - `fgvm install 4.3` - Install 4.3 stable
         - `fgvm install 4.3 mono` - Install 4.3 stable mono
         - `fgvm i latest --default` - Install latest stable standard and set as default
-- `fgvm godot` or `fgvm g` runs the appropriate Godot version, or with the `--interactive` or `-i` flag, will prompt the user to launch an installed version. When run in a project directory with a `.fgvm-version`
+- `fgvm godot` or `fgvm g` [`--interactive|-i`] [`--attached|-a`] [`--project|-P`] [`--query QUERY`] [`--args ARGS`] runs the appropriate Godot version, or resolves the optional query against installed versions and launches that match. With the `--interactive` or `-i` flag, it will prompt the user to launch an installed version, even if a query is supplied. When run in a project directory with a `.fgvm-version`
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
   `project.godot` file is found.
     - Once a version is installed, it will launch the editor with the project directly from the terminal.
-    - Optionally, pass in arguments to the Godot executable directly using the `--args` parameter, such as `fgvm godot --args "--headless"` or `fgvm godot --args "--version"`. Multiple arguments should be
+    - Use `--query` to launch a specific installed version, such as `fgvm godot --query "4.6 mono"` or the exact installed version `fgvm godot --query "4.6.2-stable-standard"`.
+    - Optionally, pass in arguments to the Godot executable directly using the `--args` parameter, such as `fgvm godot --query "4.6 mono" --args "--headless"` or `fgvm godot --args "--version"`. Multiple arguments should be
       passed as a quoted string, such as `--args "--headless -v"`.
     - Use `--project` or `-P` with explicit arguments to add the detected project path, such as `fgvm godot -P --args "--dump-extension-api --quit"`.
     - Use the `--attached` or `-a` flag to force Godot connected to the terminal for output; by default, Godot runs in detached mode and will launch in a separate instance. Using an argument detection
@@ -239,7 +240,7 @@ but here is a detailed summary of the available commands:
 - `fgvm local [<...strings>]` sets the Godot version for the current project by creating or updating a `.fgvm-version` file in the current directory. If no `.fgvm-version` file
   exists and no arguments are provided, it will automatically detect the project version from `project.godot` and install the most recent compatible version if not already installed.
     - If a list of arguments are provided, it will find the best matching version based on the query (including runtime preferences like `mono` or `standard`) and install it if necessary.
-- `fgvm which` [`--json`] displays the executable path for the effective Godot installation in the current directory: `.fgvm-version` first, then the global default. Use `--json` to output in JSON format.
+- `fgvm which` `[<...strings>]` displays the executable path for the effective Godot installation in the current directory: `.fgvm-version` first, then the global default. If query arguments are supplied, it resolves them against installed versions instead. The command prints only the executable path on success and exits non-zero when no version can be resolved.
 - `fgvm remove` or `fgvm r` `[<...strings>]` prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if you remove a specific version, like
@@ -400,11 +401,13 @@ See: https://github.com/patricktcoakley/fgvm
 
 ## Roadmap
 
-- Possibly consider adding multi-select and multi-query to installations so that you could bulk-install multiple versions.
-- I currently have [fgvmup](#fgvmup-currently-windows-only) for Windows, and it would make sense to port that script to bash for macOS and Linux support, allowing users to more easily install fgvm
-  without having to rely on a package manager, but at the cost of extra maintenance and overhead.
+### Planned Features For The Current Version
 
-## Migrating from gdvm
+- Add support for export templates
+- Add a command for releasing builds locally, including compressions for web exports
+- Create a GitHub Action to simplify using `fgvm` in CI
+
+## Migrating from the original gdvm
 
 If you were using this project in the past then you'll know it used to be called `gdvm`. Prior to this project's creation and after, there have been several other projects with similar goals using the same name. 
 

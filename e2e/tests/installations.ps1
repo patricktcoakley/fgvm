@@ -27,11 +27,53 @@ Suite "installed versions" {
     Test "which reports the seeded default executable" {
         $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
 
-        $which = Run "which" "--json"
+        $which = Run "which"
 
-        Assert.ExitCode 0 $which "fgvm which --json"
-        $view = Json $which.Stdout
-        Assert.True $view.hasVersion
-        Assert.Equal ([System.IO.Path]::GetFullPath($seeded.ExecutablePath)) ([System.IO.Path]::GetFullPath($view.executablePath))
+        Assert.ExitCode 0 $which "fgvm which"
+        Assert.Equal ([System.IO.Path]::GetFullPath($seeded.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
+        Assert.Empty $which.Stderr
+    }
+
+    Test "which resolves a fuzzy query when the runtime is installed" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        Add-FixtureInstallation "4.5-stable" | Out-Null
+        $mono = Add-FixtureInstallation "4.6.2-stable" "mono"
+
+        $which = Run "which" "4.6" "mono"
+
+        Assert.ExitCode 0 $which "fgvm which 4.6 mono"
+        Assert.Equal ([System.IO.Path]::GetFullPath($mono.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
+        Assert.Empty $which.Stderr
+    }
+
+    Test "which fails a fuzzy query when the runtime is not installed" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+
+        $which = Run "which" "4.6" "mono"
+
+        Assert.ExitCode 1 $which "fgvm which 4.6 mono"
+        Assert.Empty $which.Stdout
+        Assert.Contains "No installed Godot version found matching '4.6 mono'." $which.Stderr
+    }
+
+    Test "which resolves an exact installed version" {
+        $standard = Add-FixtureInstallation "4.6.2-stable" -Default
+        Add-FixtureInstallation "4.6.2-stable" "mono" | Out-Null
+
+        $which = Run "which" "4.6.2-stable-standard"
+
+        Assert.ExitCode 0 $which "fgvm which 4.6.2-stable-standard"
+        Assert.Equal ([System.IO.Path]::GetFullPath($standard.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
+        Assert.Empty $which.Stderr
+    }
+
+    Test "which fails an exact query when the version is not installed" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+
+        $which = Run "which" "4.6.2-stable-mono"
+
+        Assert.ExitCode 1 $which "fgvm which 4.6.2-stable-mono"
+        Assert.Empty $which.Stdout
+        Assert.Contains "No installed Godot version found matching '4.6.2-stable-mono'." $which.Stderr
     }
 }

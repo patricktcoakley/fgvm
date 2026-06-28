@@ -304,6 +304,77 @@ public class VersionManagementServiceTests
     }
 
     [Fact]
+    public async Task ResolveInstalledVersionAsync_WithQuery_ReturnsMatchingInstalledVersion()
+    {
+        var query = new[] { "4.6", "mono" };
+        const string matchedVersion = "4.6.2-stable-mono";
+        var installedVersions = new[] { "4.6.2-stable-standard", matchedVersion, "4.5-stable-standard" };
+        var installedReleaseNames = new[] { "4.6.2-stable", "4.5-stable" };
+        var matchedRelease = CreateMockRelease(matchedVersion);
+
+        SetupInstallations(installedVersions);
+        SetupReleaseParsing(installedVersions);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(
+                query,
+                It.Is<string[]>(versions => versions.SequenceEqual(installedReleaseNames))))
+            .Returns(QuerySuccess(matchedRelease));
+
+        var result = await _service.ResolveInstalledVersionAsync(query);
+
+        var success = Assert.IsType<Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success>(result);
+        Assert.Equal(matchedVersion, success.Value.VersionName);
+        Assert.False(success.Value.IsProjectVersion);
+        Assert.Contains(matchedVersion, success.Value.ExecutablePath);
+        Assert.Contains(matchedVersion, success.Value.WorkingDirectory);
+        Assert.Empty(_console.Output);
+    }
+
+    [Fact]
+    public async Task ResolveInstalledVersionAsync_WithExactInstalledVersion_ReturnsExactMatch()
+    {
+        var query = new[] { "4.6.2-stable-standard" };
+        var installedVersions = new[] { "4.6.2-stable-standard", "4.6.2-stable-mono" };
+
+        SetupInstallations(installedVersions);
+        SetupReleaseParsing(installedVersions);
+
+        var result = await _service.ResolveInstalledVersionAsync(query);
+
+        var success = Assert.IsType<Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success>(result);
+        Assert.Equal("4.6.2-stable-standard", success.Value.VersionName);
+        Assert.Contains("4.6.2-stable-standard", success.Value.ExecutablePath);
+        _mockReleaseManager.Verify(
+            x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveInstalledVersionAsync_WhenQueryDoesNotMatch_ReturnsNotFoundWithoutInstalling()
+    {
+        var query = new[] { "9.9" };
+        var installedVersions = new[] { "4.6.2-stable-standard" };
+        var installedReleaseNames = new[] { "4.6.2-stable" };
+
+        SetupInstallations(installedVersions);
+        SetupReleaseParsing(installedVersions);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(
+                query,
+                It.Is<string[]>(versions => versions.SequenceEqual(installedReleaseNames))))
+            .Returns(QueryNotFound("9.9"));
+
+        var result = await _service.ResolveInstalledVersionAsync(query);
+
+        var failure = Assert.IsType<Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure>(result);
+        var notFound = Assert.IsType<VersionResolutionError.NotFound>(failure.Error);
+        Assert.Equal("9.9", notFound.Version);
+        Assert.Empty(_console.Output);
+        _mockInstallationService.Verify(
+            x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public void CreateOrUpdateVersionFile_CallsProjectManager()
     {
         const string version = "4.3.0-stable";
@@ -1009,6 +1080,16 @@ public class VersionManagementServiceTests
 
             _mockInstallationRegistry.Setup(x => x.SetDefault(installation.Key))
                 .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
+        }
+    }
+
+    private void SetupReleaseParsing(IEnumerable<string> releaseNames)
+    {
+        foreach (var releaseName in releaseNames)
+        {
+            var release = CreateMockRelease(releaseName);
+            _mockReleaseManager.Setup(x => x.CreateRelease(releaseName))
+                .Returns(ReleaseSuccess(release));
         }
     }
 

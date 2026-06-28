@@ -106,6 +106,61 @@ public sealed class GodotCommandTests
     }
 
     [Fact]
+    public async Task Launch_WithQuery_UsesResolvedInstalledVersion()
+    {
+        var query = new[] { "4.5-stable-standard" };
+        var queriedResolution = new VersionResolutionOutcome.Found(
+            "/fgvm/installations/4.5-stable-standard/linux.x86_64/Godot",
+            "/fgvm/installations/4.5-stable-standard/linux.x86_64",
+            "4.5-stable-standard",
+            false,
+            "4.5-stable-standard@linux.x86_64");
+        GodotLaunchRequest? captured = null;
+
+        _versionService.Setup(x => x.ResolveInstalledVersionAsync(
+                It.Is<string[]>(value => value.SequenceEqual(query)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(queriedResolution));
+        _launcher.Setup(x => x.LaunchAsync(
+                It.IsAny<GodotLaunchRequest>(),
+                It.IsAny<Action<GodotLaunchOutput>?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<GodotLaunchRequest, Action<GodotLaunchOutput>?, CancellationToken>((request, _, _) => captured = request)
+            .ReturnsAsync(new Result<GodotLaunchOutcome, GodotLaunchError>.Success(new GodotLaunchOutcome.Exited(0)));
+
+        await CreateCommand().Launch(attached: true, args: "--headless --quit", query: "4.5-stable-standard");
+
+        Assert.NotNull(captured);
+        Assert.Equal("--headless --quit", captured.Arguments);
+        Assert.Equal("4.5-stable-standard", captured.Target.VersionName);
+        Assert.Equal(queriedResolution.ExecutablePath, captured.Target.ExecutablePath);
+        Assert.Equal(queriedResolution.WorkingDirectory, captured.Target.WorkingDirectory);
+        _versionService.Verify(x => x.ResolveVersionForLaunchExplicitAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        _registry.Verify(x => x.RecordLaunch("4.5-stable-standard@linux.x86_64", null), Times.Once);
+    }
+
+    [Fact]
+    public async Task Launch_InteractiveFlagTakesPrecedenceOverQuery()
+    {
+        GodotLaunchRequest? captured = null;
+
+        _launcher.Setup(x => x.LaunchAsync(
+                It.IsAny<GodotLaunchRequest>(),
+                It.IsAny<Action<GodotLaunchOutput>?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<GodotLaunchRequest, Action<GodotLaunchOutput>?, CancellationToken>((request, _, _) => captured = request)
+            .ReturnsAsync(new Result<GodotLaunchOutcome, GodotLaunchError>.Success(new GodotLaunchOutcome.Exited(0)));
+
+        await CreateCommand().Launch(interactive: true, attached: true, query: "4.5");
+
+        Assert.NotNull(captured);
+        Assert.Equal(_resolution.VersionName, captured.Target.VersionName);
+        _versionService.Verify(x => x.ResolveVersionForLaunchExplicitAsync(true, It.IsAny<CancellationToken>()), Times.Once);
+        _versionService.Verify(x => x.ResolveInstalledVersionAsync(It.IsAny<string[]>(), It.IsAny<CancellationToken>()), Times.Never);
+        _registry.Verify(x => x.RecordLaunch(InstallationKey, null), Times.Once);
+    }
+
+    [Fact]
     public async Task Launch_NonZeroExit_PropagatesGodotExitCode()
     {
         _launcher.Setup(x => x.LaunchAsync(

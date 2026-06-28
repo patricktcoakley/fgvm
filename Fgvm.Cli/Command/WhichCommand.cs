@@ -1,7 +1,7 @@
-using System.Text.Json.Serialization;
-using Fgvm.Cli.Services;
+using ConsoleAppFramework;
 using Fgvm.Cli.Error;
-using Fgvm.Cli.ViewModels;
+using Fgvm.Cli.Services;
+using Fgvm.Error;
 using Fgvm.Types;
 using Spectre.Console;
 
@@ -15,58 +15,38 @@ public sealed class WhichCommand(
     /// <summary>
     ///     Show the path to the effective Godot version for the current directory.
     /// </summary>
-    public async Task Which(bool json = false, CancellationToken cancellationToken = default)
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="query">Optional installed version query arguments.</param>
+    public async Task Which(CancellationToken cancellationToken = default,
+        [Argument] params string[] query
+    )
     {
-        var view = WhichView.Create(await versionManagementService.ResolveEffectiveVersionAsync(cancellationToken));
+        var result = query.Length == 0
+            ? await versionManagementService.ResolveEffectiveVersionAsync(cancellationToken)
+            : await versionManagementService.ResolveInstalledVersionAsync(query, cancellationToken);
 
-        if (json)
+        switch (result)
         {
-            console.Profile.Out.Writer.WriteLine(view.ToJson());
-            return;
+            case Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(var found):
+                console.Profile.Out.Writer.WriteLine(found.ExecutablePath);
+                return;
+            case Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(var error):
+                Console.Error.WriteLine(error switch
+                {
+                    VersionResolutionError.NotFound when query.Length > 0 =>
+                        $"No installed Godot version found matching '{string.Join(" ", query)}'.",
+                    VersionResolutionError.NotFound =>
+                        "No Godot version is currently set.",
+                    VersionResolutionError.InvalidVersion =>
+                        "Current Godot version is invalid.",
+                    VersionResolutionError.Failed failed =>
+                        failed.Reason,
+                    _ => "Unknown version resolution error."
+                });
+                throw new ProcessExitCodeException(ExitCodes.GeneralError);
+            default:
+                Console.Error.WriteLine("Unknown version resolution error.");
+                throw new ProcessExitCodeException(ExitCodes.GeneralError);
         }
-
-        console.MarkupLine(view.ToDisplay());
-    }
-}
-
-internal readonly record struct WhichView : IJsonView<WhichView>
-{
-    private WhichView(bool hasVersion, string? executablePath, string? message)
-    {
-        HasVersion = hasVersion;
-        ExecutablePath = executablePath;
-        Message = message;
-    }
-
-    [JsonPropertyName("hasVersion")]
-    public bool HasVersion { get; init; }
-
-    [JsonPropertyName("executablePath")]
-    public string? ExecutablePath { get; init; }
-
-    [JsonPropertyName("message")]
-    public string? Message { get; init; }
-
-    public static WhichView Create(Result<VersionResolutionOutcome.Found, VersionResolutionError> result) => result switch
-    {
-        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(var found) =>
-            new WhichView(true, found.ExecutablePath, null),
-        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(VersionResolutionError.NotFound) =>
-            new WhichView(false, null, "No Godot version is currently set."),
-        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(VersionResolutionError.InvalidVersion) =>
-            new WhichView(false, null, "Current Godot version is invalid."),
-        Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(VersionResolutionError.Failed failed) =>
-            new WhichView(false, null, failed.Reason),
-        _ => new WhichView(false, null, "Unknown version resolution error.")
-    };
-
-    public string ToDisplay()
-    {
-        if (HasVersion && ExecutablePath is not null)
-        {
-            return Messages.CurrentVersionSetTo(ExecutablePath);
-        }
-
-        return Message is not null ? $"[red]{Message}[/]" : Messages.UnknownSymlinkError;
     }
 }
