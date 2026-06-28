@@ -56,6 +56,18 @@ public interface IVersionManagementService
     );
 
     /// <summary>
+    ///     Resolves a query against installed Godot versions without side effects.
+    ///     When no query is supplied, this returns the effective project/default version.
+    /// </summary>
+    /// <param name="query">Installed version query arguments.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The resolved installed version, or a typed resolution error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when version resolution is canceled.</exception>
+    Task<Result<VersionResolutionOutcome.Found, VersionResolutionError>> ResolveInstalledVersionAsync(string[] query,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     ///     Sets the global Godot version in the installation registry and refreshes launch artifacts.
     /// </summary>
     /// <param name="query">Version query to search for</param>
@@ -168,7 +180,7 @@ public class VersionManagementService(
         }
         catch (Exception e)
         {
-            logger.LogError(e, $"Error resolving version for launch");
+            logger.LogError(e, "Error resolving version for launch");
             console.MarkupLine(Messages.ErrorResolvingVersion);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Error resolving version for launch: {e.Message}"));
@@ -207,7 +219,7 @@ public class VersionManagementService(
         }
         catch (Exception e)
         {
-            logger.LogError(e, $"Error resolving version for launch");
+            logger.LogError(e, "Error resolving version for launch");
             console.MarkupLine(Messages.ErrorResolvingVersion);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Error resolving explicit version for launch: {e.Message}"));
@@ -249,10 +261,71 @@ public class VersionManagementService(
         }
         catch (Exception e)
         {
-            logger.LogError(e, $"Error resolving effective version");
+            logger.LogError(e, "Error resolving effective version");
             return Task.FromResult<Result<VersionResolutionOutcome.Found, VersionResolutionError>>(
                 new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
                     new VersionResolutionError.Failed($"Error resolving effective version: {e.Message}")));
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<VersionResolutionOutcome.Found, VersionResolutionError>> ResolveInstalledVersionAsync(string[] query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (query.Length == 0)
+            {
+                return await ResolveEffectiveVersionAsync(cancellationToken);
+            }
+
+            var installed = ListInstallations().ToArray();
+            var queryText = string.Join(" ", query);
+            var exactInstalledMatch = query.Length == 1
+                ? installed.FirstOrDefault(version => string.Equals(version, query[0], StringComparison.OrdinalIgnoreCase))
+                : null;
+
+            if (exactInstalledMatch is not null)
+            {
+                return CreateQuietVersionResolution(exactInstalledMatch, false);
+            }
+
+            var installedReleaseNames = installed
+                .Select(version => releaseManager.CreateRelease(version))
+                .OfType<Result<Release, ReleaseParseError>.Success>()
+                .Select(success => success.Value.ReleaseName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return releaseManager.ResolveReleaseQuery(query, installedReleaseNames) switch
+            {
+                Result<Release, QueryError>.Success(var release) when installed.Contains(
+                        release.ReleaseNameWithRuntime,
+                        StringComparer.OrdinalIgnoreCase) =>
+                    CreateQuietVersionResolution(release.ReleaseNameWithRuntime, false),
+                Result<Release, QueryError>.Success =>
+                    new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                        new VersionResolutionError.NotFound(queryText)),
+                Result<Release, QueryError>.Failure(QueryError.NotFound notFound) =>
+                    new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                        new VersionResolutionError.NotFound(notFound.Query)),
+                Result<Release, QueryError>.Failure(var error) =>
+                    new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                        new VersionResolutionError.Failed(GetQueryErrorMessage(error, query))),
+                _ => throw new InvalidOperationException("Unexpected Result type")
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "Error resolving installed version");
+            return new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(
+                new VersionResolutionError.Failed($"Error resolving installed version: {e.Message}"));
         }
     }
 
@@ -267,7 +340,7 @@ public class VersionManagementService(
             var installed = ListInstallations().ToArray();
             if (installed.Length == 0)
             {
-                logger.LogWarning($"Tried to set a version when there were none installed.");
+                logger.LogWarning("Tried to set a version when there were none installed.");
                 throw new InvalidOperationException(Messages.NoInstallationsFound);
             }
 
@@ -572,7 +645,7 @@ public class VersionManagementService(
         switch (installationRegistry.GetDefault())
         {
             case Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound):
-                logger.LogError($"Tried to launch when no version is set.");
+                logger.LogError("Tried to launch when no version is set.");
                 console.MarkupLine(Messages.NoCurrentVersionSet);
 
                 return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
@@ -758,7 +831,7 @@ public class VersionManagementService(
 
         if (installed.Length == 0)
         {
-            logger.LogWarning($"No versions installed and no `.fgvm-version` file found.");
+            logger.LogWarning("No versions installed and no `.fgvm-version` file found.");
             throw new InvalidOperationException(Messages.NoInstallationsAndNoVersionFile);
         }
 

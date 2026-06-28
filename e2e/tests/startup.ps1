@@ -68,8 +68,9 @@ Suite "startup" {
 
         Assert.ExitCode 0 $list "fgvm list"
         Assert.Contains "No installations found" $list.Stdout
-        Assert.ExitCode 0 $which "fgvm which"
-        Assert.Contains "No Godot version" $which.Stdout
+        Assert.ExitCode 1 $which "fgvm which"
+        Assert.Empty $which.Stdout
+        Assert.Contains "No Godot version" $which.Stderr
     }
 
     Test "creates fgvm directories in FGVM_HOME" {
@@ -82,14 +83,11 @@ Suite "startup" {
     }
 
     Test "which reports no selected version in a fresh home" {
-        $which = Run "which" "--json"
+        $which = Run "which"
 
-        Assert.ExitCode 0 $which "fgvm which --json"
-        $view = Json $which.Stdout
-
-        Assert.False $view.hasVersion "A fresh FGVM_HOME should not have a selected Godot version."
-        Assert.Equal $null $view.executablePath
-        Assert.Contains "No Godot version" $view.message
+        Assert.ExitCode 1 $which "fgvm which"
+        Assert.Empty $which.Stdout
+        Assert.Contains "No Godot version" $which.Stderr
     }
 
     Test "uses an overridden FGVM_HOME without creating the default root" {

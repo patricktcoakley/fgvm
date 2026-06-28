@@ -8,7 +8,6 @@ using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
-
 namespace Fgvm.Cli.Command;
 
 public sealed class GodotCommand(
@@ -28,6 +27,7 @@ public sealed class GodotCommand(
     /// <param name="attached">-a, Launches Godot in attached mode, keeping it connected to the terminal for output.</param>
     /// <param name="project">-P, Adds the detected project path to explicit Godot arguments.</param>
     /// <param name="args">Arguments to pass to the Godot executable (e.g., --args "--version --verbose").</param>
+    /// <param name="query">Query to resolve a specific installed version (e.g., --query "4.6 mono").</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <exception cref="InvalidOperationException">Thrown when version resolution or project-file lookup cannot continue.</exception>
     /// <exception cref="OperationCanceledException">Thrown when launch is canceled.</exception>
@@ -36,6 +36,7 @@ public sealed class GodotCommand(
         bool attached = false,
         bool project = false,
         string args = "",
+        string query = "",
         CancellationToken cancellationToken = default
     )
     {
@@ -46,9 +47,24 @@ public sealed class GodotCommand(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var versionQuery = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-            // Use the version management service to resolve the appropriate version (explicit .fgvm-version only)
-            versionResult = await versionManagementService.ResolveVersionForLaunchExplicitAsync(interactive, cancellationToken);
+            // Interactive launch always prompts from installed versions, even when a query is supplied.
+            if (interactive || versionQuery.Length == 0)
+            {
+                versionResult = await versionManagementService.ResolveVersionForLaunchExplicitAsync(interactive, cancellationToken);
+            }
+            else
+            {
+                versionResult = await versionManagementService.ResolveInstalledVersionAsync(versionQuery, cancellationToken) switch
+                {
+                    Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(var installedVersion) =>
+                        new Result<VersionResolutionOutcome, VersionResolutionError>.Success(installedVersion),
+                    Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure(var resolutionError) =>
+                        new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(resolutionError),
+                    _ => throw new InvalidOperationException("Unexpected Result type")
+                };
+            }
 
             // Handle interactive selection if required
             if (versionResult is Result<VersionResolutionOutcome, VersionResolutionError>.Success
@@ -149,7 +165,9 @@ public sealed class GodotCommand(
                     if (exitCode != 0)
                     {
                         logger.LogError(
-                            $"Godot exited with code {exitCode} and stderr: {error.ToString().EscapeMarkup()}");
+                            "Godot exited with code {ExitCode} and stderr: {StandardError}",
+                            exitCode,
+                            error.ToString());
 
                         console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
                         throw new ProcessExitCodeException(exitCode);
@@ -162,7 +180,7 @@ public sealed class GodotCommand(
         }
         catch (OperationCanceledException)
         {
-            logger.LogError($"User cancelled running Godot.");
+            logger.LogError("User cancelled running Godot.");
             console.MarkupLine(Messages.UserCancelled("godot"));
 
             throw;
@@ -177,7 +195,10 @@ public sealed class GodotCommand(
             var workingDir = launchTarget?.WorkingDirectory ?? "unknown";
 
             logger.LogError(
-                $"Error running Godot at path {execPath} and working directory {workingDir} with the following error: {e.Message}");
+                e,
+                "Error running Godot at path {ExecutablePath} and working directory {WorkingDirectory}",
+                execPath,
+                workingDir);
 
             console.MarkupLine(
                 Messages.SomethingWentWrong("when trying to launch Godot.")

@@ -75,13 +75,13 @@ public sealed class InstallCommand(
         }
         catch (TaskCanceledException)
         {
-            logger.LogError($"User cancelled installation.");
+            logger.LogError("User cancelled installation.");
             console.MarkupLine(Messages.UserCancelled("installation"));
             throw;
         }
         catch (Exception e)
         {
-            logger.LogError(e, $"Error downloading and installing Godot.");
+            logger.LogError(e, "Error downloading and installing Godot.");
             console.MarkupLine(
                 Messages.SomethingWentWrong($"when trying to install Godot: {e.Message}", pathService)
             );

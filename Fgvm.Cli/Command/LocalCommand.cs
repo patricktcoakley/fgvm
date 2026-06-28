@@ -31,7 +31,7 @@ public sealed class LocalCommand(IVersionManagementService versionManagementServ
         }
         catch (TaskCanceledException)
         {
-            logger.LogError($"User cancelled setting local version.");
+            logger.LogError("User cancelled setting local version.");
             console.MarkupLine(Messages.UserCancelled("setting local version"));
             throw;
         }

@@ -111,7 +111,7 @@ public sealed class LogsCommand(
         }
         catch (TaskCanceledException)
         {
-            logger.LogError($"User cancelled reading the logs.");
+            logger.LogError("User cancelled reading the logs.");
             console.MarkupLine(Messages.UserCancelled("reading logs"));
 
             throw;

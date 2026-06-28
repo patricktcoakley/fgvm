@@ -27,7 +27,7 @@ public sealed class SetCommand(IVersionManagementService versionManagementServic
         }
         catch (TaskCanceledException)
         {
-            logger.LogError($"User cancelled setting version.");
+            logger.LogError("User cancelled setting version.");
             console.MarkupLine(Messages.UserCancelled("setting version"));
             throw;
         }

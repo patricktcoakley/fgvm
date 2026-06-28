@@ -28,6 +28,24 @@ Suite "godot launch" {
         Assert.NotContains $stable.RelativePath $compactOutput
     }
 
+    Test "launches a queried installed version instead of the default" {
+        $stable = Add-FixtureInstallation "4.6.2-stable" -Default
+        $older = Add-FixtureInstallation "4.5-stable"
+        $invocationPath = Join-Path $Context.WorkPath "queried-launch.json"
+
+        $godot = Run -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } `
+            -Arguments @("godot", "--attached", "--query", "4.5-stable-standard", "--args", "alpha beta")
+
+        Assert.ExitCode 0 $godot "fgvm godot --query 4.5-stable-standard --args `"alpha beta`""
+        Assert.Contains "Mock Godot launched with: alpha beta" $godot.Stdout
+
+        File.WaitFor $invocationPath
+        $invocation = Read-MockInvocation $invocationPath
+        Assert.Contains $older.RelativePath $invocation.WorkingDirectory
+        Assert.NotContains $stable.RelativePath $invocation.WorkingDirectory
+        Assert.Equal @("alpha", "beta") @($invocation.Arguments)
+    }
+
     Test "forwards arguments to mock godot" {
         Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
 
@@ -90,7 +108,8 @@ Suite "godot launch" {
         $godot = Run "godot" "--args" "--windowed"
 
         Assert.ExitCode 1 $godot "fgvm launch with a missing Godot executable"
-        Assert.Contains "Something went wrong when trying to launch Godot" $godot.Stdout
+        $normalizedOutput = ($godot.Stdout -replace "\s+", " ").Trim()
+        Assert.Contains "Something went wrong when trying to launch Godot" $normalizedOutput
         $entry = (Manifest.From $Context.InstallationsPath)["installations"][$seeded.Key]
         Assert.Equal $null $entry["lastLaunchedAt"]
     }

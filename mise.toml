@@ -82,6 +82,11 @@ description = "Build all projects in release configuration."
 dir = "."
 run = "dotnet build --nologo --configuration Release"
 
+[tasks."build:analyze"]
+description = "Build all projects with Roslyn analyzers enabled and logging template diagnostics as errors."
+dir = "."
+run = "dotnet build --nologo --configuration Release Fgvm.slnx /p:RunAnalyzersDuringBuild=true /p:EnableNETAnalyzers=true /p:AnalysisLevel=latest-recommended -warnaserror:CA2254"
+
 [tasks.restore]
 description = "Restore all NuGet packages."
 dir = "."
@@ -95,7 +100,12 @@ run = "dotnet clean"
 [tasks.publish]
 description = "Publish the CLI (Release configuration, default RID)."
 dir = "."
-run = "dotnet publish Fgvm.Cli/Fgvm.Cli.csproj -c Release"
+run = "dotnet publish Fgvm.Cli/Fgvm.Cli.csproj -c Release -o ./.bin"
+
+[tasks."local:run"]
+description = "Publish and run the Release configuration."
+run = "./.bin/fgvm"
+depends = ["publish"]
 
 [tasks.versionize]
 description = "Update versions and changelog using Versionize."

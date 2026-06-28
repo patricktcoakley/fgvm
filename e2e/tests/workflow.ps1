@@ -21,16 +21,14 @@ Suite "workflow" {
         $older = Add-FixtureInstallation "4.5-stable" -Default
 
         $set = Run "set" "4.6"
-        $which = Run "which" "--json"
+        $which = Run "which"
 
         Assert.ExitCode 0 $set "fgvm set 4.6"
         Assert.Contains "4.6.2-stable-standard" $set.Stdout
-        Assert.ExitCode 0 $which "fgvm which --json"
+        Assert.ExitCode 0 $which "fgvm which"
 
-        $selected = Json $which.Stdout
-        Assert.True $selected.hasVersion
-        Assert.Equal ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
-        Assert.NotEqual ([System.IO.Path]::GetFullPath($older.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
+        Assert.Equal ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
+        Assert.NotEqual ([System.IO.Path]::GetFullPath($older.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
     }
 
     Test "selects a seeded mono runtime" {
@@ -38,13 +36,12 @@ Suite "workflow" {
         $mono = Add-FixtureInstallation "4.6.2-stable" "mono"
 
         $set = Run "set" "4.6" "mono"
-        $which = Run "which" "--json"
+        $which = Run "which"
 
         Assert.ExitCode 0 $set "fgvm set 4.6 mono"
-        Assert.ExitCode 0 $which "fgvm which --json"
-        $selected = Json $which.Stdout
-        Assert.Equal ([System.IO.Path]::GetFullPath($mono.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
-        Assert.NotEqual ([System.IO.Path]::GetFullPath($standard.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
+        Assert.ExitCode 0 $which "fgvm which"
+        Assert.Equal ([System.IO.Path]::GetFullPath($mono.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
+        Assert.NotEqual ([System.IO.Path]::GetFullPath($standard.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
     }
 
     Test "which prefers a local version over the global default" {
@@ -54,22 +51,20 @@ Suite "workflow" {
         New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $projectPath ".fgvm-version") -Value $older.Name -NoNewline
 
-        $which = Run -Cwd $projectPath "which" "--json"
+        $which = Run -Cwd $projectPath "which"
 
-        Assert.ExitCode 0 $which "fgvm which --json with local version"
-        $selected = Json $which.Stdout
-        Assert.True $selected.hasVersion
-        Assert.Equal ([System.IO.Path]::GetFullPath($older.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
-        Assert.NotEqual ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath($selected.executablePath))
+        Assert.ExitCode 0 $which "fgvm which with local version"
+        Assert.Equal ([System.IO.Path]::GetFullPath($older.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
+        Assert.NotEqual ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
     }
 
     Test "keeps the current default when a set query does not match" {
         $stable = Add-FixtureInstallation "4.6.2-stable" -Default
 
         $set = Run "set" "9.999"
-        $which = Run "which" "--json"
+        $which = Run "which"
 
         Assert.ExitCode 1 $set "fgvm set 9.999"
-        Assert.Equal ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath((Json $which.Stdout).executablePath))
+        Assert.Equal ([System.IO.Path]::GetFullPath($stable.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
     }
 }

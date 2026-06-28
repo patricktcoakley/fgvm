@@ -52,7 +52,7 @@ public sealed class SearchCommand(
                 return;
 
             case Result<IEnumerable<string>, NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseNames)):
-                logger.LogWarning($"Failed to refresh release cache. Showing cached releases.");
+                logger.LogWarning("Failed to refresh release cache. Showing cached releases.");
                 if (!json)
                 {
                     console.MarkupLine(Messages.ReleaseCacheRefreshFailed);

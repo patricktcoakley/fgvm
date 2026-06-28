@@ -97,3 +97,4 @@ e2e/.cli/
 e2e/.fixtures/
 .fgvm-*-cli/
 .fgvm-*-fixtures/
+.bin
