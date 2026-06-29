@@ -3,6 +3,14 @@ using Spectre.Console;
 
 namespace Fgvm.Cli.Command;
 
+/// <summary>
+///     Prints grouped template-command help as a ConsoleAppFramework workaround.
+/// </summary>
+/// <remarks>
+///     Template subcommands are registered as hidden commands so root help only shows `template, t`.
+///     ConsoleAppFramework does not generate the grouped nested help shape we want for that command,
+///     so this command owns the template help text and the pre-dispatch `template -h|--help` path.
+/// </remarks>
 public sealed class TemplateHelpCommand(IAnsiConsole console)
 {
     private const string HelpText =
@@ -19,7 +27,7 @@ public sealed class TemplateHelpCommand(IAnsiConsole console)
 
     public static bool TryWriteHelp(string[] args, TextWriter writer)
     {
-        if (args is not [("template" or "t")] and not [("template" or "t"), "--help"])
+        if (args is not [("template" or "t")] and not [("template" or "t"), ("-h" or "--help")])
         {
             return false;
         }

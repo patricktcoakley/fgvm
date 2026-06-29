@@ -39,7 +39,8 @@ public sealed class TemplateCommand(
                     throw new ArgumentException(invalid.Message);
                 case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.NotFound notFound):
                     throw new ArgumentException(Messages.TemplateInstallationNotFound(notFound.Version));
-                case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.ChecksumMismatch mismatch):
+                case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.ChecksumMismatch
+                    mismatch):
                     throw new SecurityException(Messages.ChecksumMismatch(mismatch.FileName, mismatch.Expected, mismatch.Actual));
                 case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.Failed failed):
                     throw new InvalidOperationException(Messages.TemplateInstallationFailed(failed.Reason));

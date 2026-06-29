@@ -5,6 +5,7 @@ Suite "export templates" {
         $rootHelp = Run "--help"
         $templateHelp = Run "template"
         $templateFlagHelp = Run "template" "--help"
+        $templateShortFlagHelp = Run "template" "-h"
 
         Assert.ExitCode 0 $rootHelp "fgvm --help"
         Assert.Contains "template, t" $rootHelp.Stdout "Root help should show one template command group."
@@ -18,6 +19,9 @@ Suite "export templates" {
 
         Assert.ExitCode 0 $templateFlagHelp "fgvm template --help"
         Assert.Contains "Usage: fgvm template <COMMAND>" $templateFlagHelp.Stdout
+
+        Assert.ExitCode 0 $templateShortFlagHelp "fgvm template -h"
+        Assert.Contains "Usage: fgvm template <COMMAND>" $templateShortFlagHelp.Stdout
     }
 
     Test "installs lists and removes fixture export templates" {

@@ -68,7 +68,7 @@ public sealed class TemplateRegistry(
         {
             Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success(var installations)
                 when installations.FirstOrDefault(installation =>
-                    string.Equals(installation.ReleaseNameWithRuntime, releaseNameWithRuntime, StringComparison.OrdinalIgnoreCase)) is
+                        string.Equals(installation.ReleaseNameWithRuntime, releaseNameWithRuntime, StringComparison.OrdinalIgnoreCase)) is
                     { } installation =>
                 new Result<TemplateInstallation, TemplateRegistryError>.Success(installation),
             Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success =>

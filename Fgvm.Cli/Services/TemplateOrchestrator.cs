@@ -161,7 +161,8 @@ public sealed class TemplateOrchestrator(
         if (installedReleaseNames.Length == 0)
         {
             return new Result<Release, TemplateInstallationError>.Failure(
-                new TemplateInstallationError.Failed("No installed Godot versions found. Install a Godot version first with `fgvm install <version>`."));
+                new TemplateInstallationError.Failed(
+                    "No installed Godot versions found. Install a Godot version first with `fgvm install <version>`."));
         }
 
         if (query.Length == 0)
@@ -188,7 +189,7 @@ public sealed class TemplateOrchestrator(
                 new Result<Release, TemplateInstallationError>.Success(release),
             Result<Release, ReleaseParseError>.Failure =>
                 new Result<Release, TemplateInstallationError>.Failure(
-                new TemplateInstallationError.InvalidQuery($"Invalid Godot version: {releaseNameWithRuntime}")),
+                    new TemplateInstallationError.InvalidQuery($"Invalid Godot version: {releaseNameWithRuntime}")),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
 

@@ -295,7 +295,7 @@ public sealed class DownloadClient : IDownloadClient
             ? slug[..^4]
             : slug.EndsWith(".tpz", StringComparison.OrdinalIgnoreCase)
                 ? slug[..^4]
-            : slug;
+                : slug;
 
     private static string Escape(string value) =>
         Uri.EscapeDataString(value);
