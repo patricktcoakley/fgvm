@@ -17,6 +17,7 @@ either by putting it somewhere on your `PATH` or, preferably, using a [package m
 
 - **Version Management**: Easily manage multiple Godot installations side-by-side, allowing you to try out the latest versions or keep older versions for compatibility testing, including Godot 1.0 to
   the latest development builds, including both standard and .NET builds.
+- **Export Template Management**: Install, list, and remove Godot export templates for locally installed Godot versions.
 - **Hybrid CLI/TUI Interface**: Simple command-line interface with interactive TUI prompts for easy navigation and selection when you don't specify arguments.
 - **Flexible Query System**: Powerful query system for finding and installing versions using keywords like `latest`, `4 mono`, `3.3 rc`, etc.
 - **Project Aware**: Lock a project to a specific Godot version using a `.fgvm-version` file in the project directory. `fgvm local` can automatically detect a compatible version from `project.godot`
@@ -264,6 +265,12 @@ fgvm godot
 fgvm downloads and installs Godot into folders inside of `~/fgvm/` for macOS and Linux, and `$env:USERPROFILE\fgvm\` for Windows. You can customize this location using the `FGVM_HOME` environment variable (see [Environment Variables](#environment-variables)).
 New installations are stored under `installations/<VERSION>-<TYPE>-<RUNTIME>/<TARGET>/`, and fgvm tracks them in `installations.json`. For example, a 4.3 stable .NET install on Linux x64 is tracked as `installations/4.3-stable-mono/linux.x86_64/`.
 
+To install export templates alongside the editor, add `--with-templates`:
+
+```shell
+fgvm install 4.4.1 --with-templates
+```
+
 By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root symlink named `Godot` on Linux, `Godot.app` on macOS, or a `Godot.url` shortcut on Windows for GUI launch compatibility.
 You can run `fgvm godot -i` to pick another installation to launch, or use `fgvm set` to pick the version you want to launch by default.
 
@@ -283,9 +290,10 @@ but here is a detailed summary of the available commands:
 > **Note:** Many commands support short-form aliases for faster usage (e.g., `fgvm i` for `fgvm install`, `fgvm g` for `fgvm godot`).
 
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
-- `fgvm install` or `fgvm i` `[<...strings>]` [`--default|-D`] will prompt the user to install a version if no arguments are supplied, or will
+- `fgvm install` or `fgvm i` `[<...strings>]` [`--default|-D`] [`--with-templates`] will prompt the user to install a version if no arguments are supplied, or will
   try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
+  Use `--with-templates` to install the matching official export template package after editor installation succeeds. If template installation fails, fgvm keeps the editor installation and prints a warning.
     - Queries:
         - `latest` or `latest standard` will install the latest stable, and `latest mono` will install the latest .NET stable.
         - `4 mono` will grab the latest stable 4.x .NET release, `3.3 rc` will grab the latest rc of 3.3 standard, `1` would take the last stable version `1`, and so on.
@@ -293,6 +301,7 @@ but here is a detailed summary of the available commands:
         - `fgvm install 4.3` - Install 4.3 stable
         - `fgvm install 4.3 mono` - Install 4.3 stable mono
         - `fgvm i latest --default` - Install latest stable standard and set as default
+        - `fgvm install 4.4.1 --with-templates` - Install 4.4.1 stable standard and its export templates
 - `fgvm godot` or `fgvm g` [`--interactive|-i`] [`--attached|-a`] [`--project|-P`] [`--query QUERY`] [`--args ARGS`] runs the appropriate Godot version, or resolves the optional query against installed versions and launches that match. With the `--interactive` or `-i` flag, it will prompt the user to launch an installed version, even if a query is supplied. When run in a project directory with a `.fgvm-version`
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
   `project.godot` file is found.
@@ -320,6 +329,39 @@ but here is a detailed summary of the available commands:
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
         - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2-rc3`
+- `fgvm template` or `fgvm t` manages Godot export templates.
+    - `fgvm template install` or `fgvm template i` `[<...strings>]` [`--force`] installs the official export template package for an installed Godot version. With no query, fgvm prompts from local Godot installations. With a query, it resolves against local Godot installations only, such as `fgvm template install 4.4.1` or `fgvm template install 4.4.1 mono`.
+    - `fgvm template list` or `fgvm template l` [`--json`] lists installed export template directories.
+    - `fgvm template remove` or `fgvm template r` `[<...strings>]` removes installed export template directories. With no query, fgvm prompts from installed export templates. With a query, it removes the exact match directly or prompts when multiple installed templates match.
+    - Template commands manage full official TPZ packages. They do not install or remove individual export target files inside a package.
+
+### Export Templates
+
+Godot export templates are installed separately from fgvm-managed editor binaries. fgvm uses the same standard export template root that the Godot editor uses:
+
+| Platform | Default export template root |
+| --- | --- |
+| Windows | `%APPDATA%\Godot\export_templates` |
+| macOS | `~/Library/Application Support/Godot/export_templates` |
+| Linux/BSD | `${XDG_DATA_HOME:-~/.local/share}/godot/export_templates` |
+
+Installed template directories use Godot's template version format, such as `4.4.1.stable` or `4.4.1.stable.mono`.
+
+Use `install --with-templates` when you want editor and template installation in one command:
+
+```shell
+fgvm install 4.4.1 --with-templates
+```
+
+Use `template install` when the editor is already installed:
+
+```shell
+fgvm template install 4.4.1
+fgvm template list --json
+fgvm template remove 4.4.1
+```
+
+Template installation queries intentionally resolve against local Godot editor installations. This prevents installing export templates for a version you are not managing locally with fgvm.
 
 ### Project Version Management
 
@@ -474,7 +516,6 @@ See: https://github.com/patricktcoakley/fgvm
 
 - Add releases for Windows on ARM64
 - Create a GitHub Action to simplify using `fgvm` in CI
-- Add support for export templates
 
 ## Migrating from the original gdvm
 

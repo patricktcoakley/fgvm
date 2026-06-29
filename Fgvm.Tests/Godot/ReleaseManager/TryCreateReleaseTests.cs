@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Fgvm.Environment;
 using Fgvm.Godot;
+using Fgvm.Types;
 using RuntimeEnvironment = Fgvm.Godot.RuntimeEnvironment;
 
 namespace Fgvm.Tests.Godot.ReleaseManager;
@@ -140,6 +141,21 @@ public class TryCreateReleaseTests
         var release = releaseManager.TryCreateRelease(versionString);
 
         Assert.Null(release);
+    }
+
+    [Fact]
+    public void CreateReleaseWithoutPlatform_DoesNotBindToUnsupportedHostTarget()
+    {
+        var releaseManager = new ReleaseManagerBuilder()
+            .WithOSAndArch(OS.Windows, Architecture.Arm64)
+            .Build();
+
+        var result = releaseManager.CreateReleaseWithoutPlatform("4.2-stable-standard");
+
+        var success = Assert.IsType<Result<Release, ReleaseParseError>.Success>(result);
+        Assert.Equal("4.2-stable-standard", success.Value.ReleaseNameWithRuntime);
+        Assert.Null(success.Value.PlatformString);
+        Assert.Equal(default, success.Value.OS);
     }
 
     [Theory]

@@ -62,6 +62,7 @@ public class Program
         services.AddSingleton<IPathService>(pathService);
         services.AddSingleton(_ => CreateSystemInfo(fixtureMode));
         services.AddSingleton<PlatformStringProvider>();
+        services.AddSingleton<IGodotPathService, GodotPathService>();
         services.AddSingleton<IHostSystem, HostSystem>();
 
         if (fixtureMode)
@@ -87,9 +88,12 @@ public class Program
         services.AddSingleton<IReleaseCatalog, ReleaseCatalog>();
         services.AddSingleton<IReleaseManager, ReleaseManager>();
         services.AddSingleton<IInstallationRegistry, InstallationRegistry>();
+        services.AddSingleton<ITemplateRegistry, TemplateRegistry>();
         services.AddSingleton<IInstallationService, InstallationService>();
+        services.AddSingleton<ITemplateInstallationService, TemplateInstallationService>();
         services.AddSingleton<IProjectManager, ProjectManager>();
         services.AddSingleton<IInstallationOrchestrator, InstallationOrchestrator>();
+        services.AddSingleton<ITemplateOrchestrator, TemplateOrchestrator>();
         services.AddSingleton<IVersionManagementService, VersionManagementService>();
         services.AddSingleton<IGodotArgumentService, GodotArgumentService>();
         services.AddSingleton<IGodotLauncher, GodotLauncher>();
@@ -97,6 +101,7 @@ public class Program
 
         // Progress handling
         services.AddSingleton<IProgressHandler<InstallationStage>, SpectreProgressHandler<InstallationStage>>();
+        services.AddSingleton<IProgressHandler<TemplateInstallationStage>, SpectreProgressHandler<TemplateInstallationStage>>();
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -119,8 +124,16 @@ public class Program
         app.Add<LogsCommand>();
         app.Add<SearchCommand>();
         app.Add<LocalCommand>();
+        app.Add<TemplateHelpCommand>();
+        app.Add<TemplateCommand>("template");
+        app.Add<TemplateCommand>("t");
 
         app.UseFilter<ExitCodeFilter>();
+
+        if (TemplateHelpCommand.TryWriteHelp(args, System.Console.Out))
+        {
+            return 0;
+        }
 
         app.Run(args);
 

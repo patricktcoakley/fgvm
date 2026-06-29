@@ -168,6 +168,27 @@ public static class Messages
     public static string ChecksumMismatch(string fileName, string expected, string actual) =>
         $"[red]Checksum mismatch for {fileName}![/]\n[red]Expected: {expected}[/]\n[red]Actual:   {actual}[/]\n[red]This could indicate a corrupted download or security issue.[/]";
 
+    // Export templates
+    public static string NoTemplatesInstalled => "[yellow]No Godot export templates installed.[/]";
+    public static string NoTemplatesToRemove => "[orange1] No export templates available to remove. [/]";
+    public static string TemplateAlreadyInstalled(string templateVersion, string path) =>
+        $"[yellow]Export templates {templateVersion} are already installed at {path}[/]";
+    public static string TemplateInstallationSuccess(string templateVersion, string path) =>
+        $"[green]Finished installing export templates {templateVersion} to {path}![/]";
+    public static string TemplateChecksumUnavailable(string templateVersion) =>
+        $"[orange1]Warning: Checksum unavailable for export templates {templateVersion}. Installation continued without verification.[/]";
+    public static string TemplateInstallationNotFound(string version) =>
+        $"[red]Export templates for {version} could not be found.[/]";
+    public static string TemplateInstallationFailed(string reason) => $"[red]Export template installation failed: {reason}[/]";
+    public static string OptionalTemplateInstallationFailed(string releaseNameWithRuntime, string reason) =>
+        $"[orange1]Godot {releaseNameWithRuntime} is installed, but export template installation failed: {reason}[/]";
+    public static string NoTemplatesMatchingQuery(string query) =>
+        $"[orange1]Couldn't find any export templates with query `{query}`. Please try again. [/]";
+    public static string FoundExactTemplateMatch(string versionToRemove) =>
+        $"[yellow]Found exactly one export template matching your query: {versionToRemove}[/]";
+    public static string TemplateSuccessfullyRemoved(string templateVersion, string path) =>
+        $"[green]Successfully removed export templates {templateVersion} from {path} :wastebasket:[/]";
+
     private static string BuildInstallQuery(string projectVersion, bool isDotNet)
     {
         var hasRuntimeSuffix = projectVersion.EndsWith("-mono", StringComparison.OrdinalIgnoreCase) ||

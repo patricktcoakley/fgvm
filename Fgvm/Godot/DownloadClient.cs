@@ -271,7 +271,9 @@ public sealed class DownloadClient : IDownloadClient
     private DownloadSource GodotDownloadApiArchive(string filename, Release godotRelease)
     {
         var slug = GetDownloadSlug(filename, godotRelease);
-        var platform = godotRelease.PlatformString ?? RemoveArchiveExtension(slug);
+        var platform = filename.EndsWith(".tpz", StringComparison.OrdinalIgnoreCase)
+            ? RemoveArchiveExtension(slug)
+            : godotRelease.PlatformString ?? RemoveArchiveExtension(slug);
         var query = $"version={Escape(godotRelease.Version)}" +
                     $"&flavor={Escape(godotRelease.Type?.ToString() ?? string.Empty)}" +
                     $"&slug={Escape(slug)}" +
@@ -291,6 +293,8 @@ public sealed class DownloadClient : IDownloadClient
     private static string RemoveArchiveExtension(string slug) =>
         slug.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
             ? slug[..^4]
+            : slug.EndsWith(".tpz", StringComparison.OrdinalIgnoreCase)
+                ? slug[..^4]
             : slug;
 
     private static string Escape(string value) =>
