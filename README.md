@@ -62,14 +62,16 @@ Note that you may periodically need to run `brew update` if any changes are appl
 Alternatively, macOS and Linux users can use the [install script](#install-scripts). On macOS, this avoids the browser-added quarantine attribute that can cause Gatekeeper warnings for the
 non-notarized binaries.
 
-#### mise (macOS/Linux)
+#### mise
 
-[mise](https://mise.jdx.dev/) can install fgvm directly from the GitHub release artifacts using its GitHub backend:
+[mise](https://mise.jdx.dev/) can install fgvm directly from the GitHub release artifacts using its GitHub backend on Windows x64, macOS, and Linux:
 
 ```shell
 mise use -g github:patricktcoakley/fgvm
 fgvm --version
 ```
+
+Install mise first using the [mise installation docs](https://mise.jdx.dev/installing-mise.html); Windows users can use Scoop or winget there.
 
 For now, use the full `github:patricktcoakley/fgvm` tool name. The shorter `mise use -g fgvm` form will only work after fgvm is added to mise's registry.
 
@@ -101,7 +103,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/patricktcoakley/fgvm/main/installer.ps1 | iex
 ```
 
-Re-run the installer to upgrade.
+Re-run either install script to upgrade an existing install. The installer downloads the latest release again, verifies its checksum, and replaces the `fgvm` binary in `FGVM_INSTALL_DIR`; it does not remove your `FGVM_HOME` installations, registry, or project version files.
 
 If you prefer to inspect the installer before running it, download it first:
 
@@ -195,17 +197,13 @@ The macOS binaries require macOS 12 or later and are not currently notarized. Do
 quarantine attribute, so you can verify and run the release directly:
 
 ```shell
-case "$(uname -m)" in
-  arm64) archive=fgvm-osx-arm64.tar.gz ;;
-  x86_64) archive=fgvm-osx-x64.tar.gz ;;
-  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
-esac
+# Apple Silicon
+curl -fLO https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-arm64.tar.gz -fLO https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-arm64.tar.gz.sha256 && shasum -a 256 -c fgvm-osx-arm64.tar.gz.sha256
 
-base_url=https://github.com/patricktcoakley/fgvm/releases/latest/download
-curl -fLO "$base_url/$archive"
-curl -fLO "$base_url/$archive.sha256"
-shasum -a 256 -c "$archive.sha256"
-tar -xzf "$archive"
+# Intel
+curl -fLO https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-x64.tar.gz -fLO https://github.com/patricktcoakley/fgvm/releases/latest/download/fgvm-osx-x64.tar.gz.sha256 && shasum -a 256 -c fgvm-osx-x64.tar.gz.sha256
+
+tar -xzf fgvm-osx-arm64.tar.gz # Use fgvm-osx-x64.tar.gz on Intel.
 ./fgvm --version
 ```
 
@@ -290,7 +288,7 @@ but here is a detailed summary of the available commands:
 > **Note:** Many commands support short-form aliases for faster usage (e.g., `fgvm i` for `fgvm install`, `fgvm g` for `fgvm godot`).
 
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
-- `fgvm install` or `fgvm i` `[<...strings>]` [`--default|-D`] [`--with-templates`] will prompt the user to install a version if no arguments are supplied, or will
+- `fgvm install` or `fgvm i` `[<...strings>]` [`-D|--default`] [`--with-templates`] will prompt the user to install a version if no arguments are supplied, or will
   try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
   Use `--with-templates` to install the matching official export template package after editor installation succeeds. If template installation fails, fgvm keeps the editor installation and prints a warning.
@@ -302,13 +300,13 @@ but here is a detailed summary of the available commands:
         - `fgvm install 4.3 mono` - Install 4.3 stable mono
         - `fgvm i latest --default` - Install latest stable standard and set as default
         - `fgvm install 4.4.1 --with-templates` - Install 4.4.1 stable standard and its export templates
-- `fgvm godot` or `fgvm g` [`--interactive|-i`] [`--attached|-a`] [`--project|-P`] [`--query QUERY`] [`--args ARGS`] runs the appropriate Godot version, or resolves the optional query against installed versions and launches that match. With the `--interactive` or `-i` flag, it will prompt the user to launch an installed version, even if a query is supplied. When run in a project directory with a `.fgvm-version`
+- `fgvm godot` or `fgvm g` [`-i|--interactive`] [`-a|--attached`] [`-P|--project`] [`--query <string>`] [`--args <string>`] runs the appropriate Godot version, or resolves the optional query against installed versions and launches that match. With the `--interactive` or `-i` flag, it will prompt the user to launch an installed version, even if a query is supplied. When run in a project directory with a `.fgvm-version`
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
   `project.godot` file is found.
     - Once a version is installed, it will launch the editor with the project directly from the terminal.
     - Use `--query` to launch a specific installed version, such as `fgvm godot --query "4.6 mono"` or the exact installed version `fgvm godot --query "4.6.2-stable-standard"`.
-    - Optionally, pass in arguments to the Godot executable directly using the `--args` parameter, such as `fgvm godot --query "4.6 mono" --args "--headless"` or `fgvm godot --args "--version"`. Multiple arguments should be
-      passed as a quoted string, such as `--args "--headless -v"`.
+    - Optionally, pass in arguments to the Godot executable directly using `--args` followed by a separate value, such as `fgvm godot --query "4.6 mono" --args "--headless"` or `fgvm godot --args "--version"`. Multiple arguments should be
+      passed as a quoted string, such as `--args "--headless -v"`. Do not use `--args="..."`; that form is rejected by the CLI parser.
     - Use `--project` or `-P` with explicit arguments to add the detected project path, such as `fgvm godot -P --args "--dump-extension-api --quit"`.
     - Use the `--attached` or `-a` flag to force Godot connected to the terminal for output; by default, Godot runs in detached mode and will launch in a separate instance. Using an argument detection
       system, certain arguments (like `--version`, `--help`, `--headless`) automatically trigger this mode since they would otherwise be useless without printing to standard out.
@@ -323,15 +321,15 @@ but here is a detailed summary of the available commands:
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if you remove a specific version, like
       `4.4.1-stable-mono`, it will just delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
-- `fgvm logs` [`--level|-l <string>`] [`--message|-m <string>`] [`--json`] displays all of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
-- `fgvm search` or `fgvm s` `[<...strings>]` [`--json|-j`] [`--no-cache|-F`] takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
+- `fgvm logs` [`--json`] [`-l|--level <string>`] [`-m|--message <string>`] displays all of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
+- `fgvm search` or `fgvm s` `[<...strings>]` [`-j|--json`] [`-F|--no-cache`] takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
   and `--no-cache` or `-F` to force a remote refresh instead of using the local release cache.
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
         - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2-rc3`
 - `fgvm template` or `fgvm t` manages Godot export templates.
     - `fgvm template install` or `fgvm template i` `[<...strings>]` [`--force`] installs the official export template package for an installed Godot version. With no query, fgvm prompts from local Godot installations. With a query, it resolves against local Godot installations only, such as `fgvm template install 4.4.1` or `fgvm template install 4.4.1 mono`.
-    - `fgvm template list` or `fgvm template l` [`--json`] lists installed export template directories.
+    - `fgvm template list` or `fgvm template l` [`-j|--json`] lists installed export template directories.
     - `fgvm template remove` or `fgvm template r` `[<...strings>]` removes installed export template directories. With no query, fgvm prompts from installed export templates. With a query, it removes the exact match directly or prompts when multiple installed templates match.
     - Template commands manage full official TPZ packages. They do not install or remove individual export target files inside a package.
 

@@ -26,7 +26,7 @@ public sealed class GodotCommand(
     /// <param name="interactive">-i, Creates a prompt to select and launch an installed Godot version.</param>
     /// <param name="attached">-a, Launches Godot in attached mode, keeping it connected to the terminal for output.</param>
     /// <param name="project">-P, Adds the detected project path to explicit Godot arguments.</param>
-    /// <param name="args">Arguments to pass to the Godot executable (e.g., --args "--version --verbose").</param>
+    /// <param name="args">Arguments to pass to the Godot executable. Use a space after --args, e.g. --args "--version --verbose".</param>
     /// <param name="query">Query to resolve a specific installed version (e.g., --query "4.6 mono").</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <exception cref="InvalidOperationException">Thrown when version resolution or project-file lookup cannot continue.</exception>
