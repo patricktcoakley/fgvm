@@ -161,11 +161,11 @@ public sealed class TemplateInstallationService(
             throw;
         }
         catch (Exception ex) when (ex is IOException
-                                      or UnauthorizedAccessException
-                                      or InvalidDataException
-                                      or NotSupportedException
-                                      or ArgumentException
-                                      or CryptographicException)
+                                       or UnauthorizedAccessException
+                                       or InvalidDataException
+                                       or NotSupportedException
+                                       or ArgumentException
+                                       or CryptographicException)
         {
             logger.LogError(ex, "Export template installation failed for {ReleaseName}", release.ReleaseNameWithRuntime);
             return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
@@ -263,7 +263,8 @@ public sealed class TemplateInstallationService(
         if (TemplateInstallation.TryCreate(templateVersion, extractPath) is null)
         {
             return new Result<string, TemplateInstallationError>.Failure(
-                new TemplateInstallationError.Failed($"Invalid version.txt format inside the export templates archive: {templateVersion}."));
+                new TemplateInstallationError.Failed(
+                    $"Invalid version.txt format inside the export templates archive: {templateVersion}."));
         }
 
         var contentsDir = GetBaseDirectory(NormalizeEntryPath(versionEntry.FullName));

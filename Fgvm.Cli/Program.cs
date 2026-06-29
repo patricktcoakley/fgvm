@@ -130,6 +130,7 @@ public class Program
 
         app.UseFilter<ExitCodeFilter>();
 
+        // ConsoleAppFramework does not dispatch custom help for hidden grouped subcommands.
         if (TemplateHelpCommand.TryWriteHelp(args, System.Console.Out))
         {
             return 0;

@@ -9,7 +9,10 @@ namespace Fgvm.Tests.Godot;
 public sealed class GodotPathServiceTests : IDisposable
 {
     private readonly string? _originalAppData = System.Environment.GetEnvironmentVariable("APPDATA");
-    private readonly string? _originalOverride = System.Environment.GetEnvironmentVariable(GodotPathService.ExportTemplatesDirectoryOverride);
+
+    private readonly string? _originalOverride =
+        System.Environment.GetEnvironmentVariable(GodotPathService.ExportTemplatesDirectoryOverride);
+
     private readonly string? _originalXdgDataHome = System.Environment.GetEnvironmentVariable("XDG_DATA_HOME");
 
     [Fact]
