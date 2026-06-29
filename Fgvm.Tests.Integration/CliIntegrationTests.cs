@@ -28,6 +28,18 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     }
 
     [Fact]
+    public async Task GodotHelpDocumentsArgsValueSyntax()
+    {
+        var result = await fixture.ExecuteCommand(["godot", "--help"]);
+
+        await fixture.AssertSuccessfulExecutionAsync(result);
+        Assert.Contains("--args <string>", result.Stdout);
+        Assert.Contains("Use a space after --args", result.Stdout);
+        Assert.Contains("--args \"--version --verbose\"", result.Stdout);
+        Assert.Contains("--args=... is not supported", result.Stdout);
+    }
+
+    [Fact]
     public async Task DisplaysVersionWithVersionFlag()
     {
         var expected = GetProjectVersion();
