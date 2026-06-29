@@ -8,6 +8,10 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+// Keep this fixture builder intentionally script-like. The e2e test harness is
+// expected to be portable to babashka, so archive and manifest generation should
+// stay explicit and data-driven instead of growing C#-specific infrastructure.
+
 var context = BuildContext.Create(BuildOptions.Parse(args));
 var manifestPath = await new FixtureBuilder(context).BuildAsync();
 Console.WriteLine(manifestPath);
@@ -74,32 +78,69 @@ internal sealed class FixtureBuilder(BuildContext context)
 
         foreach (var release in recipe.Releases)
         {
-            foreach (var fixture in platform.Fixtures)
-            {
-                var zipName = fixture.ExpandZipName(release.Name);
-                var executableName = fixture.ExpandExecutableName(release.Name);
-                var zipPath = Path.Combine(outputs.ZipsRoot, zipName);
-
-                ZipFixture.Create(
-                    publishedApps[fixture.Platform],
-                    zipPath,
-                    platform.OS,
-                    executableName);
-
-                manifest.Artifacts.Add(new GeneratedFixtureArtifact
-                {
-                    ReleaseName = release.Name,
-                    Runtime = fixture.Runtime,
-                    Target = fixture.Target,
-                    FileName = zipName,
-                    ZipPath = PortablePath.FromRelative(outputs.PlatformRoot, zipPath),
-                    ExecutablePath = ZipFixture.GetExecutablePath(platform.OS, executableName),
-                    Sha512 = await Checksum.Sha512Async(zipPath)
-                });
-            }
+            await AddEditorArtifactsAsync(manifest, release, platform, outputs, publishedApps);
+            await AddTemplateArtifactsAsync(manifest, release, platform, outputs);
         }
 
         return manifest;
+    }
+
+    private static async Task AddEditorArtifactsAsync(GeneratedFixtureManifest manifest,
+        GeneratedFixtureRelease release,
+        FixturePlatform platform,
+        FixtureOutputPaths outputs,
+        IReadOnlyDictionary<string, PublishedMockApp> publishedApps
+    )
+    {
+        foreach (var fixture in platform.Fixtures)
+        {
+            var zipName = fixture.ExpandZipName(release.Name);
+            var executableName = fixture.ExpandExecutableName(release.Name);
+            var zipPath = Path.Combine(outputs.ZipsRoot, zipName);
+
+            ZipFixture.Create(
+                publishedApps[fixture.Platform],
+                zipPath,
+                platform.OS,
+                executableName);
+
+            manifest.Artifacts.Add(new GeneratedFixtureArtifact
+            {
+                ReleaseName = release.Name,
+                Runtime = fixture.Runtime,
+                Target = fixture.Target,
+                FileName = zipName,
+                ZipPath = PortablePath.FromRelative(outputs.PlatformRoot, zipPath),
+                ExecutablePath = ZipFixture.GetExecutablePath(platform.OS, executableName),
+                Sha512 = await Checksum.Sha512Async(zipPath)
+            });
+        }
+    }
+
+    private static async Task AddTemplateArtifactsAsync(GeneratedFixtureManifest manifest,
+        GeneratedFixtureRelease release,
+        FixturePlatform platform,
+        FixtureOutputPaths outputs
+    )
+    {
+        foreach (var runtime in platform.Fixtures.Select(fixture => fixture.Runtime).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var tpzName = TemplateZipFixture.GetFileName(release.Name, runtime);
+            var tpzPath = Path.Combine(outputs.ZipsRoot, tpzName);
+
+            TemplateZipFixture.Create(tpzPath, release, runtime);
+
+            manifest.Artifacts.Add(new GeneratedFixtureArtifact
+            {
+                ReleaseName = release.Name,
+                Runtime = runtime,
+                Target = TemplateZipFixture.Target,
+                FileName = tpzName,
+                ZipPath = PortablePath.FromRelative(outputs.PlatformRoot, tpzPath),
+                ExecutablePath = TemplateZipFixture.PayloadEntryName,
+                Sha512 = await Checksum.Sha512Async(tpzPath)
+            });
+        }
     }
 
     private static async Task WriteManifestAsync(string manifestPath, GeneratedFixtureManifest manifest)
@@ -283,6 +324,47 @@ internal static class ZipFixture
 
     private static bool IsWindows(string os) =>
         string.Equals(os, "windows", StringComparison.OrdinalIgnoreCase);
+}
+
+internal static class TemplateZipFixture
+{
+    public const string Target = "export_templates";
+    public const string PayloadEntryName = "mock-template.txt";
+
+    private const string RootDirectory = "templates";
+
+    public static void Create(string zipPath, GeneratedFixtureRelease release, string runtime)
+    {
+        if (File.Exists(zipPath))
+        {
+            File.Delete(zipPath);
+        }
+
+        using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+        AddTextFile(zip, $"{RootDirectory}/version.txt", CreateTemplateVersion(release, runtime));
+        AddTextFile(zip, $"{RootDirectory}/{PayloadEntryName}", $"mock export template for {release.Name} {runtime}");
+    }
+
+    public static string GetFileName(string releaseName, string runtime)
+    {
+        var runtimePrefix = runtime.Equals("mono", StringComparison.OrdinalIgnoreCase) ? "mono_" : "";
+        return $"Godot_v{releaseName}_{runtimePrefix}export_templates.tpz";
+    }
+
+    private static string CreateTemplateVersion(GeneratedFixtureRelease release, string runtime)
+    {
+        var version = $"{release.Version}.{release.Status}";
+        return runtime.Equals("mono", StringComparison.OrdinalIgnoreCase)
+            ? $"{version}.mono"
+            : version;
+    }
+
+    private static void AddTextFile(ZipArchive zip, string entryName, string contents)
+    {
+        var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+        using var writer = new StreamWriter(entry.Open());
+        writer.Write(contents);
+    }
 }
 
 internal readonly record struct BuildPlatform(string Name)

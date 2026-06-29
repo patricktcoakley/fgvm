@@ -16,6 +16,13 @@ public interface IProjectManager
     /// <returns>Project lookup result if successful, or a project error.</returns>
     Result<ProjectLookup<Release>, ProjectError> FindProjectInfo(string? directory = null);
 
+    /// <summary>
+    ///     Finds project release information without binding it to the current host platform.
+    /// </summary>
+    /// <param name="directory">The directory to search in. If null, uses current working directory.</param>
+    /// <returns>Project lookup result if successful, or a project error.</returns>
+    Result<ProjectLookup<Release>, ProjectError> FindProjectInfoWithoutPlatform(string? directory = null);
+
 
     /// <summary>
     ///     Finds the path to the project.godot file in the specified directory.
@@ -45,7 +52,16 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
     private const string ProjectFile = "project.godot";
 
     /// <inheritdoc />
-    public Result<ProjectLookup<Release>, ProjectError> FindProjectInfo(string? directory = null)
+    public Result<ProjectLookup<Release>, ProjectError> FindProjectInfo(string? directory = null) =>
+        FindProjectInfoCore(releaseManager.CreateRelease, directory);
+
+    /// <inheritdoc />
+    public Result<ProjectLookup<Release>, ProjectError> FindProjectInfoWithoutPlatform(string? directory = null) =>
+        FindProjectInfoCore(releaseManager.CreateReleaseWithoutPlatform, directory);
+
+    private Result<ProjectLookup<Release>, ProjectError> FindProjectInfoCore(Func<string, Result<Release, ReleaseParseError>> createRelease,
+        string? directory = null
+    )
     {
         var targetDir = directory ?? Directory.GetCurrentDirectory();
 
@@ -64,7 +80,7 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
                         var content = contentValue.Trim();
                         if (!string.IsNullOrEmpty(content))
                         {
-                            return CreateReleaseLookup(content);
+                            return CreateReleaseLookup(content, createRelease);
                         }
 
                         break;
@@ -85,7 +101,7 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
         {
             Result<bool, FileOperationError>.Failure(var projectExistsError) =>
                 new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(projectExistsError, targetDir)),
-            Result<bool, FileOperationError>.Success { Value: true } => ParseProjectGodot(projectFile),
+            Result<bool, FileOperationError>.Success { Value: true } => ParseProjectGodot(projectFile, createRelease),
             Result<bool, FileOperationError>.Success =>
                 new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing()),
             _ => throw new InvalidOperationException("Unexpected Result type")
@@ -152,7 +168,7 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
                 var content = contentValue.Trim();
                 return string.IsNullOrEmpty(content)
                     ? new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing())
-                    : CreateReleaseLookup(content);
+                    : CreateReleaseLookup(content, releaseManager.CreateRelease);
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
@@ -180,7 +196,9 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
         };
     }
 
-    private Result<ProjectLookup<Release>, ProjectError> ParseProjectGodot(string projectFilePath)
+    private Result<ProjectLookup<Release>, ProjectError> ParseProjectGodot(string projectFilePath,
+        Func<string, Result<Release, ReleaseParseError>> createRelease
+    )
     {
         string content;
         switch (hostSystem.ReadAllText(projectFilePath))
@@ -229,7 +247,7 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
             var runtimeSuffix = runtime == RuntimeEnvironment.Mono ? "-mono" : "-standard";
             var fullVersion = $"{versionWithType}{runtimeSuffix}";
 
-            return CreateReleaseLookup(fullVersion);
+            return CreateReleaseLookup(fullVersion, createRelease);
         }
 
         if (foundFeaturesLine && malformedFeaturesLine)
@@ -240,8 +258,10 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
         return new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
     }
 
-    private Result<ProjectLookup<Release>, ProjectError> CreateReleaseLookup(string version) =>
-        releaseManager.CreateRelease(version) switch
+    private Result<ProjectLookup<Release>, ProjectError> CreateReleaseLookup(string version,
+        Func<string, Result<Release, ReleaseParseError>> createRelease
+    ) =>
+        createRelease(version) switch
         {
             Result<Release, ReleaseParseError>.Success(var release) =>
                 new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Found(release)),

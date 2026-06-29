@@ -41,6 +41,15 @@ public interface IReleaseCatalog
     /// <returns>The release artifact, or a network error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when artifact lookup is canceled.</exception>
     Task<Result<ReleaseArtifact, NetworkError>> FindOrHydrateArtifact(Release release, CancellationToken cancellationToken);
+
+    /// <summary>
+    ///     Finds export template artifact metadata for a release, hydrating the local catalog from remote metadata when needed.
+    /// </summary>
+    /// <param name="release">The release whose export template artifact should be found.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The export template artifact, or a network error.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when artifact lookup is canceled.</exception>
+    Task<Result<ReleaseArtifact, NetworkError>> FindOrHydrateExportTemplateArtifact(Release release, CancellationToken cancellationToken);
 }
 
 public sealed class ReleaseCatalog(
@@ -150,6 +159,54 @@ public sealed class ReleaseCatalog(
         }
     }
 
+    /// <inheritdoc />
+    public async Task<Result<ReleaseArtifact, NetworkError>> FindOrHydrateExportTemplateArtifact(Release release,
+        CancellationToken cancellationToken
+    )
+    {
+        var manifestResult = await ReadCatalogOrRebuild(cancellationToken);
+        switch (manifestResult)
+        {
+            case Result<ReleaseCatalogManifest, NetworkError>.Failure(var catalogError):
+                return new Result<ReleaseArtifact, NetworkError>.Failure(catalogError);
+
+            case Result<ReleaseCatalogManifest, NetworkError>.Success(var manifest)
+                when FindExportTemplateArtifact(manifest, release) is { } cached:
+                return new Result<ReleaseArtifact, NetworkError>.Success(cached);
+
+            case Result<ReleaseCatalogManifest, NetworkError>.Success(var manifest):
+                var remoteManifestResult = await downloadClient.GetReleaseManifest(release, cancellationToken);
+                switch (remoteManifestResult)
+                {
+                    case Result<GodotReleaseManifest, NetworkError>.Success({ Files.Count: > 0 } godotManifest):
+                        var recordResult = await RecordReleaseManifest(manifest, godotManifest, release, cancellationToken);
+                        return recordResult switch
+                        {
+                            Result<ReleaseCatalogManifest, NetworkError>.Success(var recorded) =>
+                                FindExportTemplateArtifact(recorded, release) is { } artifact
+                                    ? new Result<ReleaseArtifact, NetworkError>.Success(artifact)
+                                    : new Result<ReleaseArtifact, NetworkError>.Failure(new NetworkError.ConnectionFailure(
+                                        $"No export template artifact found for {release.ReleaseNameWithRuntime}")),
+                            Result<ReleaseCatalogManifest, NetworkError>.Failure(var error) =>
+                                new Result<ReleaseArtifact, NetworkError>.Failure(error),
+                            _ => throw new InvalidOperationException("Unexpected Result type")
+                        };
+
+                    case Result<GodotReleaseManifest, NetworkError>.Success:
+                        return await HydrateExportTemplateFromSha512Sums(manifest, release, cancellationToken);
+
+                    case Result<GodotReleaseManifest, NetworkError>.Failure(var error):
+                        return new Result<ReleaseArtifact, NetworkError>.Failure(error);
+
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
+                }
+
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
+        }
+    }
+
     private async Task<Result<ReleaseArtifact, NetworkError>> HydrateFromSha512Sums(ReleaseCatalogManifest manifest,
         Release release,
         CancellationToken cancellationToken
@@ -177,6 +234,41 @@ public sealed class ReleaseCatalog(
                     error);
 
                 return new Result<ReleaseArtifact, NetworkError>.Success(new ReleaseArtifact(release.ZipFileName, null));
+
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
+        }
+    }
+
+    private async Task<Result<ReleaseArtifact, NetworkError>> HydrateExportTemplateFromSha512Sums(ReleaseCatalogManifest manifest,
+        Release release,
+        CancellationToken cancellationToken
+    )
+    {
+        var shaResult = await downloadClient.GetSha512(release, cancellationToken);
+        switch (shaResult)
+        {
+            case Result<string, NetworkError>.Success(var sha512Sums):
+                var recordResult = await RecordArtifacts(manifest, release, ParseSha512SumsContent(sha512Sums), cancellationToken);
+                return recordResult switch
+                {
+                    Result<ReleaseCatalogManifest, NetworkError>.Success(var recorded) =>
+                        FindExportTemplateArtifact(recorded, release) is { } artifact
+                            ? new Result<ReleaseArtifact, NetworkError>.Success(artifact)
+                            : new Result<ReleaseArtifact, NetworkError>.Failure(new NetworkError.ConnectionFailure(
+                                $"No export template artifact found for {release.ReleaseNameWithRuntime}")),
+                    Result<ReleaseCatalogManifest, NetworkError>.Failure(var error) =>
+                        new Result<ReleaseArtifact, NetworkError>.Failure(error),
+                    _ => throw new InvalidOperationException("Unexpected Result type")
+                };
+
+            case Result<string, NetworkError>.Failure(var error):
+                logger.LogWarning(
+                    "Failed to hydrate export template {ReleaseName} from SHA512-SUMS.txt: {Error}",
+                    release.ReleaseName,
+                    error);
+
+                return new Result<ReleaseArtifact, NetworkError>.Failure(error);
 
             default:
                 throw new InvalidOperationException("Unexpected Result type");
@@ -486,6 +578,24 @@ public sealed class ReleaseCatalog(
                target.TryGetValue(runtimeId, out var artifact)
             ? new ReleaseArtifact(artifact.FileName, artifact.Sha512)
             : null;
+    }
+
+    private static ReleaseArtifact? FindExportTemplateArtifact(ReleaseCatalogManifest manifest, Release release)
+    {
+        var releaseTypeId = GetReleaseTypeId(release);
+        var fileName = GetExportTemplateFileName(release);
+
+        return manifest.Releases.TryGetValue(release.Version, out var version) &&
+               version.TryGetValue(releaseTypeId, out var catalogRelease) &&
+               catalogRelease.Files.TryGetValue(fileName, out var artifact)
+            ? new ReleaseArtifact(artifact.FileName, artifact.Sha512)
+            : null;
+    }
+
+    public static string GetExportTemplateFileName(Release release)
+    {
+        var runtimePrefix = release.RuntimeEnvironment == RuntimeEnvironment.Mono ? "mono_" : "";
+        return $"Godot_v{release.ReleaseName}_{runtimePrefix}export_templates.tpz";
     }
 
     private static ReleaseCatalogManifest? GetExistingManifest(ReleaseCatalogRead read) =>

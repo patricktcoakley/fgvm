@@ -499,6 +499,113 @@ public sealed class ReleaseCatalogTests : IDisposable
     }
 
     [Fact]
+    public async Task FindOrHydrateExportTemplateArtifact_ReturnsStandardTemplateFromManifestFiles()
+    {
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.4-stable"]));
+
+        _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
+            {
+                Name = "4.4-stable",
+                Version = "4.4",
+                Status = "stable",
+                Files =
+                [
+                    new GodotReleaseManifestFile
+                    {
+                        FileName = "Godot_v4.4-stable_export_templates.tpz",
+                        Checksum = "templates"
+                    }
+                ]
+            }));
+
+        var result = await _catalog.FindOrHydrateExportTemplateArtifact(release, CancellationToken.None);
+
+        var success = Assert.IsType<Result<ReleaseArtifact, NetworkError>.Success>(result);
+        Assert.Equal("Godot_v4.4-stable_export_templates.tpz", success.Value.FileName);
+        Assert.Equal("templates", success.Value.Sha512);
+    }
+
+    [Fact]
+    public async Task FindOrHydrateExportTemplateArtifact_ReturnsMonoTemplateFromManifestFiles()
+    {
+        if (Release.TryParse("4.4-stable-mono") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.4-stable"]));
+
+        _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
+            {
+                Name = "4.4-stable",
+                Version = "4.4",
+                Status = "stable",
+                Files =
+                [
+                    new GodotReleaseManifestFile
+                    {
+                        FileName = "Godot_v4.4-stable_export_templates.tpz",
+                        Checksum = "standard"
+                    },
+                    new GodotReleaseManifestFile
+                    {
+                        FileName = "Godot_v4.4-stable_mono_export_templates.tpz",
+                        Checksum = "mono"
+                    }
+                ]
+            }));
+
+        var result = await _catalog.FindOrHydrateExportTemplateArtifact(release, CancellationToken.None);
+
+        var success = Assert.IsType<Result<ReleaseArtifact, NetworkError>.Success>(result);
+        Assert.Equal("Godot_v4.4-stable_mono_export_templates.tpz", success.Value.FileName);
+        Assert.Equal("mono", success.Value.Sha512);
+    }
+
+    [Fact]
+    public async Task FindOrHydrateExportTemplateArtifact_ReturnsFailureWhenTemplateFileIsMissing()
+    {
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.4-stable"]));
+
+        _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
+            {
+                Name = "4.4-stable",
+                Version = "4.4",
+                Status = "stable",
+                Files =
+                [
+                    new GodotReleaseManifestFile
+                    {
+                        FileName = "Godot_v4.4-stable_macos.universal.zip",
+                        Checksum = "editor"
+                    }
+                ]
+            }));
+
+        var result = await _catalog.FindOrHydrateExportTemplateArtifact(release, CancellationToken.None);
+
+        var failure = Assert.IsType<Result<ReleaseArtifact, NetworkError>.Failure>(result);
+        var connectionFailure = Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+        Assert.Contains("No export template artifact found", connectionFailure.Message);
+    }
+
+    [Fact]
     public async Task FindOrHydrateArtifact_OverlaysManifestChecksumsFromSha512Sums()
     {
         var manifestHash = new string('a', 128);

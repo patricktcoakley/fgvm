@@ -57,6 +57,14 @@ public interface IReleaseManager
     Result<Release, QueryError> ResolveReleaseQuery(string[] query, string[] releaseIds);
 
     /// <summary>
+    ///     Resolves a version query without binding it to the current host platform.
+    /// </summary>
+    /// <param name="query">Version query arguments.</param>
+    /// <param name="releaseIds">Available release identifiers.</param>
+    /// <returns>The resolved release, or a query error.</returns>
+    Result<Release, QueryError> ResolveReleaseQueryWithoutPlatform(string[] query, string[] releaseIds);
+
+    /// <summary>
     ///     Filters release identifiers by version query.
     /// </summary>
     /// <param name="query">Version query arguments.</param>
@@ -64,6 +72,15 @@ public interface IReleaseManager
     /// <param name="chronological">Whether to sort by version-first display order instead of selection preference.</param>
     /// <returns>Matching release identifiers.</returns>
     IEnumerable<string> FilterReleasesByQuery(string[] query, string[] releaseNames, bool chronological = false);
+
+    /// <summary>
+    ///     Filters release identifiers without binding them to the current host platform.
+    /// </summary>
+    /// <param name="query">Version query arguments.</param>
+    /// <param name="releaseNames">Release identifiers to filter.</param>
+    /// <param name="chronological">Whether to sort by version-first display order instead of selection preference.</param>
+    /// <returns>Matching release identifiers.</returns>
+    IEnumerable<string> FilterReleasesByQueryWithoutPlatform(string[] query, string[] releaseNames, bool chronological = false);
 
     /// <summary>
     ///     Finds an installed release compatible with a project requirement.
@@ -83,6 +100,13 @@ public interface IReleaseManager
     /// <param name="versionString">The release version string.</param>
     /// <returns>The release, or a parse/platform error.</returns>
     Result<Release, ReleaseParseError> CreateRelease(string versionString);
+
+    /// <summary>
+    ///     Creates a release model without host platform selection.
+    /// </summary>
+    /// <param name="versionString">The release version string.</param>
+    /// <returns>The release, or a parse error.</returns>
+    Result<Release, ReleaseParseError> CreateReleaseWithoutPlatform(string versionString);
 }
 
 public sealed class ReleaseManager(
@@ -147,7 +171,27 @@ public sealed class ReleaseManager(
             return new Result<Release, QueryError>.Failure(new QueryError.EmptyQuery());
         }
 
-        return FindReleaseByQuery(query, releaseIds) switch
+        return FindReleaseByQuery(query, releaseIds, TryCreateRelease) switch
+        {
+            Result<Release?, QueryError>.Success(var release) when release is not null =>
+                new Result<Release, QueryError>.Success(release),
+            Result<Release?, QueryError>.Success =>
+                new Result<Release, QueryError>.Failure(new QueryError.NotFound(string.Join(" ", query))),
+            Result<Release?, QueryError>.Failure(var error) =>
+                new Result<Release, QueryError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
+    /// <inheritdoc />
+    public Result<Release, QueryError> ResolveReleaseQueryWithoutPlatform(string[] query, string[] releaseIds)
+    {
+        if (query.Length == 0)
+        {
+            return new Result<Release, QueryError>.Failure(new QueryError.EmptyQuery());
+        }
+
+        return FindReleaseByQuery(query, releaseIds, TryCreateReleaseWithoutPlatform) switch
         {
             Result<Release?, QueryError>.Success(var release) when release is not null =>
                 new Result<Release, QueryError>.Success(release),
@@ -161,6 +205,17 @@ public sealed class ReleaseManager(
 
     /// <inheritdoc />
     public IEnumerable<string> FilterReleasesByQuery(string[] query, string[] releaseNames, bool chronological = false)
+        => FilterReleasesByQueryCore(query, releaseNames, chronological, TryCreateRelease);
+
+    /// <inheritdoc />
+    public IEnumerable<string> FilterReleasesByQueryWithoutPlatform(string[] query, string[] releaseNames, bool chronological = false)
+        => FilterReleasesByQueryCore(query, releaseNames, chronological, TryCreateReleaseWithoutPlatform);
+
+    private IEnumerable<string> FilterReleasesByQueryCore(string[] query,
+        string[] releaseNames,
+        bool chronological,
+        Func<string, Release?> createRelease
+    )
     {
         // Extract runtime environment filter (mono/standard)
         var runtimeFilter = query.Length > 0
@@ -185,7 +240,7 @@ public sealed class ReleaseManager(
             .Where(x => string.IsNullOrEmpty(possibleVersion) || x.StartsWith(possibleVersion, StringComparison.OrdinalIgnoreCase))
             .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType, StringComparison.OrdinalIgnoreCase))
             .Where(x => string.IsNullOrEmpty(runtimeFilter) || x.Contains(runtimeFilter, StringComparison.OrdinalIgnoreCase))
-            .Select(name => new { OriginalName = name, Release = TryCreateRelease(name) ?? TryCreateRelease($"{name}-standard") })
+            .Select(name => new { OriginalName = name, Release = createRelease(name) ?? createRelease($"{name}-standard") })
             .Where(x => x.Release != null)
             .Select(x => new { x.OriginalName, Release = x.Release! });
 
@@ -225,6 +280,20 @@ public sealed class ReleaseManager(
                 new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.UnsupportedPlatform(unsupportedRelease, os, arch)),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
+    }
+
+    /// <inheritdoc />
+    public Result<Release, ReleaseParseError> CreateReleaseWithoutPlatform(string versionString)
+    {
+        if (string.IsNullOrWhiteSpace(versionString))
+        {
+            return new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.EmptyVersion());
+        }
+
+        var release = Release.TryParse(versionString);
+        return release is null
+            ? new Result<Release, ReleaseParseError>.Failure(new ReleaseParseError.InvalidVersion(versionString))
+            : new Result<Release, ReleaseParseError>.Success(release);
     }
 
     /// <inheritdoc />
@@ -299,9 +368,26 @@ public sealed class ReleaseManager(
         };
     }
 
+    internal Release? TryFindReleaseByQueryWithoutPlatform(string[] query, string[] releaseNames)
+    {
+        var result = ResolveReleaseQueryWithoutPlatform(query, releaseNames);
+        return result switch
+        {
+            Result<Release, QueryError>.Success(var release) => release,
+            Result<Release, QueryError>.Failure => null,
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
     internal Release? TryCreateRelease(string versionString)
     {
         var result = CreateRelease(versionString);
+        return result is Result<Release, ReleaseParseError>.Success(var release) ? release : null;
+    }
+
+    internal Release? TryCreateReleaseWithoutPlatform(string versionString)
+    {
+        var result = CreateReleaseWithoutPlatform(versionString);
         return result is Result<Release, ReleaseParseError>.Success(var release) ? release : null;
     }
 
@@ -316,21 +402,24 @@ public sealed class ReleaseManager(
         };
     }
 
-    private Result<Release?, QueryError> FindReleaseByQuery(string[] query, string[] releaseNames)
+    private Result<Release?, QueryError> FindReleaseByQuery(string[] query,
+        string[] releaseNames,
+        Func<string, Release?> createRelease
+    )
     {
         var release = query switch
         {
             // Handle latest stable standard
-            ["latest"] => TryFilterLatest("stable", "standard", releaseNames),
+            ["latest"] => TryFilterLatest("stable", "standard", releaseNames, createRelease),
             // Handle latest stable by with runtime
-            ["latest", var releaseType and ("mono" or "standard")] => TryFilterLatest("stable", releaseType, releaseNames),
+            ["latest", var releaseType and ("mono" or "standard")] => TryFilterLatest("stable", releaseType, releaseNames, createRelease),
             // Handle latest standard with release type
             ["latest", var releaseType] when ReleaseType.Prefixes.Contains(releaseType, StringComparer.OrdinalIgnoreCase)
-                => TryFilterLatest(releaseType, "standard", releaseNames),
+                => TryFilterLatest(releaseType, "standard", releaseNames, createRelease),
             // Handle latest with release type and runtime
             ["latest", var releaseType, var runtime] when ReleaseType.Prefixes.Contains(releaseType, StringComparer.OrdinalIgnoreCase) &&
                                                           runtime is "mono" or "standard"
-                => TryFilterLatest(releaseType, runtime, releaseNames),
+                => TryFilterLatest(releaseType, runtime, releaseNames, createRelease),
             // Explicit version, i.e. `4.2-stable(-mono)`
             _ => null
         };
@@ -344,12 +433,15 @@ public sealed class ReleaseManager(
         {
             ["latest"] or ["latest", _] or ["latest", _, _] =>
                 new Result<Release?, QueryError>.Success(null),
-            _ => TryFilterRelease(query, releaseNames)
+            _ => TryFilterRelease(query, releaseNames, createRelease)
         };
     }
 
 
-    private Result<Release?, QueryError> TryFilterRelease(string[] query, string[] releaseNames)
+    private Result<Release?, QueryError> TryFilterRelease(string[] query,
+        string[] releaseNames,
+        Func<string, Release?> createRelease
+    )
     {
         // Split on single arguments to for exact version queries like `4.2-stable-mono` or `4.3-beta2`
         if (query.Length == 1)
@@ -390,7 +482,7 @@ public sealed class ReleaseManager(
         var candidates = releaseNames
             .Where(x => x.StartsWith(possibleVersion))
             .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType))
-            .Select(releaseName => TryCreateRelease($"{releaseName}-{runtime.Name()}"))
+            .Select(releaseName => createRelease($"{releaseName}-{runtime.Name()}"))
             .OfType<Release>();
 
         var release = OrderBySelectionPreference(candidates, candidate => candidate).FirstOrDefault();
@@ -399,13 +491,17 @@ public sealed class ReleaseManager(
     }
 
 
-    private Release? TryFilterLatest(string type, string runtime, string[] releaseNames)
+    private Release? TryFilterLatest(string type,
+        string runtime,
+        string[] releaseNames,
+        Func<string, Release?> createRelease
+    )
     {
         var version = releaseNames
             .OrderByDescending(x => x.Contains(type, StringComparison.InvariantCultureIgnoreCase))
             .FirstOrDefault();
 
-        return TryCreateRelease($"{version}-{runtime}");
+        return createRelease($"{version}-{runtime}");
     }
 
     private static IOrderedEnumerable<T> OrderBySelectionPreference<T>(IEnumerable<T> source, Func<T, Release> releaseSelector) =>
