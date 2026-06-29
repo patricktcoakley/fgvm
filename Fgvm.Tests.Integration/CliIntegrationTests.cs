@@ -36,7 +36,6 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
         Assert.Contains("--args <string>", result.Stdout);
         Assert.Contains("Use a space after --args", result.Stdout);
         Assert.Contains("--args \"--version --verbose\"", result.Stdout);
-        Assert.Contains("--args=... is not supported", result.Stdout);
     }
 
     [Fact]

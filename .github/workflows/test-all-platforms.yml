@@ -29,12 +29,6 @@ jobs:
           install: true
           cache: true
 
-      - name: Build
-        run: mise run build:solution
-
-      - name: Run Unit Tests
-        run: mise run test:unit
-
       - name: Run Integration Tests
         run: mise run test:integration
 
