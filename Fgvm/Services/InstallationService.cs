@@ -87,6 +87,11 @@ public class InstallationService(
 )
     : IInstallationService
 {
+    private const int ArchiveBufferSize = 1024 * 1024;
+
+    // Large Godot artifacts can pause briefly on public mirrors; only fail reads that look genuinely dead.
+    private static readonly TimeSpan DownloadReadTimeout = TimeSpan.FromSeconds(30);
+
     /// <inheritdoc />
     public async Task<Result<InstallationOutcome, InstallationError>> InstallReleaseAsync(Release godotRelease,
         IProgress<OperationProgress<InstallationStage>> progress,
@@ -95,6 +100,7 @@ public class InstallationService(
     )
     {
         var extractPath = "";
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"fgvm-install-{Guid.NewGuid():N}");
 
         try
         {
@@ -123,7 +129,6 @@ public class InstallationService(
             // Show progress immediately before HTTP request
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
 
-            const int bufferSize = 32768;
             ReleaseArtifact artifact;
             switch (await releaseCatalog.FindOrHydrateArtifact(godotRelease, cancellationToken))
             {
@@ -154,52 +159,12 @@ public class InstallationService(
             }
 
             await using var downloadOwner = download;
+            Directory.CreateDirectory(tempRoot);
+            var archivePath = Path.Combine(tempRoot, Path.GetFileName(zipFileName));
 
-            var contentLength = download.ContentLength ?? (download.Stream.CanSeek ? download.Stream.Length : 0);
+            var archiveChecksum = await DownloadToFile(download, archivePath, installPathBase, progress, cancellationToken);
 
-            await using var memStream = contentLength > 0 && contentLength <= int.MaxValue
-                ? new MemoryStream(checked((int)contentLength))
-                : new MemoryStream();
-
-            // Download the release with dedicated progress context
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var buffer = new byte[bufferSize];
-            int bytesRead;
-            var totalDownloaded = 0L;
-            var lastProgressUpdate = 0L;
-            var startTime = DateTime.UtcNow;
-
-            while ((bytesRead = await download.Stream.ReadAsync(buffer, cancellationToken)) > 0)
-            {
-                await memStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                totalDownloaded += bytesRead;
-
-                // Update progress every 1MB or when finished
-                if (contentLength > 0 && (totalDownloaded - lastProgressUpdate >= 1024 * 1024 || totalDownloaded == contentLength))
-                {
-                    var downloadedMB = totalDownloaded / 1024.0 / 1024.0;
-                    var totalMB = contentLength / 1024.0 / 1024.0;
-
-                    // Calculate download speed
-                    var elapsedSeconds = (DateTime.UtcNow - startTime).TotalSeconds;
-                    var speedText = "";
-                    if (elapsedSeconds > 0.5)
-                    {
-                        var speedMBps = downloadedMB / elapsedSeconds;
-                        speedText = speedMBps >= 1.0
-                            ? $" • {speedMBps:F1} MB/s"
-                            : $" • {speedMBps * 1024:F0} KB/s";
-                    }
-
-                    progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
-                        $"Downloading {installPathBase} • {downloadedMB:F1}/{totalMB:F1} MB{speedText}"));
-
-                    lastProgressUpdate = totalDownloaded;
-                }
-            }
-
-            var checksumResult = await VerifyChecksum(zipFileName, artifact, memStream, progress, cancellationToken);
+            var checksumResult = VerifyChecksum(zipFileName, artifact, archiveChecksum, progress);
             ChecksumVerification checksumStatus;
             switch (checksumResult)
             {
@@ -213,10 +178,16 @@ public class InstallationService(
             }
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Extracting, "Extracting files..."));
-            memStream.Position = 0;
             extractPath = Path.Combine(pathService.RootPath, relativeInstallPath);
 
-            await using var archive = new ZipArchive(memStream, ZipArchiveMode.Read);
+            await using var archiveStream = new FileStream(
+                archivePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                ArchiveBufferSize,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read);
             archive.ExtractWithFlatteningSupport(extractPath, true);
 
             if (installationRegistry.UpsertInstalled(godotRelease, relativeInstallPath) is
@@ -293,6 +264,10 @@ public class InstallationService(
                 godotRelease.ReleaseNameWithRuntime, e.Message);
             return new Result<InstallationOutcome, InstallationError>.Failure(
                 new InstallationError.Failed($"Installation failed for {godotRelease.ReleaseNameWithRuntime}."));
+        }
+        finally
+        {
+            CleanupTempDirectory(tempRoot);
         }
     }
 
@@ -424,19 +399,86 @@ public class InstallationService(
         _ => new InstallationError.NotFound(string.Join(" ", query))
     };
 
-    private static async Task<string> CalculateChecksum(MemoryStream memStream, CancellationToken cancellationToken)
-    {
-        using var sha512Hash = SHA512.Create();
-        var hashBytes = await sha512Hash.ComputeHashAsync(memStream, cancellationToken);
-        var checksum = Convert.ToHexStringLower(hashBytes);
-        return checksum;
-    }
-
-    private async Task<Result<ChecksumVerification, InstallationError>> VerifyChecksum(string zipFileName,
-        ReleaseArtifact artifact,
-        MemoryStream memStream,
+    /// <summary>
+    ///     Streams a release archive to disk while reporting progress and calculating its SHA-512 checksum.
+    /// </summary>
+    /// <param name="download">The open archive download.</param>
+    /// <param name="archivePath">The temporary file path to write.</param>
+    /// <param name="installPathBase">The release display name used in progress messages.</param>
+    /// <param name="progress">Progress reporter for download updates.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The lowercase hexadecimal SHA-512 checksum of the downloaded archive.</returns>
+    /// <exception cref="IOException">
+    ///     Thrown when the download stalls, fails, or ends before the advertised content length.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken" /> is canceled.</exception>
+    private static async Task<string> DownloadToFile(ZipDownload download,
+        string archivePath,
+        string installPathBase,
         IProgress<OperationProgress<InstallationStage>> progress,
         CancellationToken cancellationToken
+    )
+    {
+        var contentLength = download.ContentLength ?? (download.Stream.CanSeek ? download.Stream.Length : 0);
+
+        await using var fileStream = new FileStream(
+            archivePath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            ArchiveBufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var sha512 = IncrementalHash.CreateHash(HashAlgorithmName.SHA512);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var buffer = new byte[ArchiveBufferSize];
+        int bytesRead;
+        var totalDownloaded = 0L;
+        var lastProgressUpdate = 0L;
+        var startTime = DateTime.UtcNow;
+
+        while ((bytesRead = await DownloadStreamReader.ReadAsync(download.Stream, buffer, DownloadReadTimeout, cancellationToken)) > 0)
+        {
+            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            sha512.AppendData(buffer.AsSpan(0, bytesRead));
+            totalDownloaded += bytesRead;
+
+            // Keep progress updates coarse enough for slow terminals while still reporting completion.
+            if (contentLength > 0 && (totalDownloaded - lastProgressUpdate >= 1024 * 1024 || totalDownloaded == contentLength))
+            {
+                var downloadedMB = totalDownloaded / 1024.0 / 1024.0;
+                var totalMB = contentLength / 1024.0 / 1024.0;
+
+                var elapsedSeconds = (DateTime.UtcNow - startTime).TotalSeconds;
+                var speedText = "";
+                if (elapsedSeconds > 0.5)
+                {
+                    var speedMBps = downloadedMB / elapsedSeconds;
+                    speedText = speedMBps >= 1.0
+                        ? $" • {speedMBps:F1} MB/s"
+                        : $" • {speedMBps * 1024:F0} KB/s";
+                }
+
+                progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
+                    $"Downloading {installPathBase} • {downloadedMB:F1}/{totalMB:F1} MB{speedText}"));
+
+                lastProgressUpdate = totalDownloaded;
+            }
+        }
+
+        if (contentLength > 0 && totalDownloaded != contentLength)
+        {
+            throw new IOException($"Download ended after {totalDownloaded} bytes, but expected {contentLength} bytes.");
+        }
+
+        return Convert.ToHexStringLower(sha512.GetHashAndReset());
+    }
+
+    private Result<ChecksumVerification, InstallationError> VerifyChecksum(string zipFileName,
+        ReleaseArtifact artifact,
+        string calculatedChecksum,
+        IProgress<OperationProgress<InstallationStage>> progress
     )
     {
         if (artifact.Sha512 is not { } expectedHash)
@@ -446,8 +488,6 @@ public class InstallationService(
         }
 
         progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));
-        memStream.Position = 0;
-        var calculatedChecksum = await CalculateChecksum(memStream, cancellationToken);
 
         if (!calculatedChecksum.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
         {
@@ -460,5 +500,26 @@ public class InstallationService(
 
         logger.LogInformation("Checksum verified successfully for {FileName}", zipFileName);
         return new Result<ChecksumVerification, InstallationError>.Success(new ChecksumVerification.Verified());
+    }
+
+    /// <summary>
+    ///     Removes the temporary archive directory created for the install attempt.
+    /// </summary>
+    /// <param name="tempRoot">The temporary directory to remove.</param>
+    private void CleanupTempDirectory(string tempRoot)
+    {
+        if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(tempRoot, true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Failed to clean up temporary install directory {TempRoot}", tempRoot);
+        }
     }
 }

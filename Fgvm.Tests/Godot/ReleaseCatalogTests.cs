@@ -605,6 +605,40 @@ public sealed class ReleaseCatalogTests : IDisposable
         Assert.Contains("No export template artifact found", connectionFailure.Message);
     }
 
+    [Theory]
+    [InlineData("3.2.1-stable-standard", "Godot_v3.2.1-stable_export_templates.tpz")]
+    [InlineData("3.2.1-stable-mono", "Godot_v3.2.1-stable_mono_export_templates.tpz")]
+    public async Task FindOrHydrateExportTemplateArtifact_ReturnsInferredArtifactWhenEmptyManifestChecksumFallbackFails(string releaseName,
+        string expectedFileName
+    )
+    {
+        if (Release.TryParse(releaseName) is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["3.2.1-stable"]));
+
+        _downloadClient.Setup(x => x.GetReleaseManifest(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<GodotReleaseManifest, NetworkError>.Success(new GodotReleaseManifest
+            {
+                Name = "3.2.1-stable",
+                Version = "3.2.1",
+                Status = "stable",
+                Files = []
+            }));
+
+        _downloadClient.Setup(x => x.GetSha512(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string, NetworkError>.Failure(new NetworkError.ConnectionFailure("not found")));
+
+        var result = await _catalog.FindOrHydrateExportTemplateArtifact(release, CancellationToken.None);
+
+        var success = Assert.IsType<Result<ReleaseArtifact, NetworkError>.Success>(result);
+        Assert.Equal(expectedFileName, success.Value.FileName);
+        Assert.Null(success.Value.Sha512);
+    }
+
     [Fact]
     public async Task FindOrHydrateArtifact_OverlaysManifestChecksumsFromSha512Sums()
     {

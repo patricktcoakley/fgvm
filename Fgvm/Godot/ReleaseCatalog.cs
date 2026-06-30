@@ -264,11 +264,13 @@ public sealed class ReleaseCatalog(
 
             case Result<string, NetworkError>.Failure(var error):
                 logger.LogWarning(
-                    "Failed to hydrate export template {ReleaseName} from SHA512-SUMS.txt: {Error}",
+                    "Failed to hydrate export template {ReleaseName} from SHA512-SUMS.txt: {Error}. Continuing without catalog artifact metadata",
                     release.ReleaseName,
                     error);
 
-                return new Result<ReleaseArtifact, NetworkError>.Failure(error);
+                // Export template archive names follow a stable release convention even when checksum metadata is unavailable.
+                return new Result<ReleaseArtifact, NetworkError>.Success(
+                    new ReleaseArtifact(GetExportTemplateFileName(release), null));
 
             default:
                 throw new InvalidOperationException("Unexpected Result type");
