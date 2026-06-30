@@ -1,5 +1,18 @@
 # Changelog
 
+<a name="2.3.0"></a>
+## [2.3.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.3.0) (2026-06-30)
+
+### ✨ Features
+
+* Add support for template management. ([4da9dc4](https://github.com/patricktcoakley/fgvm/commit/4da9dc40b98ae9d00d848ed39ab5673ee689b6f1))
+* **godot:** Add project-aware explicit argument launches ([9697da8](https://github.com/patricktcoakley/fgvm/commit/9697da8fc1617e0aaab4144e708cbd9a8e04f85b))
+* **godot:** Take `--query` to directly launch a resolved local installation, if any. ([1630738](https://github.com/patricktcoakley/fgvm/commit/16307380bebe9d92c235c990ea633dc37a28afb6))
+
+### 🐛 Bug Fixes
+
+* **logging:** Swap ZLogger with Serilog due to discovering issues with Zlogger and NativeAOT. ([9d746bd](https://github.com/patricktcoakley/fgvm/commit/9d746bdaee2b9463a292929145073033601a6c08))
+
 <a name="2.2.0"></a>
 ## [2.2.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.2.0) (2026-06-15)
 
