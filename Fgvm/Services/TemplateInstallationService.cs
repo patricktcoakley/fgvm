@@ -34,6 +34,11 @@ public sealed class TemplateInstallationService(
     ILogger<TemplateInstallationService> logger
 ) : ITemplateInstallationService
 {
+    private const int ArchiveBufferSize = 1024 * 1024;
+
+    // Export template packages are large enough that public mirrors can pause without the download being broken.
+    private static readonly TimeSpan DownloadReadTimeout = TimeSpan.FromSeconds(30);
+
     public async Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(Release release,
         IProgress<OperationProgress<TemplateInstallationStage>> progress,
         bool force = false,
@@ -88,9 +93,11 @@ public sealed class TemplateInstallationService(
             }
 
             await using var downloadOwner = download;
-            await using var memStream = await ReadDownload(download, progress, cancellationToken);
+            Directory.CreateDirectory(tempRoot);
+            var archivePath = Path.Combine(tempRoot, Path.GetFileName(artifact.FileName));
+            var archiveChecksum = await DownloadToFile(download, archivePath, progress, cancellationToken);
 
-            var checksumResult = await VerifyChecksum(artifact, memStream, progress, cancellationToken);
+            var checksumResult = VerifyChecksum(artifact, archiveChecksum, progress);
             ChecksumVerification checksumStatus;
             switch (checksumResult)
             {
@@ -107,12 +114,17 @@ public sealed class TemplateInstallationService(
                 TemplateInstallationStage.Extracting,
                 "Extracting export templates..."));
 
-            Directory.CreateDirectory(tempRoot);
             var extractPath = Path.Combine(tempRoot, "extract");
             Directory.CreateDirectory(extractPath);
 
-            memStream.Position = 0;
-            await using var archive = new ZipArchive(memStream, ZipArchiveMode.Read);
+            await using var archiveStream = new FileStream(
+                archivePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                ArchiveBufferSize,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read);
             var templateVersionResult = ExtractTemplateArchive(archive, extractPath);
             string actualTemplateVersion;
             switch (templateVersionResult)
@@ -178,41 +190,80 @@ public sealed class TemplateInstallationService(
         }
     }
 
-    private static async Task<MemoryStream> ReadDownload(ZipDownload download,
+    /// <summary>
+    ///     Streams an export template archive to disk while reporting progress and calculating its SHA-512 checksum.
+    /// </summary>
+    /// <param name="download">The open archive download.</param>
+    /// <param name="archivePath">The temporary file path to write.</param>
+    /// <param name="progress">Progress reporter for download updates.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The lowercase hexadecimal SHA-512 checksum of the downloaded archive.</returns>
+    /// <exception cref="IOException">
+    ///     Thrown when the download stalls, fails, or ends before the advertised content length.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken" /> is canceled.</exception>
+    private static async Task<string> DownloadToFile(ZipDownload download,
+        string archivePath,
         IProgress<OperationProgress<TemplateInstallationStage>> progress,
         CancellationToken cancellationToken
     )
     {
         var contentLength = download.ContentLength ?? (download.Stream.CanSeek ? download.Stream.Length : 0);
-        var memStream = contentLength > 0 && contentLength <= int.MaxValue
-            ? new MemoryStream(checked((int)contentLength))
-            : new MemoryStream();
 
-        const int bufferSize = 32768;
-        var buffer = new byte[bufferSize];
+        await using var fileStream = new FileStream(
+            archivePath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            ArchiveBufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var sha512 = IncrementalHash.CreateHash(HashAlgorithmName.SHA512);
+
+        var buffer = new byte[ArchiveBufferSize];
         var totalDownloaded = 0L;
+        var lastProgressUpdate = 0L;
+        var startTime = DateTime.UtcNow;
         int bytesRead;
-        while ((bytesRead = await download.Stream.ReadAsync(buffer, cancellationToken)) > 0)
+        while ((bytesRead = await DownloadStreamReader.ReadAsync(download.Stream, buffer, DownloadReadTimeout, cancellationToken)) > 0)
         {
-            await memStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            sha512.AppendData(buffer.AsSpan(0, bytesRead));
             totalDownloaded += bytesRead;
 
-            if (contentLength > 0)
+            // Keep progress updates coarse enough for slow terminals while still reporting completion.
+            if (contentLength > 0 &&
+                (totalDownloaded - lastProgressUpdate >= ArchiveBufferSize || totalDownloaded == contentLength))
             {
+                var downloadedMB = totalDownloaded / 1024.0 / 1024.0;
+                var totalMB = contentLength / 1024.0 / 1024.0;
+                var elapsedSeconds = (DateTime.UtcNow - startTime).TotalSeconds;
+                var speedText = "";
+                if (elapsedSeconds > 0.5)
+                {
+                    var speedMBps = downloadedMB / elapsedSeconds;
+                    speedText = speedMBps >= 1.0
+                        ? $" • {speedMBps:F1} MB/s"
+                        : $" • {speedMBps * 1024:F0} KB/s";
+                }
+
                 progress.Report(new OperationProgress<TemplateInstallationStage>(
                     TemplateInstallationStage.Downloading,
-                    $"Downloading export templates • {totalDownloaded / 1024.0 / 1024.0:F1}/{contentLength / 1024.0 / 1024.0:F1} MB"));
+                    $"Downloading export templates • {downloadedMB:F1}/{totalMB:F1} MB{speedText}"));
+                lastProgressUpdate = totalDownloaded;
             }
         }
 
-        memStream.Position = 0;
-        return memStream;
+        if (contentLength > 0 && totalDownloaded != contentLength)
+        {
+            throw new IOException($"Download ended after {totalDownloaded} bytes, but expected {contentLength} bytes.");
+        }
+
+        return Convert.ToHexStringLower(sha512.GetHashAndReset());
     }
 
-    private async Task<Result<ChecksumVerification, TemplateInstallationError>> VerifyChecksum(ReleaseArtifact artifact,
-        MemoryStream memStream,
-        IProgress<OperationProgress<TemplateInstallationStage>> progress,
-        CancellationToken cancellationToken
+    private Result<ChecksumVerification, TemplateInstallationError> VerifyChecksum(ReleaseArtifact artifact,
+        string actualHash,
+        IProgress<OperationProgress<TemplateInstallationStage>> progress
     )
     {
         if (artifact.Sha512 is not { } expectedHash)
@@ -224,12 +275,6 @@ public sealed class TemplateInstallationService(
         progress.Report(new OperationProgress<TemplateInstallationStage>(
             TemplateInstallationStage.VerifyingChecksum,
             "Verifying checksum..."));
-
-        memStream.Position = 0;
-        using var sha512Hash = SHA512.Create();
-        var hashBytes = await sha512Hash.ComputeHashAsync(memStream, cancellationToken);
-        var actualHash = Convert.ToHexStringLower(hashBytes);
-        memStream.Position = 0;
 
         return actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase)
             ? new Result<ChecksumVerification, TemplateInstallationError>.Success(new ChecksumVerification.Verified())
@@ -373,6 +418,10 @@ public sealed class TemplateInstallationService(
         File.SetUnixFileMode(destinationPath, (UnixFileMode)unixMode);
     }
 
+    /// <summary>
+    ///     Removes the temporary archive and extraction directory created for the install attempt.
+    /// </summary>
+    /// <param name="tempRoot">The temporary directory to remove.</param>
     private void CleanupTempDirectory(string tempRoot)
     {
         if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot))

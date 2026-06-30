@@ -227,6 +227,52 @@ public class DownloadClientTests
     }
 
     [Fact]
+    public async Task GetZipFile_ReturnsLiveStreamWithoutBufferingBody()
+    {
+        if (Release.TryParse("4.6.2-stable") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "linux.x86_64" };
+        var body = new TrackingStream("zip"u8.ToArray());
+        var content = new TrackingHttpContent(body, body.Length);
+        var mockHandler = CreateMockHttpHandler(HttpStatusCode.OK, content);
+        var downloadClient = CreateDownloadClient(mockHandler);
+
+        var result = await downloadClient.GetZipFile("Godot_v4.6.2-stable_linux.x86_64.zip", release, CancellationToken.None);
+
+        var success = Assert.IsType<Result<ZipDownload, NetworkError>.Success>(result);
+        Assert.Equal(body.Length, success.Value.ContentLength);
+        Assert.Equal(0, body.ReadCount);
+        Assert.False(content.SerializeCalled);
+        await success.Value.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task GetZipFile_DisposingDownloadDisposesStreamAndResponse()
+    {
+        if (Release.TryParse("4.6.2-stable") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { PlatformString = "linux.x86_64" };
+        var body = new TrackingStream("zip"u8.ToArray());
+        var content = new TrackingHttpContent(body, body.Length);
+        var mockHandler = CreateMockHttpHandler(HttpStatusCode.OK, content);
+        var downloadClient = CreateDownloadClient(mockHandler);
+
+        var result = await downloadClient.GetZipFile("Godot_v4.6.2-stable_linux.x86_64.zip", release, CancellationToken.None);
+
+        var success = Assert.IsType<Result<ZipDownload, NetworkError>.Success>(result);
+        await success.Value.DisposeAsync();
+
+        Assert.True(body.Disposed);
+        Assert.True(content.Disposed);
+    }
+
+    [Fact]
     public async Task GetZipFile_GodotDownloadApiFails_GitHubBuildsSucceeds_ReturnsSuccess()
     {
         if (Release.TryParse("4.6.2-stable") is not { } release)
@@ -305,6 +351,94 @@ public class DownloadClientTests
         return mockHandler;
     }
 
+    private static Mock<HttpMessageHandler> CreateMockHttpHandler(HttpStatusCode statusCode, HttpContent content)
+    {
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(() => new HttpResponseMessage
+            {
+                StatusCode = statusCode,
+                Content = content
+            });
+
+        return mockHandler;
+    }
+
     private static bool MatchesUnauthenticatedRequest(HttpRequestMessage request, string url) =>
         request.RequestUri?.ToString() == url && request.Headers.Authorization == null;
+
+    private sealed class TrackingHttpContent(TrackingStream stream, long contentLength) : HttpContent
+    {
+        public bool Disposed { get; private set; }
+
+        public bool SerializeCalled { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream target, TransportContext? context)
+        {
+            SerializeCalled = true;
+            throw new InvalidOperationException("The body should not be buffered before GetZipFile returns.");
+        }
+
+        protected override Task<Stream> CreateContentReadStreamAsync() =>
+            Task.FromResult<Stream>(stream);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = contentLength;
+            return true;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+    }
+
+    private sealed class TrackingStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public bool Disposed { get; private set; }
+
+        public int ReadCount { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+
+        public override ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return base.DisposeAsync();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            ReadCount++;
+            return base.Read(buffer, offset, count);
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            ReadCount++;
+            return base.Read(buffer);
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            ReadCount++;
+            return base.ReadAsync(buffer, offset, count, cancellationToken);
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ReadCount++;
+            return base.ReadAsync(buffer, cancellationToken);
+        }
+    }
 }

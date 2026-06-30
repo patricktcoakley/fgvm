@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Progress;
@@ -163,6 +164,229 @@ public class InstallationServiceTests
             var installedFile = Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release), "Godot");
             Assert.Equal("fake executable", await File.ReadAllTextAsync(installedFile, CancellationToken.None));
             releaseManager.Verify(x => x.GetZipFile(release.ZipFileName, release, It.IsAny<CancellationToken>()), Times.Once);
+        }
+        finally
+        {
+            if (Directory.Exists(rootPath))
+            {
+                Directory.Delete(rootPath, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task InstallReleaseAsync_StreamsArchiveToDisk_WhenArchiveStreamIsSmall()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
+        if (Release.TryParse("3.2.1-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { OS = OS.MacOS, PlatformString = "osx.64" };
+        var archive = CreateZipArchive(payloadBytes: 2 * 1024 * 1024);
+
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.GetZipFile(release.ZipFileName, release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<ZipDownload, NetworkError>.Success(
+                new ZipDownload(new TestDownloadStream(archive), archive.Length)));
+
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.FindOrHydrateArtifact(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<ReleaseArtifact, NetworkError>.Success(
+                new ReleaseArtifact(release.ZipFileName, Sha512(archive))));
+
+        var hostSystem = new Mock<IHostSystem>();
+        var pathService = new Mock<IPathService>();
+        pathService.SetupGet(x => x.RootPath).Returns(rootPath);
+        pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
+        pathService.SetupGet(x => x.InstallationsPath).Returns(Path.Combine(rootPath, "installations.json"));
+        pathService.SetupGet(x => x.InstallationsDirectoryPath).Returns(Path.Combine(rootPath, "installations"));
+
+        var installationRegistry = new Mock<IInstallationRegistry>();
+        installationRegistry.Setup(x => x.FindByReleaseName(release.ReleaseNameWithRuntime))
+            .Returns(new Result<Installation, InstallationRegistryError>.Failure(
+                new InstallationRegistryError.NotFound(release.ReleaseNameWithRuntime)));
+        installationRegistry.Setup(x => x.UpsertInstalled(release, It.IsAny<string>(), It.IsAny<DateTimeOffset?>()))
+            .Returns(new Result<Unit, InstallationRegistryError>.Success(Unit.Value));
+
+        var service = new InstallationService(
+            hostSystem.Object,
+            releaseManager.Object,
+            releaseCatalog.Object,
+            pathService.Object,
+            installationRegistry.Object,
+            NullLogger<InstallationService>.Instance);
+        var progress = new RecordingProgress<InstallationStage>();
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        var baselineBytes = GC.GetTotalMemory(true);
+        var peakBytes = baselineBytes;
+        progress.Reported += report =>
+        {
+            if (report.Stage == InstallationStage.Downloading)
+            {
+                peakBytes = Math.Max(peakBytes, GC.GetTotalMemory(false));
+            }
+        };
+
+        try
+        {
+            var result = await service.InstallReleaseAsync(release, progress, false, CancellationToken.None);
+
+            Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
+            Assert.InRange(peakBytes - baselineBytes, 0, 64L * 1024 * 1024);
+            var installedFile = Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release), "Godot");
+            Assert.Equal("fake executable", await File.ReadAllTextAsync(installedFile, CancellationToken.None));
+        }
+        finally
+        {
+            if (Directory.Exists(rootPath))
+            {
+                Directory.Delete(rootPath, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task InstallReleaseAsync_FailsWhenDownloadEndsBeforeAdvertisedContentLength()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
+        if (Release.TryParse("3.2.1-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { OS = OS.MacOS, PlatformString = "osx.64" };
+        var archive = CreateZipArchive(payloadBytes: 1024);
+        var before = Directory.GetDirectories(Path.GetTempPath(), "fgvm-install-*").ToHashSet(StringComparer.Ordinal);
+
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.GetZipFile(release.ZipFileName, release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<ZipDownload, NetworkError>.Success(
+                new ZipDownload(new TestDownloadStream(archive), archive.Length + 1)));
+
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.FindOrHydrateArtifact(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<ReleaseArtifact, NetworkError>.Success(new ReleaseArtifact(release.ZipFileName, null)));
+
+        var hostSystem = new Mock<IHostSystem>();
+        var pathService = new Mock<IPathService>();
+        pathService.SetupGet(x => x.RootPath).Returns(rootPath);
+        pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
+        pathService.SetupGet(x => x.InstallationsPath).Returns(Path.Combine(rootPath, "installations.json"));
+        pathService.SetupGet(x => x.InstallationsDirectoryPath).Returns(Path.Combine(rootPath, "installations"));
+
+        var installationRegistry = new Mock<IInstallationRegistry>();
+        installationRegistry.Setup(x => x.FindByReleaseName(release.ReleaseNameWithRuntime))
+            .Returns(new Result<Installation, InstallationRegistryError>.Failure(
+                new InstallationRegistryError.NotFound(release.ReleaseNameWithRuntime)));
+
+        var service = new InstallationService(
+            hostSystem.Object,
+            releaseManager.Object,
+            releaseCatalog.Object,
+            pathService.Object,
+            installationRegistry.Object,
+            NullLogger<InstallationService>.Instance);
+
+        try
+        {
+            var result = await service.InstallReleaseAsync(
+                release,
+                new Progress<OperationProgress<InstallationStage>>(),
+                false,
+                CancellationToken.None);
+
+            var failure = Assert.IsType<Result<InstallationOutcome, InstallationError>.Failure>(result);
+            var failed = Assert.IsType<InstallationError.Failed>(failure.Error);
+            Assert.Equal($"Installation failed for {release.ReleaseNameWithRuntime}.", failed.Reason);
+            Assert.False(File.Exists(Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release), "Godot")));
+            installationRegistry.Verify(x => x.UpsertInstalled(
+                    It.IsAny<Release>(),
+                    It.IsAny<string>(),
+                    It.IsAny<DateTimeOffset?>()),
+                Times.Never);
+
+            var after = Directory.GetDirectories(Path.GetTempPath(), "fgvm-install-*").ToHashSet(StringComparer.Ordinal);
+            Assert.Subset(before, after);
+            Assert.Subset(after, before);
+        }
+        finally
+        {
+            if (Directory.Exists(rootPath))
+            {
+                Directory.Delete(rootPath, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task InstallReleaseAsync_FailsAndCleansTemporaryArchiveDirectory_WhenDownloadStreamThrows()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
+        if (Release.TryParse("3.2.1-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        release = release with { OS = OS.MacOS, PlatformString = "osx.64" };
+        var archive = CreateZipArchive(payloadBytes: 2 * 1024 * 1024);
+        var before = Directory.GetDirectories(Path.GetTempPath(), "fgvm-install-*").ToHashSet(StringComparer.Ordinal);
+
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.GetZipFile(release.ZipFileName, release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<ZipDownload, NetworkError>.Success(
+                new ZipDownload(new TestDownloadStream(archive, failAfterBytes: 1024), archive.Length)));
+
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.FindOrHydrateArtifact(release, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<ReleaseArtifact, NetworkError>.Success(
+                new ReleaseArtifact(release.ZipFileName, Sha512(archive))));
+
+        var hostSystem = new Mock<IHostSystem>();
+        var pathService = new Mock<IPathService>();
+        pathService.SetupGet(x => x.RootPath).Returns(rootPath);
+        pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
+        pathService.SetupGet(x => x.InstallationsPath).Returns(Path.Combine(rootPath, "installations.json"));
+        pathService.SetupGet(x => x.InstallationsDirectoryPath).Returns(Path.Combine(rootPath, "installations"));
+
+        var installationRegistry = new Mock<IInstallationRegistry>();
+        installationRegistry.Setup(x => x.FindByReleaseName(release.ReleaseNameWithRuntime))
+            .Returns(new Result<Installation, InstallationRegistryError>.Failure(
+                new InstallationRegistryError.NotFound(release.ReleaseNameWithRuntime)));
+
+        var service = new InstallationService(
+            hostSystem.Object,
+            releaseManager.Object,
+            releaseCatalog.Object,
+            pathService.Object,
+            installationRegistry.Object,
+            NullLogger<InstallationService>.Instance);
+
+        try
+        {
+            var result = await service.InstallReleaseAsync(
+                release,
+                new Progress<OperationProgress<InstallationStage>>(),
+                false,
+                CancellationToken.None);
+
+            var failure = Assert.IsType<Result<InstallationOutcome, InstallationError>.Failure>(result);
+            var failed = Assert.IsType<InstallationError.Failed>(failure.Error);
+            Assert.Equal($"Installation failed for {release.ReleaseNameWithRuntime}.", failed.Reason);
+            Assert.False(File.Exists(Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release), "Godot")));
+            installationRegistry.Verify(x => x.UpsertInstalled(
+                    It.IsAny<Release>(),
+                    It.IsAny<string>(),
+                    It.IsAny<DateTimeOffset?>()),
+                Times.Never);
+
+            var after = Directory.GetDirectories(Path.GetTempPath(), "fgvm-install-*").ToHashSet(StringComparer.Ordinal);
+            Assert.Subset(before, after);
+            Assert.Subset(after, before);
         }
         finally
         {
@@ -418,16 +642,117 @@ public class InstallationServiceTests
         return releaseManager;
     }
 
-    private static byte[] CreateZipArchive()
+    private static byte[] CreateZipArchive(int payloadBytes = 0)
     {
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
         {
             var entry = archive.CreateEntry("Godot");
-            using var writer = new StreamWriter(entry.Open());
-            writer.Write("fake executable");
+            using (var writer = new StreamWriter(entry.Open()))
+            {
+                writer.Write("fake executable");
+            }
+
+            if (payloadBytes > 0)
+            {
+                AddPayloadEntry(archive, payloadBytes);
+            }
         }
 
         return stream.ToArray();
+    }
+
+    private static void AddPayloadEntry(ZipArchive archive, int payloadBytes)
+    {
+        var entry = archive.CreateEntry("payload.bin", CompressionLevel.NoCompression);
+        using var stream = entry.Open();
+        var buffer = new byte[8192];
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            buffer[i] = (byte)(i % 251);
+        }
+
+        var remaining = payloadBytes;
+        while (remaining > 0)
+        {
+            var write = Math.Min(buffer.Length, remaining);
+            stream.Write(buffer, 0, write);
+            remaining -= write;
+        }
+    }
+
+    private static string Sha512(byte[] bytes)
+    {
+        using var sha512 = SHA512.Create();
+        return Convert.ToHexStringLower(sha512.ComputeHash(bytes));
+    }
+
+    private sealed class RecordingProgress<TStage> : IProgress<OperationProgress<TStage>> where TStage : Enum
+    {
+        public event Action<OperationProgress<TStage>>? Reported;
+
+        public void Report(OperationProgress<TStage> value) =>
+            Reported?.Invoke(value);
+    }
+
+    private sealed class TestDownloadStream(byte[] bytes, int? failAfterBytes = null) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        { }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            if (_position >= bytes.Length)
+            {
+                return 0;
+            }
+
+            if (failAfterBytes is { } failAfter && _position >= failAfter)
+            {
+                throw new IOException("Simulated download failure.");
+            }
+
+            var allowedByFailure = failAfterBytes is { } failurePoint
+                ? Math.Max(0, failurePoint - _position)
+                : int.MaxValue;
+            var read = Math.Min(Math.Min(buffer.Length, allowedByFailure), bytes.Length - _position);
+            bytes.AsSpan(_position, read).CopyTo(buffer[..read]);
+            _position += read;
+            return read;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(Read(buffer.Span));
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
     }
 }
