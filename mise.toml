@@ -77,6 +77,38 @@ description = "Build the release configuration of the CLI."
 dir = "."
 run = "dotnet build --nologo --configuration Release Fgvm.Cli/Fgvm.Cli.csproj"
 
+[tasks."container:build"]
+description = "Build the fgvm container image. Loads fgvm:local by default; env vars configure tags/platforms/push for CI."
+dir = "."
+run = '''
+image="${FGVM_IMAGE:-fgvm}"
+tags="${FGVM_TAGS:-$image:local}"
+epoch="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
+
+set -- --target runtime --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false
+
+[ -n "${FGVM_PLATFORMS:-}" ] && set -- "$@" --platform "$FGVM_PLATFORMS"
+
+if [ "${FGVM_PUSH_BY_DIGEST:-false}" = "true" ]; then
+  set -- "$@" --output "type=image,name=$image,push-by-digest=true,name-canonical=true,push=true"
+  [ -n "${FGVM_METADATA_FILE:-}" ] && set -- "$@" --metadata-file "$FGVM_METADATA_FILE"
+else
+  for tag in $tags; do
+    set -- "$@" --tag "$tag"
+  done
+  if [ "${FGVM_PUSH:-false}" = "true" ]; then
+    set -- "$@" --push
+  elif [ "${FGVM_LOAD:-true}" = "true" ]; then
+    set -- "$@" --load
+  fi
+fi
+
+[ -n "${FGVM_CACHE_FROM:-}" ] && set -- "$@" --cache-from "$FGVM_CACHE_FROM"
+[ -n "${FGVM_CACHE_TO:-}" ] && set -- "$@" --cache-to "$FGVM_CACHE_TO"
+
+docker buildx build "$@" .
+'''
+
 [tasks."build:solution"]
 description = "Build all projects in release configuration."
 dir = "."
@@ -106,6 +138,18 @@ run = "dotnet publish Fgvm.Cli/Fgvm.Cli.csproj -c Release -o ./.bin"
 description = "Publish and run the Release configuration."
 run = "./.bin/fgvm"
 depends = ["publish"]
+
+[tasks."local:container"]
+description = "Build and run the local fgvm container image."
+dir = "."
+depends = ["container:build"]
+run = "docker run --rm fgvm:local"
+
+[tasks."container:publish"]
+description = "Push the fgvm image for FGVM_TAGS to a registry (host arch unless FGVM_PLATFORMS is set). Requires docker login."
+dir = "."
+env = { FGVM_PUSH = "true", FGVM_LOAD = "false" }
+run = "mise run container:build"
 
 [tasks.versionize]
 description = "Update versions and changelog using Versionize."
