@@ -118,6 +118,7 @@ jobs:
         uses: docker/metadata-action@v6.1.0
         with:
           images: ${{ steps.image.outputs.name }}
+          flavor: latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
