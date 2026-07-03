@@ -78,14 +78,15 @@ dir = "."
 run = "dotnet build --nologo --configuration Release Fgvm.Cli/Fgvm.Cli.csproj"
 
 [tasks."container:build"]
-description = "Build the fgvm container image. Loads fgvm:local by default; env vars configure tags/platforms/push for CI."
+description = "Build an fgvm container image. Loads fgvm:local (the standard `runtime` target) by default; env vars configure target/image/tags/platforms/push for CI."
 dir = "."
 run = '''
 image="${FGVM_IMAGE:-fgvm}"
 tags="${FGVM_TAGS:-$image:local}"
+target="${FGVM_TARGET:-runtime}"
 epoch="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
 
-set -- --target runtime --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false
+set -- --target "$target" --build-arg SOURCE_DATE_EPOCH="$epoch" --provenance=false --sbom=false
 
 [ -n "${FGVM_PLATFORMS:-}" ] && set -- "$@" --platform "$FGVM_PLATFORMS"
 
@@ -107,6 +108,26 @@ fi
 [ -n "${FGVM_CACHE_TO:-}" ] && set -- "$@" --cache-to "$FGVM_CACHE_TO"
 
 docker buildx build "$@" .
+'''
+
+[tasks."container:build:fgvm"]
+description = "Build the standard slim fgvm container image. Loads fgvm:local by default."
+dir = "."
+run = '''
+FGVM_TARGET=runtime \
+FGVM_IMAGE="${FGVM_IMAGE:-fgvm}" \
+FGVM_TAGS="${FGVM_TAGS:-fgvm:local}" \
+mise run container:build
+'''
+
+[tasks."container:build:fgvm-godot"]
+description = "Build the full fgvm-godot container image. Loads fgvm-godot:local by default."
+dir = "."
+run = '''
+FGVM_TARGET=runtime-godot \
+FGVM_IMAGE="${FGVM_IMAGE:-fgvm-godot}" \
+FGVM_TAGS="${FGVM_TAGS:-fgvm-godot:local}" \
+mise run container:build
 '''
 
 [tasks."build:solution"]
@@ -140,16 +161,51 @@ run = "./.bin/fgvm"
 depends = ["publish"]
 
 [tasks."local:container"]
-description = "Build and run the local fgvm container image."
+description = "Build and run the local standard fgvm container image."
 dir = "."
-depends = ["container:build"]
+depends = ["container:build:fgvm"]
 run = "docker run --rm fgvm:local"
 
-[tasks."container:publish"]
-description = "Push the fgvm image for FGVM_TAGS to a registry (host arch unless FGVM_PLATFORMS is set). Requires docker login."
+[tasks."container:build:full"]
+description = "Alias for container:build:fgvm-godot."
 dir = "."
-env = { FGVM_PUSH = "true", FGVM_LOAD = "false" }
-run = "mise run container:build"
+run = "mise run container:build:fgvm-godot"
+
+[tasks."local:container:full"]
+description = "Alias for local:container:fgvm-godot."
+dir = "."
+depends = ["local:container:fgvm-godot"]
+run = "true"
+
+[tasks."local:container:fgvm-godot"]
+description = "Build and run the local full fgvm-godot container image."
+dir = "."
+depends = ["container:build:fgvm-godot"]
+run = "docker run --rm fgvm-godot:local --version"
+
+[tasks."container:publish"]
+description = "Push the standard fgvm image for FGVM_TAGS to a registry (host arch unless FGVM_PLATFORMS is set). Requires docker login."
+dir = "."
+run = '''
+FGVM_TARGET=runtime \
+FGVM_IMAGE="${FGVM_IMAGE:-fgvm}" \
+FGVM_TAGS="${FGVM_TAGS:-fgvm:local}" \
+FGVM_PUSH=true \
+FGVM_LOAD=false \
+mise run container:build
+'''
+
+[tasks."container:publish:fgvm-godot"]
+description = "Push the full fgvm-godot image for FGVM_TAGS to a registry (host arch unless FGVM_PLATFORMS is set). Requires docker login."
+dir = "."
+run = '''
+FGVM_TARGET=runtime-godot \
+FGVM_IMAGE="${FGVM_IMAGE:-fgvm-godot}" \
+FGVM_TAGS="${FGVM_TAGS:-fgvm-godot:local}" \
+FGVM_PUSH=true \
+FGVM_LOAD=false \
+mise run container:build
+'''
 
 [tasks.versionize]
 description = "Update versions and changelog using Versionize."

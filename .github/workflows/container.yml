@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Image tag to publish (e.g. 2.3.0). Builds from the selected ref."
+        description: "Image tag to publish for fgvm and fgvm-godot (e.g. 2.3.0). Builds from the selected ref and also updates :latest and :<major>.<minor>."
         required: true
         type: string
   push:
@@ -21,11 +21,19 @@ concurrency:
 
 jobs:
   build:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.image.name }} ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+        image:
+          - name: fgvm
+            target: runtime
+          - name: fgvm-godot
+            target: runtime-godot
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
@@ -44,7 +52,7 @@ jobs:
       - name: Resolve Image Name
         id: image
         shell: bash
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/fgvm" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image.name }}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve Source Date
         id: source-date
@@ -64,6 +72,7 @@ jobs:
       - name: Build Image
         env:
           FGVM_IMAGE: ${{ steps.image.outputs.name }}
+          FGVM_TARGET: ${{ matrix.image.target }}
           FGVM_PLATFORMS: ${{ matrix.platform }}
           FGVM_PUSH_BY_DIGEST: 'true'
           FGVM_METADATA_FILE: ${{ runner.temp }}/metadata.json
@@ -80,28 +89,44 @@ jobs:
       - name: Upload Digest
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ matrix.runner }}
+          name: digest-${{ matrix.image.name }}--${{ matrix.runner }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge:
-    name: Merge Manifest
+    name: Merge ${{ matrix.image }}
     runs-on: ubuntu-24.04
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - fgvm
+          - fgvm-godot
 
     steps:
       - name: Download Digests
         uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digest-*
+          pattern: digest-${{ matrix.image }}--*
           merge-multiple: true
 
       - name: Resolve Image Name
         id: image
         shell: bash
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/fgvm" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      # On workflow_dispatch there is no semver git ref, so derive the <major>.<minor>
+      # tag from the supplied version and let the raw tags below update latest/minor too.
+      - name: Resolve Dispatch Tags
+        id: dispatch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          v="${{ inputs.version }}"
+          echo "minor=${v%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Set Up Buildx
         uses: docker/setup-buildx-action@v4.1.0
@@ -123,6 +148,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ steps.dispatch.outputs.minor }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Create And Push Manifest
         working-directory: ${{ runner.temp }}/digests
