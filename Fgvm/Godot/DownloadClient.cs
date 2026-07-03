@@ -47,28 +47,16 @@ public interface IDownloadClient
 /// <summary>
 ///     Downloads Godot release metadata and artifacts from official Godot sources.
 /// </summary>
-public sealed class DownloadClient : IDownloadClient
+public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient> logger) : IDownloadClient
 {
-    private readonly DownloadSource _gitHubBuildsManifest;
-    private readonly DownloadSource _gitHubBuildsRelease;
-    private readonly DownloadSource _gitHubBuildsReleaseIndex;
-    private readonly DownloadSource _gitHubRelease;
-    private readonly DownloadSource _godotDownloadApi;
-    private readonly HttpClient _httpClient;
-    private readonly ILogger<DownloadClient> _logger;
+    private readonly DownloadSource _gitHubBuildsManifest = new("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases");
+    private readonly DownloadSource _gitHubBuildsRelease = new("https://github.com/godotengine/godot-builds/releases/download");
 
-    public DownloadClient(HttpClient httpClient, ILogger<DownloadClient> logger)
-    {
-        _httpClient = httpClient;
-        _godotDownloadApi = new DownloadSource("https://downloads.godotengine.org/");
-        _gitHubBuildsRelease = new DownloadSource("https://github.com/godotengine/godot-builds/releases/download");
-        _gitHubRelease = new DownloadSource("https://github.com/godotengine/godot/releases/download");
-        _gitHubBuildsReleaseIndex =
-            new DownloadSource("https://api.github.com/repos/godotengine/godot-builds/contents/releases");
-        _gitHubBuildsManifest =
-            new DownloadSource("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases");
-        _logger = logger;
-    }
+    private readonly DownloadSource _gitHubBuildsReleaseIndex =
+        new("https://api.github.com/repos/godotengine/godot-builds/contents/releases");
+
+    private readonly DownloadSource _gitHubRelease = new("https://github.com/godotengine/godot/releases/download");
+    private readonly DownloadSource _godotDownloadApi = new("https://downloads.godotengine.org/");
 
     /// <inheritdoc />
     public async Task<Result<IEnumerable<string>, NetworkError>> ListReleases(CancellationToken cancellationToken)
@@ -93,7 +81,7 @@ public sealed class DownloadClient : IDownloadClient
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError("Failed to list releases: {Message}", ex.Message);
+                    logger.LogError("Failed to list releases: {Message}", ex.Message);
                     return new Result<IEnumerable<string>, NetworkError>.Failure(
                         new NetworkError.ConnectionFailure(ex.Message));
                 }
@@ -129,7 +117,7 @@ public sealed class DownloadClient : IDownloadClient
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError("Failed to get release manifest for {ReleaseName}: {Message}", godotRelease.ReleaseName, ex.Message);
+                    logger.LogError("Failed to get release manifest for {ReleaseName}: {Message}", godotRelease.ReleaseName, ex.Message);
                     return new Result<GodotReleaseManifest, NetworkError>.Failure(
                         new NetworkError.ConnectionFailure(ex.Message));
                 }
@@ -169,7 +157,7 @@ public sealed class DownloadClient : IDownloadClient
             try
             {
                 using var request = source.CreateRequest();
-                using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
+                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -177,7 +165,7 @@ public sealed class DownloadClient : IDownloadClient
                 }
 
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
+                logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
                 lastError = new NetworkError.RequestFailure(source.Url, (int)response.StatusCode, body);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -186,7 +174,7 @@ public sealed class DownloadClient : IDownloadClient
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "HTTP GET {Url} failed", source.Url);
+                logger.LogDebug(ex, "HTTP GET {Url} failed", source.Url);
                 lastError = new NetworkError.ConnectionFailure(ex.Message);
             }
         }
@@ -208,7 +196,7 @@ public sealed class DownloadClient : IDownloadClient
             try
             {
                 using var request = source.CreateRequest();
-                var response = await _httpClient.SendAsync(request, completionOption, cancellationToken);
+                var response = await httpClient.SendAsync(request, completionOption, cancellationToken);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -227,7 +215,7 @@ public sealed class DownloadClient : IDownloadClient
 
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 response.Dispose();
-                _logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
+                logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
                 lastError = new NetworkError.RequestFailure(source.Url, (int)response.StatusCode, body);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -236,7 +224,7 @@ public sealed class DownloadClient : IDownloadClient
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "HTTP GET {Url} failed", source.Url);
+                logger.LogDebug(ex, "HTTP GET {Url} failed", source.Url);
                 lastError = new NetworkError.ConnectionFailure(ex.Message);
             }
         }
@@ -302,11 +290,9 @@ public sealed class DownloadClient : IDownloadClient
 
     private sealed record DownloadSource(string Url)
     {
-        public DownloadSource WithPath(string relativePath) =>
-            this with { Url = $"{Url.TrimEnd('/')}/{relativePath.TrimStart('/')}" };
+        public DownloadSource WithPath(string relativePath) => new(Url: $"{Url.TrimEnd('/')}/{relativePath.TrimStart('/')}");
 
-        public DownloadSource WithQuery(string query) =>
-            this with { Url = $"{Url}?{query}" };
+        public DownloadSource WithQuery(string query) => new(Url: $"{Url}?{query}");
 
         public HttpRequestMessage CreateRequest() => new(HttpMethod.Get, Url);
     }
