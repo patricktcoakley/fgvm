@@ -75,7 +75,7 @@ COPY --link --from=build /app/bin/fgvm /usr/local/bin/fgvm
 COPY --link --from=build --chown=1654:1654 /app/runtime-root/fgvm /fgvm
 COPY --link --from=build --chown=1654:1654 /app/runtime-root/workspace /workspace
 
-USER 1654
+USER 1654:1654
 
 WORKDIR /workspace
 ENTRYPOINT ["fgvm"]
@@ -89,6 +89,9 @@ LABEL org.opencontainers.image.title="fgvm-godot" \
       org.opencontainers.image.licenses="MIT"
 
 ENV FGVM_HOME=/fgvm \
+    HOME=/workspace \
+    XDG_CONFIG_HOME=/workspace/.config \
+    XDG_DATA_HOME=/workspace/.local/share \
     DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
@@ -122,7 +125,10 @@ RUN apt-get update \
 
 COPY --from=build /app/bin/fgvm /usr/local/bin/fgvm
 
-RUN mkdir -p /fgvm /workspace
+RUN mkdir -p /fgvm /workspace \
+ && chown -R 1654:1654 /fgvm /workspace
+
+USER 1654:1654
 
 WORKDIR /workspace
 ENTRYPOINT ["fgvm"]
