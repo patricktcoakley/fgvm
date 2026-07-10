@@ -446,7 +446,7 @@ public class VersionManagementServiceTests
     {
         SetupInstallations([]);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetLocalVersionAsync(forceInteractive: true));
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.SetLocalVersionAsync(forceInteractive: true));
 
         Assert.Empty(_console.Output);
     }
@@ -740,7 +740,7 @@ public class VersionManagementServiceTests
     {
         SetupInstallations([]);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetGlobalVersionAsync(["4.3.0"]));
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.SetGlobalVersionAsync(["4.3.0"]));
 
         Assert.Empty(_console.Output);
     }
@@ -785,7 +785,7 @@ public class VersionManagementServiceTests
         _mockReleaseManager.Setup(x => x.FilterReleasesByQuery(query, installedVersions, false))
             .Returns([]);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetGlobalVersionAsync(query));
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.SetGlobalVersionAsync(query));
 
         Assert.Empty(_console.Output);
     }

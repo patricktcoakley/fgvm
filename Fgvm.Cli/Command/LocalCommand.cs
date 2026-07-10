@@ -35,6 +35,10 @@ public sealed class LocalCommand(IVersionManagementService versionManagementServ
             console.MarkupLine(Messages.UserCancelled("setting local version"));
             throw;
         }
+        catch (ArgumentException)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             logger.LogError(e, "Error setting local version: {Message}", e.Message);

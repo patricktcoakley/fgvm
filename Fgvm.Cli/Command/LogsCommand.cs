@@ -29,13 +29,18 @@ public sealed class LogsCommand(
     /// <param name="message">-m, Message text to filter by.</param>
     /// <param name="cancellationToken"></param>
     /// <exception cref="FileNotFoundException">Thrown when the configured log file does not exist.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when the requested log level filter is invalid.</exception>
+    /// <exception cref="ArgumentException">Thrown when the requested log level filter is invalid.</exception>
     /// <exception cref="OperationCanceledException">Thrown when log reading is canceled.</exception>
     public async Task Logs(bool json = false, string level = "", string message = "", CancellationToken cancellationToken = default)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!string.IsNullOrEmpty(level) && !LogLevels.Any(x => x.StartsWith(level, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException(Messages.LogLevelOutOfRange(level));
+            }
+
             switch (hostSystem.FileExists(pathService.LogPath))
             {
                 case Result<bool, FileOperationError>.Failure(var existsError):
@@ -46,11 +51,6 @@ public sealed class LogsCommand(
                     break;
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
-            }
-
-            if (!string.IsNullOrEmpty(level) && !LogLevels.Any(x => x.StartsWith(level, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new ArgumentOutOfRangeException(Messages.LogLevelOutOfRange(level));
             }
 
             Stream streamValue;
@@ -114,6 +114,10 @@ public sealed class LogsCommand(
             logger.LogError("User cancelled reading the logs.");
             console.MarkupLine(Messages.UserCancelled("reading logs"));
 
+            throw;
+        }
+        catch (ArgumentException)
+        {
             throw;
         }
         catch (Exception e)

@@ -54,6 +54,10 @@ public sealed class TemplateCommand(
             console.MarkupLine(Messages.UserCancelled("template installation"));
             throw;
         }
+        catch (ArgumentException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error installing export templates: {Message}", ex.Message);

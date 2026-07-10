@@ -49,6 +49,8 @@ public static class Messages
     public static string NoInstallationsAndNoVersionFile =>
         "No installations found and no `.fgvm-version` file. Install a version first with: fgvm install <version>";
     public static string NoVersionsInstalledPrompt => "No versions installed. Install a version first with: `fgvm install <version>`";
+    public static string VersionQueryRequiredInNonInteractiveShell(string command) =>
+        $"No version query was provided and `{command}` cannot prompt because the current terminal is not interactive. Pass a version query, for example: `{command} latest`";
     public static string InstallationFailedNoVersions => "Installation failed and no versions available.";
     public static string UnknownInstallationOutcome => "Unknown installation outcome";
     public static string UnknownInstallationResultType => "Unknown installation result type";
@@ -63,7 +65,19 @@ public static class Messages
     public static string CurrentVersionSetTo(string symlinkPath) => $"[green]Current version set to:[/] {symlinkPath}";
     public static string CurrentMacOSAppSetTo(string macAppSymlinkPath) => $"\n[green]Current macOS App set to:[/] {macAppSymlinkPath}";
     public static string ConfigurationError(string message) => $"[red]Configuration error: {message}[/]";
-    public static string ExceptionMessage(string message) => $"[red]{message}.[/]";
+    public static string ExceptionMessage(string message)
+    {
+        var trimmed = message.Trim();
+        var punctuationProbe = trimmed;
+        while (punctuationProbe.EndsWith("[/]", StringComparison.Ordinal))
+        {
+            punctuationProbe = punctuationProbe[..^3].TrimEnd();
+        }
+
+        var punctuation = punctuationProbe.EndsWith('.') || punctuationProbe.EndsWith('!') || punctuationProbe.EndsWith('?');
+        return punctuation ? $"[red]{trimmed}[/]" : $"[red]{trimmed}.[/]";
+    }
+
     public static string SelectAVersionTo(string what) => $"[green]Select a version to {what}[/]\n[hotpink_1](Press CTRL+C to cancel)[/]";
     public static string SelectVersionsTo(string what) =>
         $"[green]Select the versions to {what}[/]\n[hotpink_1](Press CTRL+C to cancel)[/]";

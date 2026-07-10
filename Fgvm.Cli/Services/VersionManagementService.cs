@@ -341,7 +341,12 @@ public class VersionManagementService(
             if (installed.Length == 0)
             {
                 logger.LogWarning("Tried to set a version when there were none installed.");
-                throw new InvalidOperationException(Messages.NoInstallationsFound);
+                throw new ArgumentException(Messages.NoInstallationsFound);
+            }
+
+            if ((forceInteractive || query.Length == 0) && !console.Profile.Capabilities.Interactive)
+            {
+                throw new ArgumentException(Messages.VersionQueryRequiredInNonInteractiveShell("fgvm set"));
             }
 
             var versionToSet = forceInteractive || query.Length == 0
@@ -349,7 +354,7 @@ public class VersionManagementService(
                 ? await Set.ShowSetVersionPrompt(installed, console, cancellationToken)
                 // Try to find the first release that matches the query or throw
                 : releaseManager.FilterReleasesByQuery(query, installed).FirstOrDefault()
-                  ?? throw new InvalidOperationException($"Unable to find Godot release with query `{string.Join(", ", query)}`");
+                  ?? throw new ArgumentException($"Unable to find Godot release with query `{string.Join(" ", query)}`");
 
             var godotRelease = CreateRelease(versionToSet);
             var installation = FindInstallation(versionToSet);
@@ -832,7 +837,12 @@ public class VersionManagementService(
         if (installed.Length == 0)
         {
             logger.LogWarning("No versions installed and no `.fgvm-version` file found.");
-            throw new InvalidOperationException(Messages.NoInstallationsAndNoVersionFile);
+            throw new ArgumentException(Messages.NoInstallationsAndNoVersionFile);
+        }
+
+        if (!console.Profile.Capabilities.Interactive)
+        {
+            throw new ArgumentException(Messages.VersionQueryRequiredInNonInteractiveShell("fgvm local"));
         }
 
         // No `.fgvm-version` found, prompt for selection
@@ -852,7 +862,7 @@ public class VersionManagementService(
         {
             if (installed.Length <= 0)
             {
-                throw new InvalidOperationException(Messages.NoVersionsInstalledPrompt);
+                throw new ArgumentException(Messages.NoVersionsInstalledPrompt);
             }
 
             console.MarkupLine(Messages.ProjectSpecifiesVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));

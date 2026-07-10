@@ -1,5 +1,7 @@
 using ConsoleAppFramework;
+using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
+using Fgvm.Error;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Messages = Fgvm.Cli.Error.Messages;
@@ -29,6 +31,15 @@ public sealed class SetCommand(IVersionManagementService versionManagementServic
         {
             logger.LogError("User cancelled setting version.");
             console.MarkupLine(Messages.UserCancelled("setting version"));
+            throw;
+        }
+        catch (ArgumentException e)
+        {
+            console.MarkupLine(Messages.ExceptionMessage(e.Message));
+            throw new ProcessExitCodeException(ExitCodes.GeneralError);
+        }
+        catch (ProcessExitCodeException)
+        {
             throw;
         }
         catch (Exception e)

@@ -36,11 +36,7 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
                                       or ArgumentException
                                       or ArgumentParseFailedException)
         {
-            if (e is ArgumentParseFailedException)
-            {
-                AnsiConsole.MarkupLine(Messages.ExceptionMessage(e.Message));
-            }
-
+            AnsiConsole.MarkupLine(Messages.ExceptionMessage(string.IsNullOrWhiteSpace(e.Message) ? "Invalid arguments" : e.Message));
             exitCode = ExitCodes.ArgumentError;
         }
         catch (Exception)
@@ -52,4 +48,5 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
             System.Environment.Exit(exitCode);
         }
     }
+
 }

@@ -168,6 +168,26 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     }
 
     [Fact]
+    public async Task UserFacingArgumentFailuresAreNotWrappedInCatchAllMessage()
+    {
+        var install = await fixture.ExecuteCommand(["install", "nope"]);
+        Assert.Equal(ExitCodes.ArgumentError, install.ExitCode);
+        Assert.Contains("Invalid arguments: nope", install.Stdout);
+        Assert.DoesNotContain("Something went wrong", install.Stdout);
+
+        var logs = await fixture.ExecuteCommand(["logs", "--level", "verbose"]);
+        Assert.Equal(ExitCodes.ArgumentError, logs.ExitCode);
+        Assert.Contains("verbose is not valid", logs.Stdout);
+        Assert.DoesNotContain("Something went wrong", logs.Stdout);
+
+        var nonInteractiveInstall = await fixture.ExecuteCommand(["install"]);
+        Assert.Equal(ExitCodes.ArgumentError, nonInteractiveInstall.ExitCode);
+        Assert.Contains("cannot prompt because", nonInteractiveInstall.Stdout);
+        Assert.Contains("not interactive", nonInteractiveInstall.Stdout);
+        Assert.DoesNotContain("Something went wrong", nonInteractiveInstall.Stdout);
+    }
+
+    [Fact]
     public async Task LogsCommandDisplaysPreviousOperations()
     {
         await fixture.ExecuteCommand(["list"]);
