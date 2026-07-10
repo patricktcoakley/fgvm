@@ -88,8 +88,8 @@ scoop install patricktcoakley/fgvm
 
 If you do not want to use a package manager, the install scripts download the latest release, verify its SHA-256 checksum, install `fgvm`, and update your user environment.
 `FGVM_HOME` controls fgvm's runtime home and defaults to `~/fgvm`. `FGVM_INSTALL_DIR` controls where the `fgvm` binary is installed and defaults to `$FGVM_HOME/bin`.
-The installer adds both `FGVM_INSTALL_DIR` and `$FGVM_HOME/bin` to PATH so the `fgvm` binary and the `godot` shim work. If you override either variable, the installer persists it in your shell profile
-or Windows user environment unless you skip environment changes.
+The installer adds both `FGVM_INSTALL_DIR` and `$FGVM_HOME/bin` to PATH so the `fgvm` binary and the `godot` shim work. If you override either variable, the installer persists it in your shell startup files,
+fish `conf.d`, or Windows user environment unless you skip environment changes.
 
 macOS and Linux:
 
