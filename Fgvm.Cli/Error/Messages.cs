@@ -140,6 +140,8 @@ public static class Messages
         $"[dim]Installing {projectVersion}...{runtimeDisplaySuffix}[/]";
 
     // Project confirmation
+    public static string NoProjectFileDetected => "[red]No project.godot file was detected in the current directory.[/]";
+
     public static string ProjectRequiresInstall(string projectVersion, string runtimeText) =>
         $"[yellow]Project requires {projectVersion}{runtimeText} but it's not installed.[/]\n[green]Would you like to install it now?[/]";
 

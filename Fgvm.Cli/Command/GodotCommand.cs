@@ -2,6 +2,7 @@ using System.Text;
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
+using Fgvm.Error;
 using Fgvm.Godot;
 using Fgvm.Services;
 using Fgvm.Types;
@@ -235,7 +236,8 @@ public sealed class GodotCommand(
                     ? $"--editor --path \"{projectDirectory}\""
                     : $"--path \"{projectDirectory}\" {argumentString}";
             case Result<ProjectLookup<string>, ProjectError>.Success when required:
-                throw new InvalidOperationException("No project.godot file found in the current directory.");
+                console.MarkupLine(Messages.NoProjectFileDetected);
+                throw new ProcessExitCodeException(ExitCodes.GeneralError);
             case Result<ProjectLookup<string>, ProjectError>.Success:
                 return argumentString;
             default:

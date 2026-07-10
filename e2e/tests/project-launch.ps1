@@ -64,4 +64,16 @@ Suite "project launch" {
         Assert.Equal "--dump-extension-api" $invocation.Arguments[2]
         Assert.Equal "--quit" $invocation.Arguments[3]
     }
+
+    Test "project flag reports when no project file is detected" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        $emptyDirectory = Join-Path $Context.WorkPath "empty-project-directory"
+        New-Item -ItemType Directory -Path $emptyDirectory -Force | Out-Null
+
+        $godot = Run -Cwd $emptyDirectory -Arguments @("godot", "-P")
+
+        Assert.ExitCode 1 $godot "fgvm godot -P without a project.godot file"
+        Assert.Contains "No project.godot file was detected in the current directory." $godot.Stdout
+        Assert.NotContains "Something went wrong" $godot.Stdout
+    }
 }
