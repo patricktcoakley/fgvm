@@ -2,6 +2,7 @@ using Fgvm.Cli.Command;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
+using Fgvm.Error;
 using Fgvm.Godot;
 using Fgvm.Services;
 using Fgvm.Types;
@@ -103,6 +104,21 @@ public sealed class GodotCommandTests
         Assert.Equal($"--path \"{projectDirectory}\" --dump-extension-api --quit", captured.Arguments);
         Assert.Contains("Auto-detected project file", _console.Output);
         _registry.Verify(x => x.RecordLaunch(InstallationKey, null), Times.Once);
+    }
+
+    [Fact]
+    public async Task Launch_ProjectFlag_WithoutDetectedProject_ShowsFriendlyErrorAndDoesNotLaunch()
+    {
+        var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(() => CreateCommand().Launch(project: true));
+
+        Assert.Equal(ExitCodes.GeneralError, exception.ExitCode);
+        Assert.Contains("No project.godot file was detected", _console.Output);
+        Assert.DoesNotContain("Something went wrong", _console.Output);
+        _launcher.Verify(x => x.LaunchAsync(
+            It.IsAny<GodotLaunchRequest>(),
+            It.IsAny<Action<GodotLaunchOutput>?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _registry.Verify(x => x.RecordLaunch(It.IsAny<string>(), It.IsAny<DateTimeOffset?>()), Times.Never);
     }
 
     [Fact]
