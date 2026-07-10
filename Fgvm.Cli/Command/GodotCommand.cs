@@ -98,7 +98,11 @@ public sealed class GodotCommand(
                     };
 
                     console.MarkupLine(errorMessage);
-                    throw new InvalidOperationException(errorMessage);
+                    throw new ProcessExitCodeException(resolutionError switch
+                    {
+                        VersionResolutionError.InvalidVersion => ExitCodes.ArgumentError,
+                        _ => ExitCodes.GeneralError
+                    });
                 case Result<VersionResolutionOutcome, VersionResolutionError>.Success(var outcome):
                     resolutionOutcome = outcome;
                     break;

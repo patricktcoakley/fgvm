@@ -52,6 +52,11 @@ public sealed class InstallationOrchestrator(
 
         if (query.Length == 0)
         {
+            if (!console.Profile.Capabilities.Interactive)
+            {
+                throw new ArgumentException(Messages.VersionQueryRequiredInNonInteractiveShell("fgvm install"));
+            }
+
             var releaseNames = await FetchReleaseNames(cancellationToken);
             var version = await Install.ShowVersionSelectionPrompt(releaseNames, console, cancellationToken);
             var godotRelease = CreateRelease(version);

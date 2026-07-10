@@ -167,6 +167,13 @@ public sealed class TemplateOrchestrator(
 
         if (query.Length == 0)
         {
+            if (!console.Profile.Capabilities.Interactive)
+            {
+                return new Result<Release, TemplateInstallationError>.Failure(
+                    new TemplateInstallationError.InvalidQuery(
+                        Messages.VersionQueryRequiredInNonInteractiveShell("fgvm template install")));
+            }
+
             var selectedRelease = await Install.CreateVersionSelectionPrompt(installedReleaseNames)
                 .ShowAsync(console, cancellationToken);
             return CreateTemplateRelease(selectedRelease);

@@ -67,6 +67,10 @@ public sealed class InstallCommand(
             console.MarkupLine(Messages.UserCancelled("installation"));
             throw;
         }
+        catch (ArgumentException)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             logger.LogError(e, "Error downloading and installing Godot.");
