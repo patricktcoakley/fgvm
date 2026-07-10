@@ -1,6 +1,7 @@
 name: CI
 permissions:
   contents: read
+  pull-requests: read
 
 on:
   push:
@@ -11,7 +12,63 @@ on:
       - main
 
 jobs:
+  changes:
+    name: Detect Unit Test Inputs
+    runs-on: ubuntu-24.04
+    outputs:
+      run-tests: ${{ steps.filter.outputs.run-tests }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$EVENT_NAME" in
+            pull_request)
+              gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename' > changed-files.txt
+              ;;
+            push)
+              if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+                echo "Unable to determine push diff; running tests to be safe."
+                echo "run-tests=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              if ! git diff --name-only "$BEFORE_SHA" "$HEAD_SHA" > changed-files.txt; then
+                echo "Unable to diff push changes; running tests to be safe."
+                echo "run-tests=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              ;;
+            *)
+              echo "run-tests=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          echo "Changed files:"
+          sed 's/^/  /' changed-files.txt
+
+          if grep -Eq '^(Fgvm|Fgvm[.]Cli|Fgvm[.]Tests)/|^(Fgvm[.]slnx|global[.]json|mise[.]toml|[.]config/dotnet-tools[.]json)$' changed-files.txt; then
+            echo "run-tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run-tests=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
+    needs: changes
+    if: ${{ needs.changes.outputs.run-tests == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
