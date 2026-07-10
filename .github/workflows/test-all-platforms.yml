@@ -1,6 +1,7 @@
 name: Integration
 permissions:
   contents: read
+  pull-requests: read
 
 on:
   workflow_dispatch:
@@ -13,8 +14,68 @@ on:
     types: [checks_requested]
 
 jobs:
+  changes:
+    name: Detect Integration Inputs
+    runs-on: ubuntu-24.04
+    outputs:
+      run-tests: ${{ steps.filter.outputs.run-tests }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              echo "run-tests=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            pull_request)
+              gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename' > changed-files.txt
+              ;;
+            merge_group)
+              if [ -z "$MERGE_GROUP_BASE_SHA" ] || [ -z "$MERGE_GROUP_HEAD_SHA" ]; then
+                echo "Unable to determine merge-group diff; running tests to be safe."
+                echo "run-tests=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              if ! git diff --name-only "$MERGE_GROUP_BASE_SHA" "$MERGE_GROUP_HEAD_SHA" > changed-files.txt; then
+                echo "Unable to diff merge-group changes; running tests to be safe."
+                echo "run-tests=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              ;;
+            *)
+              echo "run-tests=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          echo "Changed files:"
+          sed 's/^/  /' changed-files.txt
+
+          if grep -Eq '^(Fgvm|Fgvm[.]Cli|Fgvm[.]Tests|Fgvm[.]Tests[.]Integration|e2e|scripts)/|^(Fgvm[.]slnx|global[.]json|mise[.]toml|[.]config/dotnet-tools[.]json)$' changed-files.txt; then
+            echo "run-tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run-tests=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: Integration (${{ matrix.os }})
+    needs: changes
+    if: ${{ needs.changes.outputs.run-tests == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -35,11 +96,21 @@ jobs:
   required:
     name: Integration
     runs-on: ubuntu-24.04
-    needs: test
+    needs: [changes, test]
     if: ${{ always() }}
     steps:
       - name: Verify Integration Matrix Result
         run: |
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "::error::Integration change detection finished with result '${{ needs.changes.result }}'."
+            exit 1
+          fi
+
+          if [ "${{ needs.changes.outputs.run-tests }}" != "true" ]; then
+            echo "Integration matrix skipped because no code/test inputs changed."
+            exit 0
+          fi
+
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "::error::Integration matrix finished with result '${{ needs.test.result }}'."
             exit 1
