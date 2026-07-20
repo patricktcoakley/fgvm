@@ -111,6 +111,12 @@ public static class Messages
     public static string SuccessfullyInstalled(string releaseNameWithRuntime) =>
         $"[green]Successfully installed {releaseNameWithRuntime}.[/]";
 
+    // Which
+    public static string NoInstalledGodotVersionMatching(string query) => $"No installed Godot version found matching '{query}'.";
+    public static string NoVersionCurrentlySet => "No Godot version is currently set.";
+    public static string CurrentVersionInvalid => "Current Godot version is invalid.";
+    public static string UnknownVersionResolutionError => "Unknown version resolution error.";
+
     // Version resolution
     public static string VersionResolutionNotFound(string version, IHostSystem hostSystem) =>
         $"[red]Version {version} could not be found for {hostSystem.SystemInfo.CurrentOS.ToDisplayString()} {hostSystem.SystemInfo.CurrentArch.ToDisplayString()}[/]";

@@ -140,6 +140,11 @@ description = "Build all projects with Roslyn analyzers enabled and logging temp
 dir = "."
 run = "dotnet build --nologo --configuration Release Fgvm.slnx /p:RunAnalyzersDuringBuild=true /p:EnableNETAnalyzers=true /p:AnalysisLevel=latest-recommended -warnaserror:CA2254"
 
+[tasks."build:analyze:priority"]
+description = "Fail the build on the curated high-value analyzer rules (perf/correctness), with naming and logging-perf noise suppressed so the output is just the punch list."
+dir = "."
+run = "dotnet build --nologo --configuration Release Fgvm.slnx /p:RunAnalyzersDuringBuild=true /p:EnableNETAnalyzers=true /p:AnalysisLevel=latest-recommended '/p:NoWarn=CA1707%3BCA1716%3BCA1711%3BCA1715%3BCA1708%3BCA1805%3BCA1036%3BCA1001%3BCA1873%3BCA1848' -warnaserror:CA1822,CA1861,CA1865,CA1859,CA1850,CA1806,CA2201,CA1310,CA1309,CA1305,CA1311,CA1304"
+
 [tasks.restore]
 description = "Restore all NuGet packages."
 dir = "."

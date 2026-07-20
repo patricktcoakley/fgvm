@@ -47,6 +47,7 @@ public sealed class TemplateInstallationService(
     {
         var expectedTemplateVersion = TemplateInstallation.ToTemplateVersion(release);
         var destinationPath = godotPathService.GetExportTemplateVersionPath(expectedTemplateVersion);
+        var stagingPath = "";
         var tempRoot = Path.Combine(Path.GetTempPath(), $"fgvm-template-{Guid.NewGuid():N}");
 
         try
@@ -114,18 +115,14 @@ public sealed class TemplateInstallationService(
                 TemplateInstallationStage.Extracting,
                 "Extracting export templates..."));
 
-            var extractPath = Path.Combine(tempRoot, "extract");
-            Directory.CreateDirectory(extractPath);
+            // Keep staging beside the destination so the commit is a same-volume rename.
+            var templatesDirectory = Path.GetDirectoryName(destinationPath)
+                                     ?? throw new InvalidOperationException($"Template path has no parent: {destinationPath}");
+            Directory.CreateDirectory(templatesDirectory);
+            stagingPath = Path.Combine(templatesDirectory, $".fgvm-template-staging-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(stagingPath);
 
-            await using var archiveStream = new FileStream(
-                archivePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                ArchiveBufferSize,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            await using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read);
-            var templateVersionResult = ExtractTemplateArchive(archive, extractPath);
+            var templateVersionResult = await ExtractTemplateArchiveAsync(archivePath, stagingPath, cancellationToken);
             string actualTemplateVersion;
             switch (templateVersionResult)
             {
@@ -156,14 +153,20 @@ public sealed class TemplateInstallationService(
                     new TemplateInstallationError.Failed($"Unable to create export template directory: {createError}"));
             }
 
-            if (force &&
-                hostSystem.DeleteDirectoryIfExists(destinationPath, true) is Result<Unit, FileOperationError>.Failure(var deleteError))
+            switch (StagedDirectoryCommitter.Commit(stagingPath, destinationPath, force, logger))
             {
-                return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
-                    new TemplateInstallationError.Failed($"Unable to replace existing export templates: {deleteError}"));
+                case Result<Unit, DirectoryCommitError>.Success:
+                    break;
+                case Result<Unit, DirectoryCommitError>.Failure(DirectoryCommitError.DestinationExists):
+                    // Another process finished installing these templates while this one was downloading.
+                    return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
+                        new TemplateInstallationOutcome.AlreadyInstalled(expectedTemplateVersion, destinationPath));
+                case Result<Unit, DirectoryCommitError>.Failure(var commitError):
+                    return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
+                        new TemplateInstallationError.Failed($"Unable to install export templates: {commitError}"));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
             }
-
-            Directory.Move(extractPath, destinationPath);
 
             return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
                 new TemplateInstallationOutcome.NewInstallation(actualTemplateVersion, destinationPath, checksumStatus));
@@ -186,6 +189,7 @@ public sealed class TemplateInstallationService(
         }
         finally
         {
+            CleanupTempDirectory(stagingPath);
             CleanupTempDirectory(tempRoot);
         }
     }
@@ -282,55 +286,80 @@ public sealed class TemplateInstallationService(
                 new TemplateInstallationError.ChecksumMismatch(expectedHash, actualHash, artifact.FileName));
     }
 
-    private static Result<string, TemplateInstallationError> ExtractTemplateArchive(ZipArchive archive, string extractPath)
+    private static async Task<Result<string, TemplateInstallationError>> ExtractTemplateArchiveAsync(string archivePath,
+        string extractPath,
+        CancellationToken cancellationToken
+    )
     {
-        foreach (var entry in archive.Entries.Where(entry => !IsIgnoredEntry(entry.FullName)))
+        string templateVersion;
+        ZipExtractionWorkItem[] entries;
+
+        await using (var archiveStream = ParallelZipExtractor.OpenArchiveStream(archivePath))
+        await using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read))
         {
-            var normalizedPath = NormalizeEntryPath(entry.FullName);
-            if (IsUnsafeEntryPath(normalizedPath))
+            ZipArchiveEntry? versionEntry = null;
+            var versionEntryPath = "";
+            var fileEntries = new List<(int EntryIndex, string NormalizedPath)>(archive.Entries.Count);
+
+            for (var index = 0; index < archive.Entries.Count; index++)
+            {
+                var entry = archive.Entries[index];
+                if (IsIgnoredEntry(entry.FullName))
+                {
+                    continue;
+                }
+
+                var normalizedPath = NormalizeEntryPath(entry.FullName);
+                if (IsUnsafeEntryPath(normalizedPath))
+                {
+                    return new Result<string, TemplateInstallationError>.Failure(
+                        new TemplateInstallationError.Failed($"Archive entry is outside the target directory: {entry.FullName}"));
+                }
+
+                if (versionEntry is null &&
+                    GetEntryFileName(normalizedPath).Equals("version.txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    versionEntry = entry;
+                    versionEntryPath = normalizedPath;
+                }
+
+                if (!string.IsNullOrEmpty(entry.Name))
+                {
+                    fileEntries.Add((index, normalizedPath));
+                }
+            }
+
+            if (versionEntry is null)
             {
                 return new Result<string, TemplateInstallationError>.Failure(
-                    new TemplateInstallationError.Failed($"Archive entry is outside the target directory: {entry.FullName}"));
+                    new TemplateInstallationError.Failed("No version.txt found inside the export templates archive."));
             }
-        }
 
-        var versionEntry = archive.Entries.FirstOrDefault(entry =>
-            !IsIgnoredEntry(entry.FullName) &&
-            GetEntryFileName(NormalizeEntryPath(entry.FullName)).Equals("version.txt", StringComparison.OrdinalIgnoreCase));
-
-        if (versionEntry is null)
-        {
-            return new Result<string, TemplateInstallationError>.Failure(
-                new TemplateInstallationError.Failed("No version.txt found inside the export templates archive."));
-        }
-
-        var templateVersion = ReadEntryText(versionEntry).Trim();
-        if (TemplateInstallation.TryCreate(templateVersion, extractPath) is null)
-        {
-            return new Result<string, TemplateInstallationError>.Failure(
-                new TemplateInstallationError.Failed(
-                    $"Invalid version.txt format inside the export templates archive: {templateVersion}."));
-        }
-
-        var contentsDir = GetBaseDirectory(NormalizeEntryPath(versionEntry.FullName));
-        foreach (var entry in archive.Entries)
-        {
-            if (string.IsNullOrEmpty(entry.Name) || IsIgnoredEntry(entry.FullName))
+            templateVersion = ReadEntryText(versionEntry).Trim();
+            if (TemplateInstallation.TryCreate(templateVersion, extractPath) is null)
             {
-                continue;
+                return new Result<string, TemplateInstallationError>.Failure(
+                    new TemplateInstallationError.Failed(
+                        $"Invalid version.txt format inside the export templates archive: {templateVersion}."));
             }
 
-            var relativePath = GetRelativeTemplatePath(NormalizeEntryPath(entry.FullName), contentsDir);
-            if (string.IsNullOrWhiteSpace(relativePath))
-            {
-                continue;
-            }
-
-            var destinationPath = GetSafeDestinationPath(extractPath, relativePath);
-            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
-            entry.ExtractToFile(destinationPath, true);
-            PreserveUnixPermissions(entry, destinationPath);
+            var contentsDir = GetBaseDirectory(versionEntryPath);
+            entries = fileEntries
+                .Select(item => new ZipExtractionWorkItem(
+                    item.EntryIndex,
+                    GetRelativeTemplatePath(item.NormalizedPath, contentsDir),
+                    IsDirectory: false,
+                    ApplyUnixPermissions: true))
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.RelativePath))
+                .ToArray();
         }
+
+        await ParallelZipExtractor.ExtractAsync(
+            archivePath,
+            extractPath,
+            entries,
+            overwrite: true,
+            cancellationToken);
 
         return new Result<string, TemplateInstallationError>.Success(templateVersion);
     }
@@ -386,36 +415,6 @@ public sealed class TemplateInstallationService(
         return entryPath.StartsWith($"{contentsDir}/", StringComparison.Ordinal)
             ? entryPath[(contentsDir.Length + 1)..]
             : "";
-    }
-
-    private static string GetSafeDestinationPath(string extractPath, string relativePath)
-    {
-        var destinationPath = Path.GetFullPath(Path.Combine(extractPath, relativePath));
-        var rootPath = Path.GetFullPath(extractPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
-                                        Path.DirectorySeparatorChar);
-
-        if (!destinationPath.StartsWith(rootPath, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException($"Archive entry is outside the target directory: {relativePath}");
-        }
-
-        return destinationPath;
-    }
-
-    private static void PreserveUnixPermissions(ZipArchiveEntry entry, string destinationPath)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        var unixMode = (entry.ExternalAttributes >> 16) & 0x01FF;
-        if (unixMode == 0)
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(destinationPath, (UnixFileMode)unixMode);
     }
 
     /// <summary>

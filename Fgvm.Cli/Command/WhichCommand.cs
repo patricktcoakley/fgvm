@@ -34,18 +34,18 @@ public sealed class WhichCommand(
                 Console.Error.WriteLine(error switch
                 {
                     VersionResolutionError.NotFound when query.Length > 0 =>
-                        $"No installed Godot version found matching '{string.Join(" ", query)}'.",
+                        Messages.NoInstalledGodotVersionMatching(string.Join(" ", query)),
                     VersionResolutionError.NotFound =>
-                        "No Godot version is currently set.",
+                        Messages.NoVersionCurrentlySet,
                     VersionResolutionError.InvalidVersion =>
-                        "Current Godot version is invalid.",
+                        Messages.CurrentVersionInvalid,
                     VersionResolutionError.Failed failed =>
                         failed.Reason,
-                    _ => "Unknown version resolution error."
+                    _ => Messages.UnknownVersionResolutionError
                 });
                 throw new ProcessExitCodeException(ExitCodes.GeneralError);
             default:
-                Console.Error.WriteLine("Unknown version resolution error.");
+                Console.Error.WriteLine(Messages.UnknownVersionResolutionError);
                 throw new ProcessExitCodeException(ExitCodes.GeneralError);
         }
     }

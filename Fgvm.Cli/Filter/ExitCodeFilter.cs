@@ -48,5 +48,4 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
             System.Environment.Exit(exitCode);
         }
     }
-
 }

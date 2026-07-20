@@ -52,6 +52,22 @@ public abstract record FileSystemError
 }
 
 /// <summary>
+///     Represents failures while committing a staged directory into its final destination.
+/// </summary>
+public abstract record DirectoryCommitError(string Path)
+{
+    public sealed record DestinationExists(string Path) : DirectoryCommitError(Path)
+    {
+        public override string ToString() => $"Destination already exists: `{Path}`.";
+    }
+
+    public sealed record CommitFailed(string Path, string Reason) : DirectoryCommitError(Path)
+    {
+        public override string ToString() => $"Unable to commit `{Path}`: {Reason}";
+    }
+}
+
+/// <summary>
 ///     Represents common filesystem operation failures with the affected path preserved.
 /// </summary>
 public abstract record FileOperationError(string Path)

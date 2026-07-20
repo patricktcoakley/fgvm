@@ -4,6 +4,7 @@ using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
+using Fgvm.Tests.TestSupport;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -41,6 +42,51 @@ public sealed class TemplateInstallationServiceTests : IDisposable
 
         var success = Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
         Assert.IsType<TemplateInstallationOutcome.AlreadyInstalled>(success.Value);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ReturnsAlreadyInstalled_WhenDestinationAppearsDuringInstall()
+    {
+        var release = CreateRelease("4.4-stable-standard");
+        var service = CreateService(release, CreateTemplateArchive("4.4.stable"), out var templatesRoot);
+        var destination = Path.Combine(templatesRoot, "4.4.stable");
+        var progress = new RecordingProgress<TemplateInstallationStage>();
+        // Simulate a concurrent install finishing between the up-front existence check and the commit.
+        progress.Reported += report =>
+        {
+            if (report.Stage.Equals(TemplateInstallationStage.Extracting) && !Directory.Exists(destination))
+            {
+                Directory.CreateDirectory(destination);
+                File.WriteAllText(Path.Combine(destination, "existing.txt"), "existing");
+            }
+        };
+
+        var result = await service.InstallAsync(release, progress);
+
+        var success = Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
+        Assert.IsType<TemplateInstallationOutcome.AlreadyInstalled>(success.Value);
+        Assert.Equal("existing", await File.ReadAllTextAsync(Path.Combine(destination, "existing.txt")));
+        Assert.Empty(Directory.GetDirectories(templatesRoot, ".fgvm-template-staging-*"));
+        Assert.Empty(Directory.GetDirectories(templatesRoot, "*.backup-*"));
+    }
+
+    [Fact]
+    public async Task InstallAsync_ReturnsFailed_WhenCommitFailsBecauseDestinationIsBlockedByAFile()
+    {
+        var release = CreateRelease("4.4-stable-standard");
+        var service = CreateService(release, CreateTemplateArchive("4.4.stable"), out var templatesRoot);
+        var destination = Path.Combine(templatesRoot, "4.4.stable");
+        Directory.CreateDirectory(templatesRoot);
+        await File.WriteAllTextAsync(destination, "blocker");
+
+        var result = await service.InstallAsync(release, new Progress<OperationProgress<TemplateInstallationStage>>());
+
+        var failure = Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure>(result);
+        var failed = Assert.IsType<TemplateInstallationError.Failed>(failure.Error);
+        Assert.Contains("Unable to install export templates", failed.Reason);
+        Assert.Equal("blocker", await File.ReadAllTextAsync(destination));
+        Assert.Empty(Directory.GetDirectories(templatesRoot, ".fgvm-template-staging-*"));
+        Assert.Empty(Directory.GetDirectories(templatesRoot, "*.backup-*"));
     }
 
     [Fact]
@@ -89,7 +135,7 @@ public sealed class TemplateInstallationServiceTests : IDisposable
     public async Task InstallAsync_FailsWhenVersionTxtIsMalformed()
     {
         var release = CreateRelease("4.4-stable-standard");
-        var service = CreateService(release, CreateArchiveWithEntries(("templates/version.txt", "not-a-version")), out _);
+        var service = CreateService(release, ZipArchiveTestBuilder.CreateArchive(("templates/version.txt", "not-a-version")), out _);
 
         var result = await service.InstallAsync(release, new Progress<OperationProgress<TemplateInstallationStage>>());
 
@@ -102,7 +148,7 @@ public sealed class TemplateInstallationServiceTests : IDisposable
     public async Task InstallAsync_FailsWhenVersionTxtIsMissing()
     {
         var release = CreateRelease("4.4-stable-standard");
-        var service = CreateService(release, CreateArchiveWithEntries(("templates/notversion.txt", "4.4.stable")), out _);
+        var service = CreateService(release, ZipArchiveTestBuilder.CreateArchive(("templates/notversion.txt", "4.4.stable")), out _);
 
         var result = await service.InstallAsync(release, new Progress<OperationProgress<TemplateInstallationStage>>());
 
@@ -128,7 +174,7 @@ public sealed class TemplateInstallationServiceTests : IDisposable
     public async Task InstallAsync_RejectsZipSlipVersionEntry()
     {
         var release = CreateRelease("4.4-stable-standard");
-        var service = CreateService(release, CreateArchiveWithEntries(("../version.txt", "4.4.stable")), out _);
+        var service = CreateService(release, ZipArchiveTestBuilder.CreateArchive(("../version.txt", "4.4.stable")), out _);
 
         var result = await service.InstallAsync(release, new Progress<OperationProgress<TemplateInstallationStage>>());
 
@@ -322,7 +368,7 @@ public sealed class TemplateInstallationServiceTests : IDisposable
             entries.Add(("templates/../escape.txt", "escape"));
         }
 
-        return CreateArchiveWithEntries(entries.ToArray(), payloadBytes);
+        return ZipArchiveTestBuilder.CreateArchive(entries.ToArray(), "templates/payload.bin", payloadBytes);
     }
 
     private static byte[] CreateTemplateArchiveWithExecutableMode(string templateVersion)
@@ -330,8 +376,8 @@ public sealed class TemplateInstallationServiceTests : IDisposable
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
         {
-            AddEntry(archive, "templates/version.txt", templateVersion);
-            var executable = AddEntry(archive, "templates/linux_release.x86_64", "template");
+            ZipArchiveTestBuilder.AddEntry(archive, "templates/version.txt", templateVersion);
+            var executable = ZipArchiveTestBuilder.AddEntry(archive, "templates/linux_release.x86_64", "template");
             executable.ExternalAttributes =
                 (int)(UnixFileMode.UserRead |
                       UnixFileMode.UserWrite |
@@ -343,55 +389,6 @@ public sealed class TemplateInstallationServiceTests : IDisposable
         }
 
         return stream.ToArray();
-    }
-
-    private static byte[] CreateArchiveWithEntries(params (string Name, string Content)[] entries) =>
-        CreateArchiveWithEntries(entries, 0);
-
-    private static byte[] CreateArchiveWithEntries((string Name, string Content)[] entries, int payloadBytes)
-    {
-        using var stream = new MemoryStream();
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
-        {
-            foreach (var (name, content) in entries)
-            {
-                AddEntry(archive, name, content);
-            }
-
-            if (payloadBytes > 0)
-            {
-                AddPayloadEntry(archive, payloadBytes);
-            }
-        }
-
-        return stream.ToArray();
-    }
-
-    private static ZipArchiveEntry AddEntry(ZipArchive archive, string name, string content)
-    {
-        var entry = archive.CreateEntry(name);
-        using var writer = new StreamWriter(entry.Open());
-        writer.Write(content);
-        return entry;
-    }
-
-    private static void AddPayloadEntry(ZipArchive archive, int payloadBytes)
-    {
-        var entry = archive.CreateEntry("templates/payload.bin", CompressionLevel.NoCompression);
-        using var stream = entry.Open();
-        var buffer = new byte[8192];
-        for (var i = 0; i < buffer.Length; i++)
-        {
-            buffer[i] = (byte)(i % 251);
-        }
-
-        var remaining = payloadBytes;
-        while (remaining > 0)
-        {
-            var write = Math.Min(buffer.Length, remaining);
-            stream.Write(buffer, 0, write);
-            remaining -= write;
-        }
     }
 
     private static string Sha512(byte[] bytes)
