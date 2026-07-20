@@ -41,10 +41,11 @@ public sealed class WhichCommandTests
         var console = new TestConsole();
         var command = new WhichCommand(versionService.Object, console);
 
-        var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(() => command.Which());
+        var (exception, stderr) = await RunCapturingStderr(() => command.Which());
 
         Assert.Equal(ExitCodes.GeneralError, exception.ExitCode);
         Assert.Empty(console.Output);
+        Assert.Contains(Messages.NoVersionCurrentlySet, stderr);
     }
 
     [Fact]
@@ -83,10 +84,11 @@ public sealed class WhichCommandTests
         var console = new TestConsole();
         var command = new WhichCommand(versionService.Object, console);
 
-        var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(() => command.Which(query: query));
+        var (exception, stderr) = await RunCapturingStderr(() => command.Which(query: query));
 
         Assert.Equal(ExitCodes.GeneralError, exception.ExitCode);
         Assert.Empty(console.Output);
+        Assert.Contains(Messages.NoInstalledGodotVersionMatching("9.9"), stderr);
     }
 
     private static Mock<IVersionManagementService> CreateVersionService(
@@ -97,5 +99,21 @@ public sealed class WhichCommandTests
         versionService.Setup(x => x.ResolveEffectiveVersionAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(result);
         return versionService;
+    }
+
+    private static async Task<(ProcessExitCodeException Exception, string Stderr)> RunCapturingStderr(Func<Task> action)
+    {
+        var originalError = Console.Error;
+        var capture = new StringWriter();
+        Console.SetError(capture);
+        try
+        {
+            var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(action);
+            return (exception, capture.ToString());
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
     }
 }

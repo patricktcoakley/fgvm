@@ -1,7 +1,5 @@
-using System.IO.Compression;
 using System.Security.Cryptography;
 using Fgvm.Environment;
-using Fgvm.Extensions;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Types;
@@ -100,6 +98,8 @@ public class InstallationService(
     )
     {
         var extractPath = "";
+        var stagingPath = "";
+        var committed = false;
         var tempRoot = Path.Combine(Path.GetTempPath(), $"fgvm-install-{Guid.NewGuid():N}");
 
         try
@@ -179,16 +179,32 @@ public class InstallationService(
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Extracting, "Extracting files..."));
             extractPath = Path.Combine(pathService.RootPath, relativeInstallPath);
-
-            await using var archiveStream = new FileStream(
+            // Keep staging beside the destination so the commit is a same-volume rename.
+            var installationDirectory = Path.GetDirectoryName(extractPath)
+                                        ?? throw new InvalidOperationException($"Installation path has no parent: {extractPath}");
+            Directory.CreateDirectory(installationDirectory);
+            stagingPath = Path.Combine(installationDirectory, $".fgvm-staging-{Guid.NewGuid():N}");
+            await ZipArchiveExtensions.ExtractWithFlatteningSupportAsync(
                 archivePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                ArchiveBufferSize,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            await using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read);
-            archive.ExtractWithFlatteningSupport(extractPath, true);
+                stagingPath,
+                overwrite: true,
+                cancellationToken);
+
+            // Overwrite: a stale destination (e.g. from a crashed prior install) must not block reinstalling.
+            switch (StagedDirectoryCommitter.Commit(stagingPath, extractPath, overwrite: true, logger))
+            {
+                case Result<Unit, DirectoryCommitError>.Success:
+                    committed = true;
+                    break;
+                case Result<Unit, DirectoryCommitError>.Failure(var commitError):
+                    logger.LogError("Failed to commit installation for {ReleaseNameWithRuntime}: {Error}",
+                        godotRelease.ReleaseNameWithRuntime, commitError);
+                    return new Result<InstallationOutcome, InstallationError>.Failure(
+                        new InstallationError.Failed(
+                            $"Unable to install {godotRelease.ReleaseNameWithRuntime}: {commitError}"));
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
 
             if (installationRegistry.UpsertInstalled(godotRelease, relativeInstallPath) is
                 Result<Unit, InstallationRegistryError>.Failure(var upsertError))
@@ -238,7 +254,7 @@ public class InstallationService(
             return new Result<InstallationOutcome, InstallationError>.Success(
                 new InstallationOutcome.NewInstallation(godotRelease.ReleaseNameWithRuntime, checksumStatus, symlinkWarning));
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled installation");
             throw;
@@ -250,14 +266,13 @@ public class InstallationService(
                                       or ArgumentException
                                       or CryptographicException)
         {
-            if (!string.IsNullOrWhiteSpace(extractPath) &&
-                hostSystem.DeleteDirectoryIfExists(extractPath, true) is Result<Unit, FileOperationError>.Failure(var cleanupError))
-            {
-                logger.LogWarning("Failed to remove {ExtractPath} after installation error: {Error}", extractPath, cleanupError);
-            }
-            else if (!string.IsNullOrWhiteSpace(extractPath))
+            if (committed && !string.IsNullOrWhiteSpace(extractPath))
             {
                 logger.LogError("Removing {ExtractPath} due to error: {Message}", extractPath, e.Message);
+                if (hostSystem.DeleteDirectoryIfExists(extractPath, true) is Result<Unit, FileOperationError>.Failure(var cleanupError))
+                {
+                    logger.LogWarning("Failed to remove {ExtractPath} after installation error: {Error}", extractPath, cleanupError);
+                }
             }
 
             logger.LogError("Error downloading and installing Godot {ReleaseNameWithRuntime}: {Message}",
@@ -267,6 +282,7 @@ public class InstallationService(
         }
         finally
         {
+            CleanupTempDirectory(stagingPath);
             CleanupTempDirectory(tempRoot);
         }
     }

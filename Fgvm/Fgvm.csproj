@@ -21,4 +21,8 @@
         <InternalsVisibleTo Include="Fgvm.Cli"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <Using Include="Fgvm.Extensions"/>
+    </ItemGroup>
+
 </Project>
