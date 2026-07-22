@@ -221,3 +221,182 @@ run = "dotnet tool run versionize"
 description = "Preview the changes Versionize would make."
 dir = "."
 run = "dotnet tool run versionize --dry-run"
+
+[tasks."preview:dryrun"]
+description = "Show the version, tag, and artifacts for a preview release."
+depends = [{ task = "preview:_run", env = { FGVM_PREVIEW_PUBLISH = "false" } }]
+
+[tasks."preview:publish"]
+description = "Dispatch an owner-only GitHub Actions preview release."
+depends = [{ task = "preview:_run", env = { FGVM_PREVIEW_PUBLISH = "true" } }]
+
+[tasks."preview:_run"]
+hide = true
+dir = "."
+shell = "pwsh -NoLogo -NoProfile -Command"
+run = '''
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$publish = $env:FGVM_PREVIEW_PUBLISH -eq "true"
+$repositoryRoot = if ($env:MISE_PROJECT_ROOT) {
+    $env:MISE_PROJECT_ROOT
+} else {
+    (Get-Location).Path
+}
+$originalLocation = Get-Location
+Set-Location $repositoryRoot
+
+try {
+    if ($publish) {
+        $worktreeStatus = & git status --porcelain
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to inspect the Git worktree."
+        }
+
+        if ($worktreeStatus) {
+            throw "Preview releases must be published from a clean worktree. Commit or stash the current changes first."
+        }
+    }
+
+    & mise x -- dotnet tool restore
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to restore the .NET tools."
+    }
+
+    $versionizeOutput = @(& mise x -- dotnet tool run versionize -- --dry-run --skip-dirty --exit-insignificant-commits 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $versionizeOutput | Out-Host
+        throw "Versionize could not determine a preview version."
+    }
+
+    $versionizeOutput | Out-Host
+    $versionMatch = [regex]::Match(
+        ($versionizeOutput -join "`n"),
+        "bumping version from \S+ to (?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?) in projects")
+    if (!$versionMatch.Success) {
+        throw "Could not determine the next version from Versionize output."
+    }
+
+    $nextVersion = $versionMatch.Groups["version"].Value
+    $timestamp = [DateTimeOffset]::UtcNow.ToString(
+        "yyyyMMddHHmmss",
+        [Globalization.CultureInfo]::InvariantCulture)
+    $tag = "preview-$nextVersion-$timestamp"
+    $buildVersion = "$nextVersion-preview.$timestamp"
+    $commit = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to resolve the current Git commit."
+    }
+
+    $branch = (& git branch --show-current).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to resolve the current Git branch."
+    }
+
+    Write-Host ""
+    Write-Host "Preview plan"
+    Write-Host "  Next version:  $nextVersion"
+    Write-Host "  Build version: $buildVersion"
+    Write-Host "  Tag:           $tag"
+    Write-Host "  Commit:        $commit"
+    Write-Host "  Workflow ref:  $branch"
+    Write-Host "  Artifacts:     linux-x64, linux-arm64, win-x64, osx-x64, osx-arm64"
+
+    if (!$publish) {
+        if (& git status --porcelain) {
+            Write-Warning "Uncommitted changes are not included in Versionize's next-version calculation."
+        }
+
+        Write-Host ""
+        Write-Host "Dry run only. Run 'mise run preview:publish' to publish this commit."
+        return
+    }
+
+    if (!(Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI (gh) is required to publish a preview."
+    }
+
+    if (!$branch) {
+        throw "Preview releases cannot be dispatched from a detached HEAD. Check out a branch first."
+    }
+
+    & gh auth status
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub CLI is not authenticated. Run 'gh auth login' first."
+    }
+
+    $remoteBranch = @(& git ls-remote origin "refs/heads/$branch")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect origin/$branch."
+    }
+
+    $remoteCommit = if ($remoteBranch.Count -gt 0) {
+        ($remoteBranch[0] -split "\s+")[0]
+    } else {
+        ""
+    }
+
+    if ($remoteCommit -ne $commit) {
+        throw "origin/$branch does not point to $commit. Push the current commit before publishing a preview."
+    }
+
+    & gh workflow run preview.yml `
+        --ref $branch `
+        --raw-field "commit=$commit" `
+        --raw-field "version=$nextVersion" `
+        --raw-field "timestamp=$timestamp"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Dispatching the preview workflow failed."
+    }
+
+    Write-Host ""
+    Write-Host "Dispatched $tag. Follow it with 'gh run watch'."
+}
+catch {
+    [Console]::Error.WriteLine("Preview failed: $($_.Exception.Message)")
+    exit 1
+}
+finally {
+    Set-Location $originalLocation
+}
+'''
+
+[tasks."preview:_build"]
+hide = true
+dir = "."
+shell = "pwsh -NoLogo -NoProfile -Command"
+run = '''
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$rid = $env:FGVM_PREVIEW_RID
+$version = $env:FGVM_PREVIEW_VERSION
+if (!$rid) {
+    throw "FGVM_PREVIEW_RID is required."
+}
+if (!$version) {
+    throw "FGVM_PREVIEW_VERSION is required."
+}
+
+$previewRoot = Join-Path ".gdvm-publish" $version
+$publishDirectory = Join-Path $previewRoot "publish/$rid"
+$artifactDirectory = Join-Path $previewRoot "artifacts"
+$executableName = $rid.StartsWith("win-", [StringComparison]::OrdinalIgnoreCase) ? "fgvm.exe" : "fgvm"
+$executablePath = Join-Path $publishDirectory $executableName
+
+& mise x -- dotnet publish Fgvm.Cli/Fgvm.Cli.csproj `
+    --configuration Release `
+    --runtime $rid `
+    --output $publishDirectory `
+    "-p:Version=$version"
+if ($LASTEXITCODE -ne 0) {
+    throw "Publishing fgvm for $rid failed."
+}
+
+$packageScript = Join-Path $env:MISE_PROJECT_ROOT "scripts/package-release.ps1"
+& $packageScript `
+    -Rid $rid `
+    -Source $executablePath `
+    -OutputDirectory $artifactDirectory
+'''

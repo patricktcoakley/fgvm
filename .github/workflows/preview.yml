@@ -1,0 +1,144 @@
+name: Preview Release
+run-name: Preview ${{ inputs.version }} from ${{ inputs.commit }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact commit to build
+        required: true
+        type: string
+      version:
+        description: Next stable version reported by Versionize
+        required: true
+        type: string
+      timestamp:
+        description: UTC timestamp used to identify the preview
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  authorize:
+    name: Authorize and validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PREVIEW_COMMIT: ${{ inputs.commit }}
+      PREVIEW_VERSION: ${{ inputs.version }}
+      PREVIEW_TIMESTAMP: ${{ inputs.timestamp }}
+      REPOSITORY_OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Require the repository owner
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_ACTOR -ne $env:REPOSITORY_OWNER -or
+              $env:GITHUB_TRIGGERING_ACTOR -ne $env:REPOSITORY_OWNER) {
+              throw "Only the repository owner can publish preview releases."
+          }
+
+      - name: Validate preview inputs
+        shell: pwsh
+        run: |
+          if ($env:PREVIEW_COMMIT -notmatch '^[0-9a-f]{40}$') {
+              throw "The preview commit must be a full Git SHA."
+          }
+          if ($env:PREVIEW_VERSION -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+              throw "The preview version must be a semantic version."
+          }
+          if ($env:PREVIEW_TIMESTAMP -notmatch '^\d{14}$') {
+              throw "The preview timestamp must use yyyyMMddHHmmss."
+          }
+
+  test:
+    name: Test
+    needs: authorize
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit }}
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Build
+        run: mise run build:solution
+
+      - name: Run tests
+        run: mise run test
+
+  build:
+    name: Build ${{ matrix.rid }}
+    needs: test
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-15-intel
+            rid: osx-x64
+          - os: macos-14
+            rid: osx-arm64
+    env:
+      FGVM_PREVIEW_RID: ${{ matrix.rid }}
+      FGVM_PREVIEW_VERSION: ${{ inputs.version }}-preview.${{ inputs.timestamp }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit }}
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Build and package
+        run: mise run preview:_build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fgvm-${{ matrix.rid }}
+          path: .gdvm-publish/${{ env.FGVM_PREVIEW_VERSION }}/artifacts/*
+          if-no-files-found: error
+
+  release:
+    name: Publish prerelease
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: preview-${{ inputs.version }}-${{ inputs.timestamp }}
+          target_commitish: ${{ inputs.commit }}
+          name: fgvm ${{ inputs.version }} preview (${{ inputs.timestamp }})
+          body: Multi-platform preview from commit `${{ inputs.commit }}`. This is not a stable release.
+          prerelease: true
+          make_latest: false
+          files: |
+            */fgvm-*.zip
+            */fgvm-*.tar.gz
+            */fgvm-*.sha256
