@@ -221,3 +221,155 @@ run = "dotnet tool run versionize"
 description = "Preview the changes Versionize would make."
 dir = "."
 run = "dotnet tool run versionize --dry-run"
+
+[tasks."preview:dryrun"]
+description = "Show the version, tag, runtime, and artifact for a local preview release."
+dir = "."
+env = { FGVM_PREVIEW_PUBLISH = "false" }
+run = "mise run preview:_run"
+
+[tasks."preview:publish"]
+description = "Build and publish the current platform as a GitHub prerelease."
+dir = "."
+env = { FGVM_PREVIEW_PUBLISH = "true" }
+run = "mise run preview:_run"
+
+[tasks."preview:_run"]
+hide = true
+dir = "."
+shell = "pwsh -NoLogo -NoProfile -Command"
+run = '''
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$publish = $env:FGVM_PREVIEW_PUBLISH -eq "true"
+$repositoryRoot = if ($env:MISE_PROJECT_ROOT) {
+    $env:MISE_PROJECT_ROOT
+} else {
+    (Get-Location).Path
+}
+$originalLocation = Get-Location
+Set-Location $repositoryRoot
+
+try {
+    if ($publish) {
+        $worktreeStatus = & git status --porcelain
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to inspect the Git worktree."
+        }
+
+        if ($worktreeStatus) {
+            throw "Preview releases must be published from a clean worktree. Commit or stash the current changes first."
+        }
+    }
+
+    & mise x -- dotnet tool restore
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to restore the .NET tools."
+    }
+
+    $versionizeOutput = @(& mise x -- dotnet tool run versionize -- --dry-run --skip-dirty --exit-insignificant-commits 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $versionizeOutput | Out-Host
+        throw "Versionize could not determine a preview version."
+    }
+
+    $versionizeOutput | Out-Host
+    $versionMatch = [regex]::Match(
+        ($versionizeOutput -join "`n"),
+        "bumping version from \S+ to (?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?) in projects")
+    if (!$versionMatch.Success) {
+        throw "Could not determine the next version from Versionize output."
+    }
+
+    $nextVersion = $versionMatch.Groups["version"].Value
+    $timestamp = [DateTimeOffset]::UtcNow.ToString(
+        "yyyyMMddHHmmss",
+        [Globalization.CultureInfo]::InvariantCulture)
+    $tag = "preview-$nextVersion-$timestamp"
+    $buildVersion = "$nextVersion-preview.$timestamp"
+    $rid = [Runtime.InteropServices.RuntimeInformation]::RuntimeIdentifier
+    $commit = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to resolve the current Git commit."
+    }
+
+    $previewRoot = Join-Path $repositoryRoot ".gdvm-publish/$tag"
+    $publishDirectory = Join-Path $previewRoot "publish"
+    $artifactDirectory = Join-Path $previewRoot "artifacts"
+    $executableName = $rid.StartsWith("win-", [StringComparison]::OrdinalIgnoreCase) ? "fgvm.exe" : "fgvm"
+    $executablePath = Join-Path $publishDirectory $executableName
+    $archiveExtension = $rid.StartsWith("win-", [StringComparison]::OrdinalIgnoreCase) ? ".zip" : ".tar.gz"
+    $artifactPath = Join-Path $artifactDirectory "fgvm-$rid$archiveExtension"
+
+    Write-Host ""
+    Write-Host "Preview plan"
+    Write-Host "  Next version:  $nextVersion"
+    Write-Host "  Build version: $buildVersion"
+    Write-Host "  Tag:           $tag"
+    Write-Host "  Commit:        $commit"
+    Write-Host "  Runtime:       $rid"
+    Write-Host "  Artifact:      $artifactPath"
+
+    if (!$publish) {
+        if (& git status --porcelain) {
+            Write-Warning "Uncommitted changes are not included in Versionize's next-version calculation."
+        }
+
+        Write-Host ""
+        Write-Host "Dry run only. Run 'mise run preview:publish' to publish this commit."
+        return
+    }
+
+    if (!(Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI (gh) is required to publish a preview."
+    }
+
+    & gh auth status
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub CLI is not authenticated. Run 'gh auth login' first."
+    }
+
+    & gh api "repos/{owner}/{repo}/commits/$commit" --silent
+    if ($LASTEXITCODE -ne 0) {
+        throw "Commit $commit is not available on GitHub. Push the commit before publishing a preview."
+    }
+
+    & mise x -- dotnet publish Fgvm.Cli/Fgvm.Cli.csproj `
+        --configuration Release `
+        --runtime $rid `
+        --output $publishDirectory `
+        "-p:Version=$buildVersion"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Publishing fgvm for $rid failed."
+    }
+
+    $packageScript = Join-Path $repositoryRoot "scripts/package-release.ps1"
+    $package = & $packageScript `
+        -Rid $rid `
+        -Source $executablePath `
+        -OutputDirectory $artifactDirectory
+
+    $releaseUrl = & gh release create $tag `
+        $package.ArtifactPath `
+        $package.ChecksumPath `
+        --target $commit `
+        --prerelease `
+        --latest=false `
+        --title "fgvm $nextVersion preview ($timestamp)" `
+        --notes "Current-platform preview build for $rid from commit $commit. This is not a stable release."
+    if ($LASTEXITCODE -ne 0) {
+        throw "Creating the GitHub prerelease failed. Packaged files remain in $artifactDirectory."
+    }
+
+    Write-Host ""
+    Write-Host "Published preview: $releaseUrl"
+}
+catch {
+    [Console]::Error.WriteLine("Preview failed: $($_.Exception.Message)")
+    exit 1
+}
+finally {
+    Set-Location $originalLocation
+}
+'''
