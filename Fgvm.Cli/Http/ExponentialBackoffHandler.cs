@@ -17,6 +17,12 @@ internal sealed class ExponentialBackoffHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Range downloads retry individual chunks themselves; retrying here would multiply their attempt budget.
+        if (request.Headers.Range is not null)
+        {
+            return await base.SendAsync(request, cancellationToken);
+        }
+
         var attempt = 0;
         var delay = _initialDelay;
 
@@ -36,12 +42,9 @@ internal sealed class ExponentialBackoffHandler : DelegatingHandler
                 response.Dispose();
             }
             catch (HttpRequestException) when (attempt < _maxRetries)
-            {
-                // swallowed intentionally to retry
-            }
+            { }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested && attempt < _maxRetries)
             {
-                // Timeout or transient cancellation; retry
                 if (ex.InnerException is OperationCanceledException && cancellationToken.IsCancellationRequested)
                 {
                     throw;

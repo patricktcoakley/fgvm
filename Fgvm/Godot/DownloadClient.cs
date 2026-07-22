@@ -1,5 +1,8 @@
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Fgvm.Godot.Download;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 
@@ -34,14 +37,22 @@ public interface IDownloadClient
     Task<Result<string, NetworkError>> GetSha512(Release godotRelease, CancellationToken cancellationToken);
 
     /// <summary>
-    ///     Gets the release zip stream for a Godot release file.
+    ///     Downloads a release zip file directly to <paramref name="destinationPath" />, using parallel ranged
+    ///     requests when the source supports them.
     /// </summary>
     /// <param name="filename">The zip filename to fetch.</param>
     /// <param name="godotRelease">The release that owns the zip.</param>
+    /// <param name="destinationPath">The file path to write the downloaded archive to.</param>
+    /// <param name="progress">Optional progress sink.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The zip stream, or a network error.</returns>
+    /// <returns>The lowercase hex SHA-512 checksum of the downloaded file, or a network error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when the request is canceled.</exception>
-    Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken);
+    Task<Result<string, NetworkError>> DownloadZipFileAsync(string filename,
+        Release godotRelease,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken
+    );
 }
 
 /// <summary>
@@ -135,13 +146,16 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
             cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename,
+    public async Task<Result<string, NetworkError>> DownloadZipFileAsync(string filename,
         Release godotRelease,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress,
         CancellationToken cancellationToken
     )
-        => await GetZipFromSources(
+        => await DownloadZipToFileFromSources(
             GetZipSources(filename, godotRelease),
-            HttpCompletionOption.ResponseHeadersRead,
+            destinationPath,
+            progress,
             $"Failed to get zip file for {godotRelease.ReleaseNameWithRuntime}",
             cancellationToken);
 
@@ -183,8 +197,9 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
             lastError ?? new NetworkError.ConnectionFailure(failureMessage));
     }
 
-    private async Task<Result<ZipDownload, NetworkError>> GetZipFromSources(IReadOnlyList<DownloadSource> sources,
-        HttpCompletionOption completionOption,
+    private async Task<Result<string, NetworkError>> DownloadZipToFileFromSources(IReadOnlyList<DownloadSource> sources,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress,
         string failureMessage,
         CancellationToken cancellationToken
     )
@@ -195,28 +210,22 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
         {
             try
             {
-                using var request = source.CreateRequest();
-                var response = await httpClient.SendAsync(request, completionOption, cancellationToken);
-
-                if (response.IsSuccessStatusCode)
+                switch (await ParallelRangedDownloader.DownloadAsync(
+                            httpClient, source.Url, range => source.CreateRequest(range), destinationPath, progress, cancellationToken))
                 {
-                    try
-                    {
-                        var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                        return new Result<ZipDownload, NetworkError>.Success(
-                            new ZipDownload(stream, response.Content.Headers.ContentLength, response));
-                    }
-                    catch
-                    {
-                        response.Dispose();
-                        throw;
-                    }
+                    case Result<Unit, NetworkError>.Success:
+                        await using (var fileStream = File.OpenRead(destinationPath))
+                        {
+                            var hash = await SHA512.HashDataAsync(fileStream, cancellationToken);
+                            return new Result<string, NetworkError>.Success(Convert.ToHexStringLower(hash));
+                        }
+                    case Result<Unit, NetworkError>.Failure(var downloadError):
+                        logger.LogDebug("Ranged download from {Url} failed: {Error}", source.Url, downloadError);
+                        lastError = downloadError;
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
                 }
-
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                response.Dispose();
-                logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
-                lastError = new NetworkError.RequestFailure(source.Url, (int)response.StatusCode, body);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -224,12 +233,12 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
             }
             catch (Exception ex)
             {
-                logger.LogDebug(ex, "HTTP GET {Url} failed", source.Url);
+                logger.LogDebug(ex, "Ranged download from {Url} failed", source.Url);
                 lastError = new NetworkError.ConnectionFailure(ex.Message);
             }
         }
 
-        return new Result<ZipDownload, NetworkError>.Failure(
+        return new Result<string, NetworkError>.Failure(
             lastError ?? new NetworkError.ConnectionFailure(failureMessage));
     }
 
@@ -294,7 +303,18 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
 
         public DownloadSource WithQuery(string query) => new(Url: $"{Url}?{query}");
 
-        public HttpRequestMessage CreateRequest() => new(HttpMethod.Get, Url);
+        public HttpRequestMessage CreateRequest() => CreateRequest(range: null);
+
+        public HttpRequestMessage CreateRequest(RangeHeaderValue? range)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, Url);
+            if (range is not null)
+            {
+                request.Headers.Range = range;
+            }
+
+            return request;
+        }
     }
 }
 

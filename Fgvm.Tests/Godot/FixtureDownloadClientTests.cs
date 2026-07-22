@@ -40,10 +40,12 @@ public sealed class FixtureDownloadClientTests : IDisposable
         var sha512Success = Assert.IsType<Result<string, NetworkError>.Success>(sha512);
         Assert.Contains(checksum, sha512Success.Value);
 
-        var zip = await client.GetZipFile("Godot_v4.6.2-stable_linux.x86_64.zip", release, CancellationToken.None);
-        var zipSuccess = Assert.IsType<Result<ZipDownload, NetworkError>.Success>(zip);
-        await using var download = zipSuccess.Value;
-        Assert.True(download.ContentLength > 0);
+        var destinationPath = Path.Combine(_root, "downloaded.zip");
+        var zip = await client.DownloadZipFileAsync(
+            "Godot_v4.6.2-stable_linux.x86_64.zip", release, destinationPath, null, CancellationToken.None);
+        var zipSuccess = Assert.IsType<Result<string, NetworkError>.Success>(zip);
+        Assert.Equal(checksum, zipSuccess.Value);
+        Assert.True(new FileInfo(destinationPath).Length > 0);
     }
 
     [Fact]
@@ -55,9 +57,10 @@ public sealed class FixtureDownloadClientTests : IDisposable
         var client = new FixtureDownloadClient(manifestPath, NullLogger<FixtureDownloadClient>.Instance);
         var release = Release.TryParse("4.6.2-stable")!;
 
-        var zip = await client.GetZipFile("missing.zip", release, CancellationToken.None);
+        var destinationPath = Path.Combine(_root, "downloaded.zip");
+        var zip = await client.DownloadZipFileAsync("missing.zip", release, destinationPath, null, CancellationToken.None);
 
-        Assert.IsType<Result<ZipDownload, NetworkError>.Failure>(zip);
+        Assert.IsType<Result<string, NetworkError>.Failure>(zip);
     }
 
     [Fact]

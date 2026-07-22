@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using Fgvm.Cli.Http;
 
 namespace Fgvm.Tests.Http;
@@ -45,6 +46,22 @@ public sealed class ExponentialBackoffHandlerTests
         using var response = await client.GetAsync("https://example.test/archive.zip", CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(1, inner.RequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_DoesNotRetryRangeRequests()
+    {
+        var inner = new SequenceHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+            _ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = CreateClient(inner);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://example.test/archive.zip");
+        request.Headers.Range = new RangeHeaderValue(0, 1023);
+
+        using var response = await client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Equal(1, inner.RequestCount);
     }
 

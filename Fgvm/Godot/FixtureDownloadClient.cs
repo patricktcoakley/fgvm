@@ -1,5 +1,7 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Fgvm.Godot.Download;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 
@@ -31,8 +33,13 @@ public sealed class FixtureDownloadClient : IDownloadClient
     public Task<Result<string, NetworkError>> GetSha512(Release godotRelease, CancellationToken cancellationToken)
         => WithManifest(manifest => CreateSha512Sums(manifest, godotRelease), cancellationToken);
 
-    public Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release godotRelease, CancellationToken cancellationToken)
-        => WithManifest(manifest => OpenZip(manifest, filename, godotRelease), cancellationToken);
+    public Task<Result<string, NetworkError>> DownloadZipFileAsync(string filename,
+        Release godotRelease,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken
+    )
+        => WithManifest(manifest => CopyZip(manifest, filename, godotRelease, destinationPath, progress), cancellationToken);
 
     private Task<Result<T, NetworkError>> WithManifest<T>(Func<FixtureManifest, Result<T, NetworkError>> getResult,
         CancellationToken cancellationToken
@@ -143,7 +150,12 @@ public sealed class FixtureDownloadClient : IDownloadClient
         return new Result<string, NetworkError>.Success(content + System.Environment.NewLine);
     }
 
-    private static Result<ZipDownload, NetworkError> OpenZip(FixtureManifest manifest, string filename, Release release)
+    private static Result<string, NetworkError> CopyZip(FixtureManifest manifest,
+        string filename,
+        Release release,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress
+    )
     {
         var artifact = manifest.Artifacts.FirstOrDefault(artifact =>
             string.Equals(artifact.ReleaseName, release.ReleaseName, StringComparison.OrdinalIgnoreCase) &&
@@ -151,20 +163,25 @@ public sealed class FixtureDownloadClient : IDownloadClient
 
         if (artifact is null)
         {
-            return new Result<ZipDownload, NetworkError>.Failure(
+            return new Result<string, NetworkError>.Failure(
                 new NetworkError.RequestFailure($"fixture://zips/{release.ReleaseName}/{filename}", 404,
                     "Artifact not found in fixture manifest."));
         }
 
         try
         {
-            var stream = File.OpenRead(artifact.ZipPath);
-            return new Result<ZipDownload, NetworkError>.Success(new ZipDownload(stream, stream.Length, stream));
+            File.Copy(artifact.ZipPath, destinationPath, overwrite: true);
+            var length = new FileInfo(destinationPath).Length;
+            progress?.Report(new DownloadProgress(length, length));
+
+            using var stream = File.OpenRead(destinationPath);
+            var checksum = Convert.ToHexStringLower(SHA512.HashData(stream));
+            return new Result<string, NetworkError>.Success(checksum);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
-            return new Result<ZipDownload, NetworkError>.Failure(
-                new NetworkError.ConnectionFailure($"Failed to open fixture zip {artifact.ZipPath}: {ex.Message}"));
+            return new Result<string, NetworkError>.Failure(
+                new NetworkError.ConnectionFailure($"Failed to copy fixture zip {artifact.ZipPath}: {ex.Message}"));
         }
     }
 }

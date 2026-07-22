@@ -1,4 +1,4 @@
-namespace Fgvm.Services;
+namespace Fgvm.Godot.Download;
 
 /// <summary>
 ///     Reads streamed download content with a per-read stall timeout.
@@ -15,12 +15,10 @@ internal static class DownloadStreamReader
     /// <returns>The number of bytes read, or zero when the stream reaches EOF.</returns>
     /// <exception cref="IOException">Thrown when the stream stalls for longer than <paramref name="stallTimeout" />.</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken" /> is canceled.</exception>
-    public static async Task<int> ReadAsync(Stream stream,
-        byte[] buffer,
-        TimeSpan stallTimeout,
-        CancellationToken cancellationToken
-    )
+    public static async Task<int> ReadAsync(Stream stream, byte[] buffer, TimeSpan stallTimeout, CancellationToken cancellationToken)
     {
+        // Linking the tokens lets the catch filters preserve caller cancellation while translating
+        // only the internal timeout into a retryable I/O failure.
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(stallTimeout);
 

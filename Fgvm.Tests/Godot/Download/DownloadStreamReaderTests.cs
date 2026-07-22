@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using Fgvm.Services;
+using Fgvm.Godot.Download;
 
-namespace Fgvm.Tests.Services;
+namespace Fgvm.Tests.Godot.Download;
 
 public sealed class DownloadStreamReaderTests
 {

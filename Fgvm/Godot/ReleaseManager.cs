@@ -1,4 +1,5 @@
 using Fgvm.Environment;
+using Fgvm.Godot.Download;
 using Fgvm.Types;
 
 namespace Fgvm.Godot;
@@ -39,14 +40,21 @@ public interface IReleaseManager
     Task<Result<string, NetworkError>> GetSha512(Release release, CancellationToken cancellationToken);
 
     /// <summary>
-    ///     Gets the release zip stream for a release file.
+    ///     Downloads a release zip file directly to <paramref name="destinationPath" />.
     /// </summary>
     /// <param name="filename">The zip filename to fetch.</param>
     /// <param name="release">The release that owns the zip.</param>
+    /// <param name="destinationPath">The file path to write the downloaded archive to.</param>
+    /// <param name="progress">Optional progress sink.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The zip stream, or a network error.</returns>
+    /// <returns>The lowercase hex SHA-512 checksum of the downloaded file, or a network error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when the request is canceled.</exception>
-    Task<Result<ZipDownload, NetworkError>> GetZipFile(string filename, Release release, CancellationToken cancellationToken);
+    Task<Result<string, NetworkError>> DownloadZipFileAsync(string filename,
+        Release release,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken
+    );
 
     /// <summary>
     ///     Resolves a version query against available release identifiers.
@@ -159,9 +167,13 @@ public sealed class ReleaseManager(
         await downloadClient.GetSha512(release, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<ZipDownload, NetworkError>>
-        GetZipFile(string filename, Release release, CancellationToken cancellationToken) =>
-        await downloadClient.GetZipFile(filename, release, cancellationToken);
+    public async Task<Result<string, NetworkError>> DownloadZipFileAsync(string filename,
+        Release release,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken
+    ) =>
+        await downloadClient.DownloadZipFileAsync(filename, release, destinationPath, progress, cancellationToken);
 
     /// <inheritdoc />
     public Result<Release, QueryError> ResolveReleaseQuery(string[] query, string[] releaseIds)

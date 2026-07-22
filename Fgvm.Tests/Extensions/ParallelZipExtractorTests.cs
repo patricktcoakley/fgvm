@@ -185,7 +185,8 @@ public sealed class ParallelZipExtractorTests : IDisposable
     public async Task ExtractAsync_CreatesDirectory_ForDirectoryWorkItem_WithoutDereferencingArchiveEntries()
     {
         var archiveBytes = CreateArchive();
-        var workItems = new[] { new ZipExtractionWorkItem(999, Path.Combine("nested", "emptydir"), IsDirectory: true, ApplyUnixPermissions: false) };
+        var workItems = new[]
+            { new ZipExtractionWorkItem(999, Path.Combine("nested", "emptydir"), IsDirectory: true, ApplyUnixPermissions: false) };
 
         await ParallelZipExtractor.ExtractAsync(
             () => new MemoryStream(archiveBytes, writable: false),
