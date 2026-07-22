@@ -299,6 +299,7 @@ public class VersionManagementServiceTests
         Assert.Empty(_console.Output);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -370,6 +371,7 @@ public class VersionManagementServiceTests
         Assert.Empty(_console.Output);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -470,6 +472,7 @@ public class VersionManagementServiceTests
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(installationResult);
 
@@ -484,6 +487,7 @@ public class VersionManagementServiceTests
         Assert.Equal(mockRelease, result);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -524,6 +528,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(
                 new InstallationError.NotFound(projectVersion)));
@@ -537,6 +542,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -564,6 +570,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(installationResult);
 
@@ -578,6 +585,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -597,6 +605,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { "4.3.0-stable", "mono" })),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(
                 new InstallationError.NotFound(projectVersion)));
@@ -609,6 +618,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { "4.3.0-stable", "mono" })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -637,6 +647,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(installationResult);
 
@@ -648,6 +659,7 @@ public class VersionManagementServiceTests
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { projectVersion })),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -673,6 +685,7 @@ public class VersionManagementServiceTests
         Assert.IsType<CompatibleVersionOutcome.Declined>(success.Value);
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -691,6 +704,7 @@ public class VersionManagementServiceTests
 
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -723,6 +737,7 @@ public class VersionManagementServiceTests
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
                 new InstallationOutcome.NewInstallation(installedVersion, new ChecksumVerification.Verified())));
@@ -808,6 +823,7 @@ public class VersionManagementServiceTests
                 It.IsAny<string[]>(),
                 It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                 It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -970,6 +986,7 @@ public class VersionManagementServiceTests
         SetupInstallations([]);
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
@@ -1010,6 +1027,7 @@ public class VersionManagementServiceTests
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
                     It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException(errorMessage));
 

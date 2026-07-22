@@ -40,12 +40,14 @@ public interface IInstallationService
     /// <param name="godotRelease">The release to install.</param>
     /// <param name="progress">Progress reporter for installation updates.</param>
     /// <param name="setAsDefault">Whether to set this version as the global default.</param>
+    /// <param name="verbose">Whether to report the download sources as they are tried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The installation outcome, or an installation error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when installation is canceled.</exception>
     Task<Result<InstallationOutcome, InstallationError>> InstallReleaseAsync(Release godotRelease,
         IProgress<OperationProgress<InstallationStage>> progress,
         bool setAsDefault = true,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     );
 
@@ -55,12 +57,14 @@ public interface IInstallationService
     /// <param name="query">Version query arguments.</param>
     /// <param name="progress">Progress reporter for installation updates.</param>
     /// <param name="setAsDefault">Whether to set the installed version as the global default.</param>
+    /// <param name="verbose">Whether to report the download sources as they are tried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The installation outcome, or an installation error.</returns>
     /// <exception cref="OperationCanceledException">Thrown when installation is canceled.</exception>
     Task<Result<InstallationOutcome, InstallationError>> InstallByQueryAsync(string[] query,
         IProgress<OperationProgress<InstallationStage>> progress,
         bool setAsDefault = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     );
 
@@ -90,6 +94,7 @@ public class InstallationService(
     public async Task<Result<InstallationOutcome, InstallationError>> InstallReleaseAsync(Release godotRelease,
         IProgress<OperationProgress<InstallationStage>> progress,
         bool setAsDefault = true,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -144,7 +149,8 @@ public class InstallationService(
 
             string archiveChecksum;
             switch (await releaseManager.DownloadZipFileAsync(
-                        zipFileName, godotRelease, archivePath, new DownloadProgressAdapter(progress, installPathBase), cancellationToken))
+                        zipFileName, godotRelease, archivePath,
+                        new DownloadProgressAdapter(progress, installPathBase, verbose), cancellationToken))
             {
                 case Result<string, NetworkError>.Success(var checksum):
                     archiveChecksum = checksum;
@@ -283,6 +289,7 @@ public class InstallationService(
     public async Task<Result<InstallationOutcome, InstallationError>> InstallByQueryAsync(string[] query,
         IProgress<OperationProgress<InstallationStage>> progress,
         bool setAsDefault = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -297,7 +304,7 @@ public class InstallationService(
             return resolveResult switch
             {
                 Result<Release?, InstallationError>.Success(var release) when release is not null =>
-                    await InstallReleaseAsync(release, progress, setAsDefault, cancellationToken),
+                    await InstallReleaseAsync(release, progress, setAsDefault, verbose, cancellationToken),
                 Result<Release?, InstallationError>.Success =>
                     new Result<InstallationOutcome, InstallationError>.Failure(
                         new InstallationError.NotFound(string.Join(" ", query))),
@@ -409,13 +416,27 @@ public class InstallationService(
 
     private sealed class DownloadProgressAdapter(
         IProgress<OperationProgress<InstallationStage>> progress,
-        string installPathBase
+        string installPathBase,
+        bool verbose
     ) : IProgress<DownloadProgress>
     {
         private readonly DateTime _startTime = DateTime.UtcNow;
 
         public void Report(DownloadProgress value)
         {
+            if (value.SourceUrl is { } sourceUrl)
+            {
+                if (verbose)
+                {
+                    progress.Report(new OperationProgress<InstallationStage>(
+                        InstallationStage.Downloading,
+                        $"Downloading from {sourceUrl}...",
+                        IsVerboseDetail: true));
+                }
+
+                return;
+            }
+
             if (value.TotalBytes is not { } totalBytes || totalBytes <= 0)
             {
                 return;

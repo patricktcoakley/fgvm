@@ -231,7 +231,7 @@ internal sealed class HttpRangeTransfer(
 
     private async Task RetryAsync(Func<Task> operation, CancellationToken cancellationToken)
     {
-        for (var attempt = 1; ; attempt++)
+        for (var attempt = 1;; attempt++)
         {
             try
             {

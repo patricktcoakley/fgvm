@@ -41,6 +41,31 @@ public class SpectreProgressHandlerTests
     }
 
     [Fact]
+    public async Task TrackProgressAsync_WritesVerboseDetailsWithoutReplacingStatus()
+    {
+        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+
+        await handler.TrackProgressAsync(async progress =>
+        {
+            progress.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.Downloading,
+                "Downloading..."));
+            progress.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.Downloading,
+                "Trying https://example.com/[mirror]...",
+                IsVerboseDetail: true));
+            progress.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.VerifyingChecksum,
+                "Verifying checksum..."));
+            await Task.Delay(1);
+            return true;
+        });
+
+        Assert.Contains("Trying https://example.com/[mirror]...", _testConsole.Output);
+        Assert.Contains("Verifying checksum...", _testConsole.Output);
+    }
+
+    [Fact]
     public async Task TrackProgressAsync_ShouldDisplayChecksumStage_WhenVerifyingChecksum()
     {
         var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);

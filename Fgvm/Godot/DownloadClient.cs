@@ -210,6 +210,7 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
         {
             try
             {
+                logger.LogInformation("Downloading from {Url}", source.Url);
                 switch (await ParallelRangedDownloader.DownloadAsync(
                             httpClient, source.Url, range => source.CreateRequest(range), destinationPath, progress, cancellationToken))
                 {

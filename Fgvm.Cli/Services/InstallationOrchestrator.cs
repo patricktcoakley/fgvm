@@ -20,6 +20,7 @@ public interface IInstallationOrchestrator
     /// </summary>
     /// <param name="query">Version query arguments.</param>
     /// <param name="setAsDefault">Whether to set the installed version as default.</param>
+    /// <param name="verbose">Whether to show each download source as it is tried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The installation result.</returns>
     /// <exception cref="InvalidOperationException">
@@ -29,6 +30,7 @@ public interface IInstallationOrchestrator
     /// <exception cref="OperationCanceledException">Thrown when interactive selection or installation is canceled.</exception>
     Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query,
         bool setAsDefault = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     );
 }
@@ -44,6 +46,7 @@ public sealed class InstallationOrchestrator(
     /// <inheritdoc />
     public async Task<Result<InstallationOutcome, InstallationError>> InstallAsync(string[] query,
         bool setAsDefault = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -73,7 +76,7 @@ public sealed class InstallationOrchestrator(
                 wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
 
                 installationResult = await progressHandler.TrackProgressAsync(progress =>
-                    installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, cancellationToken));
+                    installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, verbose, cancellationToken));
             }
         }
         else
@@ -95,7 +98,7 @@ public sealed class InstallationOrchestrator(
                         wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
 
                         installationResult = await progressHandler.TrackProgressAsync(progress =>
-                            installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, cancellationToken));
+                            installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, verbose, cancellationToken));
                     }
 
                     break;
@@ -108,7 +111,7 @@ public sealed class InstallationOrchestrator(
                     wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
 
                     installationResult = await progressHandler.TrackProgressAsync(progress =>
-                        installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, cancellationToken));
+                        installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, verbose, cancellationToken));
 
                     break;
                 }

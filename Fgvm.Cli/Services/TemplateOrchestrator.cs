@@ -12,6 +12,7 @@ public interface ITemplateOrchestrator
 {
     Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(string[] query,
         bool force = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     );
 
@@ -31,6 +32,7 @@ public sealed class TemplateOrchestrator(
 {
     public async Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(string[] query,
         bool force = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -47,7 +49,7 @@ public sealed class TemplateOrchestrator(
         }
 
         var result = await progressHandler.TrackProgressAsync(progress =>
-            templateInstallationService.InstallAsync(release, progress, force, cancellationToken));
+            templateInstallationService.InstallAsync(release, progress, force, verbose, cancellationToken));
 
         switch (result)
         {

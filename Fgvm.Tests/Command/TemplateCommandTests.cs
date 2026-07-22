@@ -14,35 +14,35 @@ namespace Fgvm.Tests.Command;
 public sealed class TemplateCommandTests
 {
     [Fact]
-    public async Task Install_ForwardsQueryAndForceFlag()
+    public async Task Install_ForwardsQueryForceAndVerboseFlags()
     {
         var query = new[] { "4.6", "mono" };
         var orchestrator = new Mock<ITemplateOrchestrator>();
-        orchestrator.Setup(x => x.InstallAsync(query, true, It.IsAny<CancellationToken>()))
+        orchestrator.Setup(x => x.InstallAsync(query, true, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
                 new TemplateInstallationOutcome.AlreadyInstalled("4.6.stable.mono", "/templates/4.6.stable.mono")));
 
         var command = CreateCommand(orchestrator.Object, out _);
 
-        await command.Install(true, CancellationToken.None, query);
+        await command.Install(true, true, CancellationToken.None, query);
 
-        orchestrator.Verify(x => x.InstallAsync(query, true, It.IsAny<CancellationToken>()), Times.Once);
+        orchestrator.Verify(x => x.InstallAsync(query, true, true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task InstallAlias_ForwardsQueryAndForceFlag()
+    public async Task InstallAlias_ForwardsQueryForceAndVerboseFlags()
     {
         var query = new[] { "4.6", "mono" };
         var orchestrator = new Mock<ITemplateOrchestrator>();
-        orchestrator.Setup(x => x.InstallAsync(query, true, It.IsAny<CancellationToken>()))
+        orchestrator.Setup(x => x.InstallAsync(query, true, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
                 new TemplateInstallationOutcome.AlreadyInstalled("4.6.stable.mono", "/templates/4.6.stable.mono")));
 
         var command = CreateCommand(orchestrator.Object, out _);
 
-        await command.InstallAlias(true, CancellationToken.None, query);
+        await command.InstallAlias(true, true, CancellationToken.None, query);
 
-        orchestrator.Verify(x => x.InstallAsync(query, true, It.IsAny<CancellationToken>()), Times.Once);
+        orchestrator.Verify(x => x.InstallAsync(query, true, true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

@@ -405,9 +405,11 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
             TestOptions(workerCount: 4));
 
         Assert.IsType<Result<Unit, NetworkError>.Success>(result);
-        Assert.NotEmpty(progress.Reports);
-        Assert.All(progress.Reports, report => Assert.Equal(expected.Length, report.TotalBytes));
-        Assert.Equal(expected.Length, progress.Reports[^1].BytesDownloaded);
+        Assert.Contains(progress.Reports, report => report.SourceUrl == "https://example.test/file");
+        var byteReports = progress.Reports.Where(report => report.SourceUrl is null).ToList();
+        Assert.NotEmpty(byteReports);
+        Assert.All(byteReports, report => Assert.Equal(expected.Length, report.TotalBytes));
+        Assert.Equal(expected.Length, byteReports[^1].BytesDownloaded);
     }
 
     [Fact]
@@ -426,9 +428,10 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
 
         Assert.IsType<Result<Unit, NetworkError>.Success>(result);
         Assert.Equal(expected, await File.ReadAllBytesAsync(destinationPath));
-        Assert.All(progress.Reports, report => Assert.True(report.BytesDownloaded <= report.TotalBytes,
+        var byteReports = progress.Reports.Where(report => report.SourceUrl is null).ToList();
+        Assert.All(byteReports, report => Assert.True(report.BytesDownloaded <= report.TotalBytes,
             $"Reported {report.BytesDownloaded} bytes downloaded, exceeding total {report.TotalBytes}."));
-        Assert.Equal(expected.Length, progress.Reports[^1].BytesDownloaded);
+        Assert.Equal(expected.Length, byteReports[^1].BytesDownloaded);
     }
 
     public void Dispose()

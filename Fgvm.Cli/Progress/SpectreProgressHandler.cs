@@ -14,10 +14,10 @@ public class SpectreProgressHandler<TStage>(IAnsiConsole console) : IProgressHan
     public async Task<T> TrackProgressAsync<T>(Func<IProgress<OperationProgress<TStage>>, Task<T>> operation)
     {
         return await console.Status()
-            .StartAsync("Starting operation...", async ctx => await operation(new StatusProgress(ctx)));
+            .StartAsync("Starting operation...", async ctx => await operation(new StatusProgress(console, ctx)));
     }
 
-    private sealed class StatusProgress(StatusContext context) : IProgress<OperationProgress<TStage>>
+    private sealed class StatusProgress(IAnsiConsole console, StatusContext context) : IProgress<OperationProgress<TStage>>
     {
         private readonly Lock _lock = new();
 
@@ -25,6 +25,12 @@ public class SpectreProgressHandler<TStage>(IAnsiConsole console) : IProgressHan
         {
             lock (_lock)
             {
+                if (value.IsVerboseDetail)
+                {
+                    console.MarkupLine(Markup.Escape(value.Message));
+                    return;
+                }
+
                 context.Status = value.Message;
                 context.Refresh();
             }

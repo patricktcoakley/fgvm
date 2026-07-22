@@ -110,6 +110,7 @@ public class InstallationServiceTests
     [Fact]
     public async Task InstallReleaseAsync_MissingCatalogArtifact_ContinuesWithUnavailableChecksum()
     {
+        const string sourceUrl = "https://downloads.example.test/godot.zip";
         var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
         if (Release.TryParse("3.2.1-stable-standard") is not { } release)
         {
@@ -119,7 +120,8 @@ public class InstallationServiceTests
         release = release with { OS = OS.MacOS, PlatformString = "osx.64" };
 
         var releaseManager = new Mock<IReleaseManager>();
-        SetupSuccessfulDownload(releaseManager, release.ZipFileName, release, CreateZipArchive(), "unused-checksum");
+        SetupSuccessfulDownload(
+            releaseManager, release.ZipFileName, release, CreateZipArchive(), "unused-checksum", sourceUrl);
 
         var releaseCatalog = new Mock<IReleaseCatalog>();
         releaseCatalog.Setup(x => x.FindOrHydrateArtifact(release, It.IsAny<CancellationToken>()))
@@ -150,15 +152,23 @@ public class InstallationServiceTests
 
         try
         {
+            var progress = new RecordingProgress<InstallationStage>();
             var result = await service.InstallReleaseAsync(
                 release,
-                new Progress<OperationProgress<InstallationStage>>(),
+                progress,
                 false,
+                true,
                 CancellationToken.None);
 
             var success = Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
             var installation = Assert.IsType<InstallationOutcome.NewInstallation>(success.Value);
             Assert.IsType<ChecksumVerification.Unavailable>(installation.ChecksumStatus);
+            Assert.Contains(progress.Reports, report =>
+                report.IsVerboseDetail && report.Message == $"Downloading from {sourceUrl}...");
+            Assert.Contains(progress.Reports, report =>
+                !report.IsVerboseDetail &&
+                report.Stage == InstallationStage.Downloading &&
+                report.Message.Contains(" MB", StringComparison.Ordinal));
 
             var installedFile = Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release), "Godot");
             Assert.Equal("fake executable", await File.ReadAllTextAsync(installedFile, CancellationToken.None));
@@ -229,6 +239,7 @@ public class InstallationServiceTests
             var result = await service.InstallReleaseAsync(
                 release,
                 new Progress<OperationProgress<InstallationStage>>(),
+                false,
                 false,
                 CancellationToken.None);
 
@@ -302,6 +313,7 @@ public class InstallationServiceTests
                 release,
                 new Progress<OperationProgress<InstallationStage>>(),
                 false,
+                false,
                 CancellationToken.None);
 
             var failure = Assert.IsType<Result<InstallationOutcome, InstallationError>.Failure>(result);
@@ -371,6 +383,7 @@ public class InstallationServiceTests
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.InstallReleaseAsync(
                 release,
                 new Progress<OperationProgress<InstallationStage>>(),
+                false,
                 false,
                 cancellation.Token));
 
@@ -445,6 +458,7 @@ public class InstallationServiceTests
                 release,
                 new Progress<OperationProgress<InstallationStage>>(),
                 false,
+                false,
                 CancellationToken.None);
 
             var failure = Assert.IsType<Result<InstallationOutcome, InstallationError>.Failure>(result);
@@ -512,6 +526,7 @@ public class InstallationServiceTests
             var result = await service.InstallReleaseAsync(
                 release,
                 new Progress<OperationProgress<InstallationStage>>(),
+                false,
                 false,
                 CancellationToken.None);
 
@@ -796,7 +811,8 @@ public class InstallationServiceTests
         string filename,
         Release release,
         byte[] archiveBytes,
-        string checksum
+        string checksum,
+        string? sourceUrl = null
     )
     {
         releaseManager
@@ -805,9 +821,22 @@ public class InstallationServiceTests
             .Returns(async (string _, Release _, string destinationPath, IProgress<DownloadProgress>? progress, CancellationToken ct) =>
             {
                 ct.ThrowIfCancellationRequested();
+                if (sourceUrl is not null)
+                {
+                    progress?.Report(new DownloadProgress(0, null, sourceUrl));
+                }
+
                 await File.WriteAllBytesAsync(destinationPath, archiveBytes, ct);
                 progress?.Report(new DownloadProgress(archiveBytes.Length, archiveBytes.Length));
                 return new Result<string, NetworkError>.Success(checksum);
             });
+    }
+
+    private sealed class RecordingProgress<TStage> : IProgress<OperationProgress<TStage>> where TStage : Enum
+    {
+        public List<OperationProgress<TStage>> Reports { get; } = [];
+
+        public void Report(OperationProgress<TStage> value) =>
+            Reports.Add(value);
     }
 }

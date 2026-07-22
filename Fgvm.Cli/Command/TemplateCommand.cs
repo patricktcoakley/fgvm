@@ -23,15 +23,20 @@ public sealed class TemplateCommand(
     ///     Install Godot export templates.
     /// </summary>
     /// <param name="force">Replace existing export templates for the selected version.</param>
+    /// <param name="verbose">-V, Show each download source as it is tried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="query">Version query arguments.</param>
     [Hidden]
     [Command("install")]
-    public async Task Install(bool force = false, CancellationToken cancellationToken = default, [Argument] params string[] query)
+    public async Task Install(bool force = false,
+        bool verbose = false,
+        CancellationToken cancellationToken = default,
+        [Argument] params string[] query
+    )
     {
         try
         {
-            switch (await templateOrchestrator.InstallAsync(query, force, cancellationToken))
+            switch (await templateOrchestrator.InstallAsync(query, force, verbose, cancellationToken))
             {
                 case Result<TemplateInstallationOutcome, TemplateInstallationError>.Success:
                     return;
@@ -70,12 +75,17 @@ public sealed class TemplateCommand(
     ///     Install Godot export templates.
     /// </summary>
     /// <param name="force">Replace existing export templates for the selected version.</param>
+    /// <param name="verbose">-V, Show each download source as it is tried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="query">Version query arguments.</param>
     [Hidden]
     [Command("i")]
-    public async Task InstallAlias(bool force = false, CancellationToken cancellationToken = default, [Argument] params string[] query) =>
-        await Install(force, cancellationToken, query);
+    public async Task InstallAlias(bool force = false,
+        bool verbose = false,
+        CancellationToken cancellationToken = default,
+        [Argument] params string[] query
+    ) =>
+        await Install(force, verbose, cancellationToken, query);
 
     /// <summary>
     ///     List installed Godot export templates.

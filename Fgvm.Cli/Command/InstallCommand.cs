@@ -28,6 +28,7 @@ public sealed class InstallCommand(
     /// </summary>
     /// <param name="default">-D, Set as the default version after installing</param>
     /// <param name="withTemplates">Install export templates for the selected Godot version after editor installation succeeds.</param>
+    /// <param name="verbose">-V, Show each download source as it is tried.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="query">Version query arguments</param>
     /// <exception cref="ArgumentException">Thrown when the requested version cannot be found or the query is invalid.</exception>
@@ -37,10 +38,11 @@ public sealed class InstallCommand(
     [Command("install|i")]
     public async Task Install(bool @default = false,
         bool withTemplates = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default,
         [Argument] params string[] query
     ) =>
-        await InstallCore(query, @default, withTemplates, cancellationToken);
+        await InstallCore(query, @default, withTemplates, verbose, cancellationToken);
 
     /// <summary>
     ///     Core installation logic.
@@ -48,17 +50,23 @@ public sealed class InstallCommand(
     /// <param name="query">Version query arguments</param>
     /// <param name="setAsDefault">Whether to set the installed version as default</param>
     /// <param name="withTemplates">Whether to install export templates after editor installation succeeds.</param>
+    /// <param name="verbose">Whether to show each download source as it is tried.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <exception cref="ArgumentException">Thrown when the requested version cannot be found or the query is invalid.</exception>
     /// <exception cref="SecurityException">Thrown when checksum verification fails.</exception>
     /// <exception cref="InvalidOperationException">Thrown when installation fails for a non-checksum reason.</exception>
     /// <exception cref="OperationCanceledException">Thrown when installation is canceled.</exception>
-    private async Task InstallCore(string[] query, bool setAsDefault, bool withTemplates, CancellationToken cancellationToken)
+    private async Task InstallCore(string[] query,
+        bool setAsDefault,
+        bool withTemplates,
+        bool verbose,
+        CancellationToken cancellationToken
+    )
     {
         Result<InstallationOutcome, InstallationError> installationResult;
         try
         {
-            installationResult = await installationOrchestrator.InstallAsync(query, setAsDefault, cancellationToken);
+            installationResult = await installationOrchestrator.InstallAsync(query, setAsDefault, verbose, cancellationToken);
             ThrowIfInstallationFailed(installationResult, hostSystem);
         }
         catch (TaskCanceledException)
@@ -89,7 +97,8 @@ public sealed class InstallCommand(
         var releaseNameWithRuntime = GetInstalledReleaseName(installationResult);
         try
         {
-            var templateResult = await templateOrchestrator.InstallAsync([releaseNameWithRuntime], false, cancellationToken);
+            var templateResult = await templateOrchestrator.InstallAsync(
+                [releaseNameWithRuntime], false, verbose, cancellationToken);
             if (TryGetTemplateInstallationFailureReason(templateResult) is { } failureReason)
             {
                 console.MarkupLine(Messages.OptionalTemplateInstallationFailed(releaseNameWithRuntime, failureReason));
