@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Fgvm.Godot;
+using Fgvm.Godot.Download;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -253,6 +254,8 @@ public sealed class DownloadClientTests : IDisposable
 
         release = release with { PlatformString = "linux.x86_64" };
         const string filename = "Godot_v4.6.2-stable_linux.x86_64.zip";
+        const string primaryMirrorUrl = "https://objects.example.test/godot/primary.zip";
+        const string fallbackMirrorUrl = "https://objects.example.test/godot/fallback.zip";
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
             .Setup<Task<HttpResponseMessage>>(
@@ -264,7 +267,8 @@ public sealed class DownloadClientTests : IDisposable
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.NotFound,
-                Content = new StringContent("not found")
+                Content = new StringContent("not found"),
+                RequestMessage = new HttpRequestMessage(HttpMethod.Get, primaryMirrorUrl)
             });
 
         mockHandler.Protected()
@@ -277,17 +281,25 @@ public sealed class DownloadClientTests : IDisposable
             .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = new StringContent("zip")
+                Content = new StringContent("zip"),
+                RequestMessage = new HttpRequestMessage(HttpMethod.Get, fallbackMirrorUrl)
             });
 
         var downloadClient = CreateDownloadClient(mockHandler);
         var destinationPath = Path.Combine(_root, "out.zip");
+        var progress = new RecordingProgress();
 
-        var result = await downloadClient.DownloadZipFileAsync(filename, release, destinationPath, null, CancellationToken.None);
+        var result = await downloadClient.DownloadZipFileAsync(
+            filename, release, destinationPath, progress, CancellationToken.None);
 
         var success = Assert.IsType<Result<string, NetworkError>.Success>(result);
         Assert.Equal("zip", await File.ReadAllTextAsync(destinationPath));
         Assert.Equal(await ExpectedSha512("zip"), success.Value);
+        Assert.Equal(
+        [
+            primaryMirrorUrl,
+            fallbackMirrorUrl
+        ], progress.Reports.Where(report => report.SourceUrl is not null).Select(report => report.SourceUrl));
     }
 
     [Fact]
@@ -332,4 +344,18 @@ public sealed class DownloadClientTests : IDisposable
 
     private static bool MatchesUnauthenticatedRequest(HttpRequestMessage request, string url) =>
         request.RequestUri?.ToString() == url && request.Headers.Authorization == null;
+
+    private sealed class RecordingProgress : IProgress<DownloadProgress>
+    {
+        private readonly Lock _lock = new();
+        public List<DownloadProgress> Reports { get; } = [];
+
+        public void Report(DownloadProgress value)
+        {
+            lock (_lock)
+            {
+                Reports.Add(value);
+            }
+        }
+    }
 }

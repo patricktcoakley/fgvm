@@ -12,21 +12,23 @@ namespace Fgvm.Tests.Command;
 public sealed class InstallCommandTests
 {
     [Fact]
-    public async Task Install_WithTemplates_InstallsTemplatesForNewInstallation()
+    public async Task Install_WithTemplatesAndVerbose_ForwardsVerboseToBothInstallers()
     {
         var query = new[] { "4.6.2" };
         const string releaseName = "4.6.2-stable-standard";
         var installationOrchestrator = CreateInstallationOrchestrator(query,
-            new InstallationOutcome.NewInstallation(releaseName, new ChecksumVerification.Verified()));
-        var templateOrchestrator = CreateSuccessfulTemplateOrchestrator(releaseName);
+            new InstallationOutcome.NewInstallation(releaseName, new ChecksumVerification.Verified()),
+            verbose: true);
+        var templateOrchestrator = CreateSuccessfulTemplateOrchestrator(releaseName, verbose: true);
         var command = CreateCommand(installationOrchestrator.Object, templateOrchestrator.Object, out _);
 
-        await command.Install(withTemplates: true, cancellationToken: CancellationToken.None, query: query);
+        await command.Install(withTemplates: true, verbose: true, cancellationToken: CancellationToken.None, query: query);
 
         templateOrchestrator.Verify(x =>
                 x.InstallAsync(
                     It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { releaseName })),
                     false,
+                    true,
                     It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -47,6 +49,7 @@ public sealed class InstallCommandTests
                 x.InstallAsync(
                     It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { releaseName })),
                     false,
+                    false,
                     It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -63,7 +66,7 @@ public sealed class InstallCommandTests
         await command.Install(cancellationToken: CancellationToken.None, query: query);
 
         templateOrchestrator.Verify(x =>
-                x.InstallAsync(It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+                x.InstallAsync(It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -72,7 +75,7 @@ public sealed class InstallCommandTests
     {
         var query = new[] { "missing" };
         var installationOrchestrator = new Mock<IInstallationOrchestrator>();
-        installationOrchestrator.Setup(x => x.InstallAsync(query, false, It.IsAny<CancellationToken>()))
+        installationOrchestrator.Setup(x => x.InstallAsync(query, false, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(new InstallationError.NotFound("missing")));
         var templateOrchestrator = new Mock<ITemplateOrchestrator>();
         var command = CreateCommand(installationOrchestrator.Object, templateOrchestrator.Object, out _);
@@ -81,7 +84,7 @@ public sealed class InstallCommandTests
             command.Install(withTemplates: true, cancellationToken: CancellationToken.None, query: query));
 
         templateOrchestrator.Verify(x =>
-                x.InstallAsync(It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+                x.InstallAsync(It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -96,6 +99,7 @@ public sealed class InstallCommandTests
         templateOrchestrator.Setup(x => x.InstallAsync(
                 It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { releaseName })),
                 false,
+                false,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
                 new TemplateInstallationError.Failed("Download failed for export templates.")));
@@ -108,21 +112,23 @@ public sealed class InstallCommandTests
     }
 
     private static Mock<IInstallationOrchestrator> CreateInstallationOrchestrator(string[] query,
-        InstallationOutcome outcome
+        InstallationOutcome outcome,
+        bool verbose = false
     )
     {
         var installationOrchestrator = new Mock<IInstallationOrchestrator>();
-        installationOrchestrator.Setup(x => x.InstallAsync(query, false, It.IsAny<CancellationToken>()))
+        installationOrchestrator.Setup(x => x.InstallAsync(query, false, verbose, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(outcome));
         return installationOrchestrator;
     }
 
-    private static Mock<ITemplateOrchestrator> CreateSuccessfulTemplateOrchestrator(string releaseName)
+    private static Mock<ITemplateOrchestrator> CreateSuccessfulTemplateOrchestrator(string releaseName, bool verbose = false)
     {
         var templateOrchestrator = new Mock<ITemplateOrchestrator>();
         templateOrchestrator.Setup(x => x.InstallAsync(
                 It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { releaseName })),
                 false,
+                verbose,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
                 new TemplateInstallationOutcome.AlreadyInstalled("4.6.2.stable", "/templates/4.6.2.stable")));

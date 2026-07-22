@@ -89,17 +89,19 @@ public sealed class InstallationOrchestratorTests : IDisposable
 
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
         _mockInstallationService.Verify(
             x => x.InstallReleaseAsync(It.IsAny<Release>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
     [Fact]
-    public async Task InstallAsync_QueryInstall_RendersSuccessOutput()
+    public async Task InstallAsync_QueryInstall_ForwardsVerboseAndRendersSuccessOutput()
     {
         var query = new[] { "4.3.0" };
         const string releaseName = "4.3.0-stable";
@@ -110,11 +112,12 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     false,
+                    true,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
                 new InstallationOutcome.NewInstallation(releaseName, new ChecksumVerification.Verified())));
 
-        var result = await _orchestrator.InstallAsync(query);
+        var result = await _orchestrator.InstallAsync(query, verbose: true);
 
         Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
         Assert.Contains("Finished installing 4.3.0-stable", _console.Output);
@@ -167,6 +170,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     release,
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     true,
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
                 new InstallationOutcome.NewInstallation(release.ReleaseNameWithRuntime, new ChecksumVerification.Verified())));
@@ -181,6 +185,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     release,
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     true,
+                    false,
                     It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -196,6 +201,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     true,
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
                 new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Verified())));
@@ -217,6 +223,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
                     true,
+                    false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
                 new InstallationOutcome.NewInstallation("4.3.0-stable", new ChecksumVerification.Verified())));
@@ -237,6 +244,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                 x.InstallByQueryAsync(
                     It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                    false,
                     false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
@@ -259,6 +267,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
                 x.InstallByQueryAsync(
                     It.Is<string[]>(q => Enumerable.SequenceEqual(q, query)),
                     It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                    false,
                     false,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(

@@ -23,6 +23,7 @@ public interface ITemplateInstallationService
     Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(Release release,
         IProgress<OperationProgress<TemplateInstallationStage>> progress,
         bool force = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     );
 }
@@ -38,6 +39,7 @@ public sealed class TemplateInstallationService(
     public async Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(Release release,
         IProgress<OperationProgress<TemplateInstallationStage>> progress,
         bool force = false,
+        bool verbose = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -81,7 +83,7 @@ public sealed class TemplateInstallationService(
 
             string archiveChecksum;
             switch (await releaseManager.DownloadZipFileAsync(
-                        artifact.FileName, release, archivePath, new DownloadProgressAdapter(progress), cancellationToken))
+                        artifact.FileName, release, archivePath, new DownloadProgressAdapter(progress, verbose), cancellationToken))
             {
                 case Result<string, NetworkError>.Success(var checksum):
                     archiveChecksum = checksum;
@@ -189,13 +191,29 @@ public sealed class TemplateInstallationService(
         }
     }
 
-    private sealed class DownloadProgressAdapter(IProgress<OperationProgress<TemplateInstallationStage>> progress)
+    private sealed class DownloadProgressAdapter(
+        IProgress<OperationProgress<TemplateInstallationStage>> progress,
+        bool verbose
+    )
         : IProgress<DownloadProgress>
     {
         private readonly DateTime _startTime = DateTime.UtcNow;
 
         public void Report(DownloadProgress value)
         {
+            if (value.SourceUrl is { } sourceUrl)
+            {
+                if (verbose)
+                {
+                    progress.Report(new OperationProgress<TemplateInstallationStage>(
+                        TemplateInstallationStage.Downloading,
+                        $"Downloading from {sourceUrl}...",
+                        IsVerboseDetail: true));
+                }
+
+                return;
+            }
+
             if (value.TotalBytes is not { } totalBytes || totalBytes <= 0)
             {
                 return;

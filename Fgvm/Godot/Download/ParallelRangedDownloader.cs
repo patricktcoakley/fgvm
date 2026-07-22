@@ -9,7 +9,8 @@ namespace Fgvm.Godot.Download;
 /// </summary>
 /// <param name="BytesDownloaded">Total bytes written so far.</param>
 /// <param name="TotalBytes">The full download size, or null when unknown.</param>
-public readonly record struct DownloadProgress(long BytesDownloaded, long? TotalBytes);
+/// <param name="SourceUrl">The resolved source serving the response, or null for byte-progress updates.</param>
+public readonly record struct DownloadProgress(long BytesDownloaded, long? TotalBytes, string? SourceUrl = null);
 
 /// <summary>
 ///     Chooses between a parallel range download and a sequential fallback.
@@ -34,6 +35,8 @@ internal static class ParallelRangedDownloader
             // The destination is written directly, so never leave an older file in place.
             File.Delete(destinationPath);
             using var probeResponse = await transfer.ProbeAsync(cancellationToken);
+            var resolvedSourceUrl = probeResponse.RequestMessage?.RequestUri?.AbsoluteUri ?? sourceUrl;
+            progress?.Report(new DownloadProgress(0, null, resolvedSourceUrl));
 
             switch (probeResponse.StatusCode)
             {

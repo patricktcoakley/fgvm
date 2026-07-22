@@ -44,9 +44,9 @@ public sealed class TemplateOrchestratorTests
             .Returns([release.ReleaseNameWithRuntime]);
         _releaseManager.Setup(x => x.CreateReleaseWithoutPlatform(release.ReleaseNameWithRuntime))
             .Returns(new Result<Release, ReleaseParseError>.Success(release));
-        SetupSuccessfulInstall(release);
+        SetupSuccessfulInstall(release, verbose: true);
 
-        var result = await _orchestrator.InstallAsync(query);
+        var result = await _orchestrator.InstallAsync(query, verbose: true);
 
         Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
         _releaseManager.Verify(x => x.FilterReleasesByQueryWithoutPlatform(query, It.IsAny<string[]>(), false), Times.Once);
@@ -74,6 +74,7 @@ public sealed class TemplateOrchestratorTests
         Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
         _templateInstallationService.Verify(
             x => x.InstallAsync(standard, It.IsAny<IProgress<OperationProgress<TemplateInstallationStage>>>(), false,
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -94,6 +95,7 @@ public sealed class TemplateOrchestratorTests
         Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
         _templateInstallationService.Verify(
             x => x.InstallAsync(release, It.IsAny<IProgress<OperationProgress<TemplateInstallationStage>>>(), false,
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -112,6 +114,7 @@ public sealed class TemplateOrchestratorTests
         Assert.IsType<TemplateInstallationError.NotFound>(failure.Error);
         _templateInstallationService.Verify(
             x => x.InstallAsync(It.IsAny<Release>(), It.IsAny<IProgress<OperationProgress<TemplateInstallationStage>>>(), false,
+                false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -155,12 +158,13 @@ public sealed class TemplateOrchestratorTests
         _templateRegistry.Verify(x => x.Remove(installation.TemplateVersion), Times.Once);
     }
 
-    private void SetupSuccessfulInstall(Release release)
+    private void SetupSuccessfulInstall(Release release, bool verbose = false)
     {
         _templateInstallationService.Setup(x => x.InstallAsync(
                 release,
                 It.IsAny<IProgress<OperationProgress<TemplateInstallationStage>>>(),
                 false,
+                verbose,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
                 new TemplateInstallationOutcome.NewInstallation(

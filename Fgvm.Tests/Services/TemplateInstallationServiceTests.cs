@@ -202,6 +202,31 @@ public sealed class TemplateInstallationServiceTests : IDisposable
         Assert.True(File.GetUnixFileMode(templatePath).HasFlag(UnixFileMode.UserExecute));
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task InstallAsync_ReportsSourceDetailsOnlyWhenVerbose(bool verbose, bool expectsSourceDetail)
+    {
+        const string sourceUrl = "https://downloads.example.test/templates.zip";
+        var release = CreateRelease("4.4-stable-standard");
+        var service = CreateService(
+            release,
+            CreateTemplateArchive("4.4.stable"),
+            out _,
+            sourceUrl: sourceUrl);
+        var progress = new RecordingProgress<TemplateInstallationStage>();
+
+        var result = await service.InstallAsync(release, progress, verbose: verbose);
+
+        Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
+        Assert.Equal(expectsSourceDetail, progress.Reports.Any(report =>
+            report.IsVerboseDetail && report.Message == $"Downloading from {sourceUrl}..."));
+        Assert.Contains(progress.Reports, report =>
+            !report.IsVerboseDetail &&
+            report.Stage == TemplateInstallationStage.Downloading &&
+            report.Message.Contains(" MB", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task InstallAsync_CleansTemporaryArchiveDirectory_WhenDownloadFails()
     {
@@ -234,7 +259,8 @@ public sealed class TemplateInstallationServiceTests : IDisposable
         out string templatesRoot,
         string? sha512 = null,
         bool checksumUnavailable = false,
-        bool downloadFails = false
+        bool downloadFails = false,
+        string? sourceUrl = null
     )
     {
         templatesRoot = Path.Combine(_rootPath, "export_templates");
@@ -265,6 +291,11 @@ public sealed class TemplateInstallationServiceTests : IDisposable
                 .Returns(async (string _, Release _, string destinationPath, IProgress<DownloadProgress>? progress, CancellationToken ct) =>
                 {
                     ct.ThrowIfCancellationRequested();
+                    if (sourceUrl is not null)
+                    {
+                        progress?.Report(new DownloadProgress(0, null, sourceUrl));
+                    }
+
                     await File.WriteAllBytesAsync(destinationPath, archive, ct);
                     progress?.Report(new DownloadProgress(archive.Length, archive.Length));
                     return new Result<string, NetworkError>.Success(Sha512(archive));
@@ -340,8 +371,12 @@ public sealed class TemplateInstallationServiceTests : IDisposable
     private sealed class RecordingProgress<TStage> : IProgress<OperationProgress<TStage>> where TStage : Enum
     {
         public event Action<OperationProgress<TStage>>? Reported;
+        public List<OperationProgress<TStage>> Reports { get; } = [];
 
-        public void Report(OperationProgress<TStage> value) =>
+        public void Report(OperationProgress<TStage> value)
+        {
+            Reports.Add(value);
             Reported?.Invoke(value);
+        }
     }
 }
