@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
@@ -7,10 +9,24 @@ using Moq.Protected;
 
 namespace Fgvm.Tests.Godot;
 
-public class DownloadClientTests
+public sealed class DownloadClientTests : IDisposable
 {
     private readonly Mock<ILogger<DownloadClient>> _mockLogger = new();
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "fgvm-download-client-tests", Guid.NewGuid().ToString("N"));
     private readonly Release _testRelease = new(4, 3, "linux_x86_64", 0, ReleaseType.Stable());
+
+    public DownloadClientTests()
+    {
+        Directory.CreateDirectory(_root);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, true);
+        }
+    }
 
     [Fact]
     public async Task ListReleases_GitHubIndexSucceeds_ReturnsReleaseNamesNewestFirst()
@@ -194,7 +210,7 @@ public class DownloadClientTests
     }
 
     [Fact]
-    public async Task GetZipFile_GodotDownloadApiSucceeds_ReturnsSuccess()
+    public async Task DownloadZipFileAsync_GodotDownloadApiSucceeds_ReturnsChecksumAndWritesFile()
     {
         if (Release.TryParse("4.6.2-stable") is not { } release)
         {
@@ -210,70 +226,25 @@ public class DownloadClientTests
                     request,
                     "https://downloads.godotengine.org/?version=4.6.2&flavor=stable&slug=linux.x86_64.zip&platform=linux.x86_64")),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent("zip")
             });
 
         var downloadClient = CreateDownloadClient(mockHandler);
+        var destinationPath = Path.Combine(_root, "out.zip");
 
-        var result = await downloadClient.GetZipFile("Godot_v4.6.2-stable_linux.x86_64.zip", release, CancellationToken.None);
+        var result = await downloadClient.DownloadZipFileAsync(
+            "Godot_v4.6.2-stable_linux.x86_64.zip", release, destinationPath, null, CancellationToken.None);
 
-        var success = Assert.IsType<Result<ZipDownload, NetworkError>.Success>(result);
-        await using var archive = success.Value;
-        using var reader = new StreamReader(archive.Stream);
-        Assert.Equal("zip", await reader.ReadToEndAsync(CancellationToken.None));
+        var success = Assert.IsType<Result<string, NetworkError>.Success>(result);
+        Assert.Equal("zip", await File.ReadAllTextAsync(destinationPath));
+        Assert.Equal(await ExpectedSha512("zip"), success.Value);
     }
 
     [Fact]
-    public async Task GetZipFile_ReturnsLiveStreamWithoutBufferingBody()
-    {
-        if (Release.TryParse("4.6.2-stable") is not { } release)
-        {
-            throw new InvalidOperationException("Expected release to parse.");
-        }
-
-        release = release with { PlatformString = "linux.x86_64" };
-        var body = new TrackingStream("zip"u8.ToArray());
-        var content = new TrackingHttpContent(body, body.Length);
-        var mockHandler = CreateMockHttpHandler(HttpStatusCode.OK, content);
-        var downloadClient = CreateDownloadClient(mockHandler);
-
-        var result = await downloadClient.GetZipFile("Godot_v4.6.2-stable_linux.x86_64.zip", release, CancellationToken.None);
-
-        var success = Assert.IsType<Result<ZipDownload, NetworkError>.Success>(result);
-        Assert.Equal(body.Length, success.Value.ContentLength);
-        Assert.Equal(0, body.ReadCount);
-        Assert.False(content.SerializeCalled);
-        await success.Value.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task GetZipFile_DisposingDownloadDisposesStreamAndResponse()
-    {
-        if (Release.TryParse("4.6.2-stable") is not { } release)
-        {
-            throw new InvalidOperationException("Expected release to parse.");
-        }
-
-        release = release with { PlatformString = "linux.x86_64" };
-        var body = new TrackingStream("zip"u8.ToArray());
-        var content = new TrackingHttpContent(body, body.Length);
-        var mockHandler = CreateMockHttpHandler(HttpStatusCode.OK, content);
-        var downloadClient = CreateDownloadClient(mockHandler);
-
-        var result = await downloadClient.GetZipFile("Godot_v4.6.2-stable_linux.x86_64.zip", release, CancellationToken.None);
-
-        var success = Assert.IsType<Result<ZipDownload, NetworkError>.Success>(result);
-        await success.Value.DisposeAsync();
-
-        Assert.True(body.Disposed);
-        Assert.True(content.Disposed);
-    }
-
-    [Fact]
-    public async Task GetZipFile_GodotDownloadApiFails_GitHubBuildsSucceeds_ReturnsSuccess()
+    public async Task DownloadZipFileAsync_GodotDownloadApiFails_GitHubBuildsSucceeds_ReturnsChecksum()
     {
         if (Release.TryParse("4.6.2-stable") is not { } release)
         {
@@ -303,36 +274,44 @@ public class DownloadClientTests
                     request,
                     $"https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/{filename}")),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent("zip")
             });
 
         var downloadClient = CreateDownloadClient(mockHandler);
+        var destinationPath = Path.Combine(_root, "out.zip");
 
-        var result = await downloadClient.GetZipFile(filename, release, CancellationToken.None);
+        var result = await downloadClient.DownloadZipFileAsync(filename, release, destinationPath, null, CancellationToken.None);
 
-        var success = Assert.IsType<Result<ZipDownload, NetworkError>.Success>(result);
-        await using var archive = success.Value;
-        using var reader = new StreamReader(archive.Stream);
-        Assert.Equal("zip", await reader.ReadToEndAsync(CancellationToken.None));
+        var success = Assert.IsType<Result<string, NetworkError>.Success>(result);
+        Assert.Equal("zip", await File.ReadAllTextAsync(destinationPath));
+        Assert.Equal(await ExpectedSha512("zip"), success.Value);
     }
 
     [Fact]
-    public async Task GetZipFile_DownloadSourcesFail_ReturnsFailure()
+    public async Task DownloadZipFileAsync_DownloadSourcesFail_ReturnsFailure()
     {
         var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.NotFound, "not found"));
+        var destinationPath = Path.Combine(_root, "out.zip");
 
-        var result = await downloadClient.GetZipFile(_testRelease.ZipFileName, _testRelease, CancellationToken.None);
+        var result = await downloadClient.DownloadZipFileAsync(
+            _testRelease.ZipFileName, _testRelease, destinationPath, null, CancellationToken.None);
 
-        var failure = Assert.IsType<Result<ZipDownload, NetworkError>.Failure>(result);
+        var failure = Assert.IsType<Result<string, NetworkError>.Failure>(result);
         var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
         Assert.Equal((int)HttpStatusCode.NotFound, requestFailure.StatusCode);
     }
 
     private DownloadClient CreateDownloadClient(Mock<HttpMessageHandler> httpHandler) =>
         new(new HttpClient(httpHandler.Object), _mockLogger.Object);
+
+    private static async Task<string> ExpectedSha512(string content)
+    {
+        var hash = await SHA512.HashDataAsync(new MemoryStream(Encoding.UTF8.GetBytes(content)));
+        return Convert.ToHexStringLower(hash);
+    }
 
     private static Mock<HttpMessageHandler> CreateMockHttpHandler(HttpStatusCode statusCode, string content)
     {
@@ -351,94 +330,6 @@ public class DownloadClientTests
         return mockHandler;
     }
 
-    private static Mock<HttpMessageHandler> CreateMockHttpHandler(HttpStatusCode statusCode, HttpContent content)
-    {
-        var mockHandler = new Mock<HttpMessageHandler>();
-        mockHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(() => new HttpResponseMessage
-            {
-                StatusCode = statusCode,
-                Content = content
-            });
-
-        return mockHandler;
-    }
-
     private static bool MatchesUnauthenticatedRequest(HttpRequestMessage request, string url) =>
         request.RequestUri?.ToString() == url && request.Headers.Authorization == null;
-
-    private sealed class TrackingHttpContent(TrackingStream stream, long contentLength) : HttpContent
-    {
-        public bool Disposed { get; private set; }
-
-        public bool SerializeCalled { get; private set; }
-
-        protected override Task SerializeToStreamAsync(Stream target, TransportContext? context)
-        {
-            SerializeCalled = true;
-            throw new InvalidOperationException("The body should not be buffered before GetZipFile returns.");
-        }
-
-        protected override Task<Stream> CreateContentReadStreamAsync() =>
-            Task.FromResult<Stream>(stream);
-
-        protected override bool TryComputeLength(out long length)
-        {
-            length = contentLength;
-            return true;
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            Disposed = true;
-            base.Dispose(disposing);
-        }
-    }
-
-    private sealed class TrackingStream(byte[] bytes) : MemoryStream(bytes)
-    {
-        public bool Disposed { get; private set; }
-
-        public int ReadCount { get; private set; }
-
-        protected override void Dispose(bool disposing)
-        {
-            Disposed = true;
-            base.Dispose(disposing);
-        }
-
-        public override ValueTask DisposeAsync()
-        {
-            Disposed = true;
-            return base.DisposeAsync();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            ReadCount++;
-            return base.Read(buffer, offset, count);
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            ReadCount++;
-            return base.Read(buffer);
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            ReadCount++;
-            return base.ReadAsync(buffer, offset, count, cancellationToken);
-        }
-
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            ReadCount++;
-            return base.ReadAsync(buffer, cancellationToken);
-        }
-    }
 }

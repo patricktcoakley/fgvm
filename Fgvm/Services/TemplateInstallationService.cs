@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using Fgvm.Environment;
 using Fgvm.Godot;
+using Fgvm.Godot.Download;
 using Fgvm.Progress;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
@@ -34,11 +35,6 @@ public sealed class TemplateInstallationService(
     ILogger<TemplateInstallationService> logger
 ) : ITemplateInstallationService
 {
-    private const int ArchiveBufferSize = 1024 * 1024;
-
-    // Export template packages are large enough that public mirrors can pause without the download being broken.
-    private static readonly TimeSpan DownloadReadTimeout = TimeSpan.FromSeconds(30);
-
     public async Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(Release release,
         IProgress<OperationProgress<TemplateInstallationStage>> progress,
         bool force = false,
@@ -80,23 +76,22 @@ public sealed class TemplateInstallationService(
                 TemplateInstallationStage.Downloading,
                 $"Downloading {artifact.FileName}..."));
 
-            ZipDownload download;
-            switch (await releaseManager.GetZipFile(artifact.FileName, release, cancellationToken))
+            Directory.CreateDirectory(tempRoot);
+            var archivePath = Path.Combine(tempRoot, Path.GetFileName(artifact.FileName));
+
+            string archiveChecksum;
+            switch (await releaseManager.DownloadZipFileAsync(
+                        artifact.FileName, release, archivePath, new DownloadProgressAdapter(progress), cancellationToken))
             {
-                case Result<ZipDownload, NetworkError>.Success(var zipDownload):
-                    download = zipDownload;
+                case Result<string, NetworkError>.Success(var checksum):
+                    archiveChecksum = checksum;
                     break;
-                case Result<ZipDownload, NetworkError>.Failure(var error):
+                case Result<string, NetworkError>.Failure(var error):
                     return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
                         new TemplateInstallationError.Failed($"Download failed for {artifact.FileName}: {error}"));
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
-
-            await using var downloadOwner = download;
-            Directory.CreateDirectory(tempRoot);
-            var archivePath = Path.Combine(tempRoot, Path.GetFileName(artifact.FileName));
-            var archiveChecksum = await DownloadToFile(download, archivePath, progress, cancellationToken);
 
             var checksumResult = VerifyChecksum(artifact, archiveChecksum, progress);
             ChecksumVerification checksumStatus;
@@ -194,75 +189,35 @@ public sealed class TemplateInstallationService(
         }
     }
 
-    /// <summary>
-    ///     Streams an export template archive to disk while reporting progress and calculating its SHA-512 checksum.
-    /// </summary>
-    /// <param name="download">The open archive download.</param>
-    /// <param name="archivePath">The temporary file path to write.</param>
-    /// <param name="progress">Progress reporter for download updates.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The lowercase hexadecimal SHA-512 checksum of the downloaded archive.</returns>
-    /// <exception cref="IOException">
-    ///     Thrown when the download stalls, fails, or ends before the advertised content length.
-    /// </exception>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken" /> is canceled.</exception>
-    private static async Task<string> DownloadToFile(ZipDownload download,
-        string archivePath,
-        IProgress<OperationProgress<TemplateInstallationStage>> progress,
-        CancellationToken cancellationToken
-    )
+    private sealed class DownloadProgressAdapter(IProgress<OperationProgress<TemplateInstallationStage>> progress)
+        : IProgress<DownloadProgress>
     {
-        var contentLength = download.ContentLength ?? (download.Stream.CanSeek ? download.Stream.Length : 0);
+        private readonly DateTime _startTime = DateTime.UtcNow;
 
-        await using var fileStream = new FileStream(
-            archivePath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            ArchiveBufferSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var sha512 = IncrementalHash.CreateHash(HashAlgorithmName.SHA512);
-
-        var buffer = new byte[ArchiveBufferSize];
-        var totalDownloaded = 0L;
-        var lastProgressUpdate = 0L;
-        var startTime = DateTime.UtcNow;
-        int bytesRead;
-        while ((bytesRead = await DownloadStreamReader.ReadAsync(download.Stream, buffer, DownloadReadTimeout, cancellationToken)) > 0)
+        public void Report(DownloadProgress value)
         {
-            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-            sha512.AppendData(buffer.AsSpan(0, bytesRead));
-            totalDownloaded += bytesRead;
-
-            // Keep progress updates coarse enough for slow terminals while still reporting completion.
-            if (contentLength > 0 &&
-                (totalDownloaded - lastProgressUpdate >= ArchiveBufferSize || totalDownloaded == contentLength))
+            if (value.TotalBytes is not { } totalBytes || totalBytes <= 0)
             {
-                var downloadedMB = totalDownloaded / 1024.0 / 1024.0;
-                var totalMB = contentLength / 1024.0 / 1024.0;
-                var elapsedSeconds = (DateTime.UtcNow - startTime).TotalSeconds;
-                var speedText = "";
-                if (elapsedSeconds > 0.5)
-                {
-                    var speedMBps = downloadedMB / elapsedSeconds;
-                    speedText = speedMBps >= 1.0
-                        ? $" • {speedMBps:F1} MB/s"
-                        : $" • {speedMBps * 1024:F0} KB/s";
-                }
-
-                progress.Report(new OperationProgress<TemplateInstallationStage>(
-                    TemplateInstallationStage.Downloading,
-                    $"Downloading export templates • {downloadedMB:F1}/{totalMB:F1} MB{speedText}"));
-                lastProgressUpdate = totalDownloaded;
+                return;
             }
-        }
 
-        if (contentLength > 0 && totalDownloaded != contentLength)
-        {
-            throw new IOException($"Download ended after {totalDownloaded} bytes, but expected {contentLength} bytes.");
-        }
+            var downloadedMB = value.BytesDownloaded / 1024.0 / 1024.0;
+            var totalMB = totalBytes / 1024.0 / 1024.0;
 
-        return Convert.ToHexStringLower(sha512.GetHashAndReset());
+            var elapsedSeconds = (DateTime.UtcNow - _startTime).TotalSeconds;
+            var speedText = "";
+            if (elapsedSeconds > 0.5)
+            {
+                var speedMBps = downloadedMB / elapsedSeconds;
+                speedText = speedMBps >= 1.0
+                    ? $" • {speedMBps:F1} MB/s"
+                    : $" • {speedMBps * 1024:F0} KB/s";
+            }
+
+            progress.Report(new OperationProgress<TemplateInstallationStage>(
+                TemplateInstallationStage.Downloading,
+                $"Downloading export templates • {downloadedMB:F1}/{totalMB:F1} MB{speedText}"));
+        }
     }
 
     private Result<ChecksumVerification, TemplateInstallationError> VerifyChecksum(ReleaseArtifact artifact,
