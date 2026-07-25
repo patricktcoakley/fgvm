@@ -14,11 +14,12 @@ public sealed class WhichCommandTests
     public async Task WhichCommand_WritesPath_WhenVersionIsSet()
     {
         var executablePath = Path.Combine("/Users/test/fgvm", "installations", "4.5-stable-standard", "Godot");
+        var workingDirectory = Assert.IsType<string>(Path.GetDirectoryName(executablePath));
         var versionService = CreateVersionService(
             new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(
                 new VersionResolutionOutcome.Found(
                     executablePath,
-                    Path.GetDirectoryName(executablePath)!,
+                    workingDirectory,
                     "4.5-stable-standard",
                     false,
                     "4.5-stable-standard@linux.x86_64")));
@@ -52,13 +53,14 @@ public sealed class WhichCommandTests
     public async Task WhichCommand_WithQuery_WritesResolvedInstalledVersionPath()
     {
         var executablePath = Path.Combine("/Users/test/fgvm", "installations", "4.6.2-stable-mono", "Godot");
+        var workingDirectory = Assert.IsType<string>(Path.GetDirectoryName(executablePath));
         var query = new[] { "4.6", "mono" };
         var versionService = new Mock<IVersionManagementService>();
         versionService.Setup(x => x.ResolveInstalledVersionAsync(query, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(
                 new VersionResolutionOutcome.Found(
                     executablePath,
-                    Path.GetDirectoryName(executablePath)!,
+                    workingDirectory,
                     "4.6.2-stable-mono",
                     false,
                     "4.6.2-stable-mono@linux.x86_64")));

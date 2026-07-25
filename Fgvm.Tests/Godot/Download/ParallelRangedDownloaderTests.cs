@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
+using Fgvm.Extensions;
 using Fgvm.Godot.Download;
 using Fgvm.Types;
 
@@ -239,7 +240,7 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
 
         var result = await ParallelRangedDownloader.DownloadAsync(
             httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
-            TestOptions(workerCount: 4, maxAttempts: 2));
+            TestOptions(workerCount: 4, maxAttemptsWithoutProgress: 2));
 
         Assert.IsType<Result<Unit, NetworkError>.Failure>(result);
         Assert.Equal(3, handler.RequestCount);
@@ -353,7 +354,7 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadAsync_RangedDownload_UsesFourFixedWorkers()
+    public async Task DownloadAsync_RangedDownload_UsesConfiguredFourWorkers()
     {
         // Fixed request latency makes throughput scale with concurrency.
         var expected = CreateRandomBytes(4 * 1024 * 1024 + 12 * 4 * 1024 * 1024);
@@ -382,7 +383,7 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
 
         var result = await ParallelRangedDownloader.DownloadAsync(
             httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
-            TestOptions(workerCount: 4, maxAttempts: 2));
+            TestOptions(workerCount: 4, maxAttemptsWithoutProgress: 2));
 
         Assert.IsType<Result<Unit, NetworkError>.Failure>(result);
         // In-flight chunks may finish, but most remaining chunks should never start.
@@ -432,6 +433,73 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
         Assert.All(byteReports, report => Assert.True(report.BytesDownloaded <= report.TotalBytes,
             $"Reported {report.BytesDownloaded} bytes downloaded, exceeding total {report.TotalBytes}."));
         Assert.Equal(expected.Length, byteReports[^1].BytesDownloaded);
+        Assert.Equal(4 * 1024 * 1024, handler.RequestedRanges[1].From);
+        Assert.Equal(expected.Length - 1, handler.RequestedRanges[2].From);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_MultiplePartialFailures_ResumeBeyondConsecutiveAttemptBudget()
+    {
+        var expected = CreateRandomBytes(12 * 1024 * 1024);
+        var handler = new RangeAwareHandler(
+            expected, honorsRange: true, truncateHalfOnRequestNumbers: [2, 3, 4]);
+        using var httpClient = new HttpClient(handler);
+        var destinationPath = Path.Combine(_root, "out.bin");
+
+        var result = await ParallelRangedDownloader.DownloadAsync(
+            httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
+            TestOptions(workerCount: 1));
+
+        Assert.IsType<Result<Unit, NetworkError>.Success>(result);
+        Assert.Equal(expected, await File.ReadAllBytesAsync(destinationPath));
+        Assert.Equal(6, handler.RequestCount);
+        Assert.Equal(
+            [4L * 1024 * 1024, 6L * 1024 * 1024, 7L * 1024 * 1024, 15L * 512 * 1024],
+            handler.RequestedRanges.Skip(1).Take(4).Select(range => range.From));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_EveryAttemptMakesPartialProgress_StopsAtTotalAttemptCap()
+    {
+        var expected = CreateRandomBytes(8 * 1024 * 1024);
+        var handler = new RangeAwareHandler(
+            expected, honorsRange: true, truncateHalfOnRequestNumbers: [2, 3, 4, 5, 6, 7, 8, 9]);
+        using var httpClient = new HttpClient(handler);
+        var destinationPath = Path.Combine(_root, "out.bin");
+
+        var result = await ParallelRangedDownloader.DownloadAsync(
+            httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
+            TestOptions(workerCount: 1));
+
+        Assert.IsType<Result<Unit, NetworkError>.Failure>(result);
+        Assert.Equal(9, handler.RequestCount);
+        Assert.False(File.Exists(destinationPath));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RangeBodyExceedsDeclaredRange_DoesNotWritePastChunkBoundary()
+    {
+        var expected = CreateRandomBytes(12 * 1024 * 1024);
+        var handler = new RangeAwareHandler(
+            expected, honorsRange: true, appendExtraByteOnRequestNumber: 2);
+        using var httpClient = new HttpClient(handler);
+        var destinationPath = Path.Combine(_root, "out.bin");
+
+        var result = await ParallelRangedDownloader.DownloadAsync(
+            httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
+            TestOptions(workerCount: 1));
+
+        Assert.IsType<Result<Unit, NetworkError>.Success>(result);
+        Assert.Equal(expected, await File.ReadAllBytesAsync(destinationPath));
+    }
+
+    [Fact]
+    public void Options_DefaultsToEightWorkersAndThirtyTwoMiBChunks()
+    {
+        var options = new ParallelRangedDownloader.Options();
+
+        Assert.Equal(8, options.WorkerCount);
+        Assert.Equal(32L * ByteSize.Mebibyte, options.ChunkSize);
     }
 
     public void Dispose()
@@ -461,13 +529,14 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
     }
 
     private static ParallelRangedDownloader.Options TestOptions(int workerCount = 4,
-        int maxAttempts = 3,
+        int maxAttemptsWithoutProgress = 3,
         TimeSpan? stallTimeout = null
     ) =>
         new()
         {
+            ChunkSize = 4 * ByteSize.Mebibyte,
             WorkerCount = workerCount,
-            MaxAttempts = maxAttempts,
+            MaxAttemptsWithoutProgress = maxAttemptsWithoutProgress,
             StallTimeout = stallTimeout ?? TimeSpan.FromSeconds(30),
             InitialRetryDelay = TimeSpan.Zero
         };
@@ -554,6 +623,8 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
         int[]? failOnRequestNumbers = null,
         long? failOnStartByte = null,
         int? truncateOnRequestNumber = null,
+        int[]? truncateHalfOnRequestNumbers = null,
+        int? appendExtraByteOnRequestNumber = null,
         bool requireIfRange = false,
         bool includeValidator = true,
         DateTimeOffset? lastModified = null
@@ -564,10 +635,22 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
         private int _requestCount;
         private int _ifRangeRequestCount;
         private int _nonRangeRequestCount;
+        private readonly Lock _rangesLock = new();
+        private readonly List<(long? From, long? To)> _requestedRanges = [];
         public int IfRangeRequestCount => _ifRangeRequestCount;
         public int NonRangeRequestCount => _nonRangeRequestCount;
         public int RequestCount => _requestCount;
         public int PeakConcurrentRequests => _peakConcurrentRequests;
+        public IReadOnlyList<(long? From, long? To)> RequestedRanges
+        {
+            get
+            {
+                lock (_rangesLock)
+                {
+                    return _requestedRanges.ToArray();
+                }
+            }
+        }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -579,6 +662,14 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
             }
 
             var range = request.Headers.Range?.Ranges.FirstOrDefault();
+            if (range is not null)
+            {
+                lock (_rangesLock)
+                {
+                    _requestedRanges.Add((range.From, range.To));
+                }
+            }
+
             if (range is null)
             {
                 Interlocked.Increment(ref _nonRangeRequestCount);
@@ -653,13 +744,24 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
             var from = (int)(range.From ?? 0);
             var to = (int)Math.Min(range.To ?? content.Length - 1, content.Length - 1);
             var length = to - from + 1;
-            var bodyLength = truncateChunkBody || truncateOnRequestNumber == requestNumber ? Math.Max(1, length - 1) : length;
+            var bodyLength = truncateChunkBody
+                ? Math.Max(0, length - 1)
+                : truncateHalfOnRequestNumbers?.Contains(requestNumber) == true
+                    ? Math.Max(1, length / 2)
+                    : truncateOnRequestNumber == requestNumber
+                        ? Math.Max(1, length - 1)
+                        : length;
+            var body = content.AsSpan(from, bodyLength).ToArray();
+            if (appendExtraByteOnRequestNumber == requestNumber)
+            {
+                body = [.. body, 0xFF];
+            }
 
             var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
             {
                 Content = stallOnRequestNumber == requestNumber
                     ? new HangingContent()
-                    : new ByteArrayContent(content.AsSpan(from, bodyLength).ToArray())
+                    : new ByteArrayContent(body)
             };
             response.Content.Headers.ContentRange = malformedContentRange
                 ? new ContentRangeHeaderValue(from, from + length - 1) // "bytes 0-N/*" - total length unknown

@@ -98,7 +98,9 @@ public sealed class TestFixture : IAsyncLifetime
 
     public async Task WriteFile(string path, string content)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var directory = Path.GetDirectoryName(path)
+                        ?? throw new InvalidOperationException($"Test file path has no parent directory: {path}");
+        Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(path, content);
     }
 

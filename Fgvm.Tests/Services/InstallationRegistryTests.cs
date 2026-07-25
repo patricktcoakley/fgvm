@@ -381,7 +381,8 @@ public sealed class InstallationRegistryTests : IDisposable
     private InstallationRegistryDocument ReadRegistry()
     {
         var json = File.ReadAllText(InstallationsPath);
-        return JsonSerializer.Deserialize<InstallationRegistryDocument>(json)!;
+        return Assert.IsType<InstallationRegistryDocument>(
+            JsonSerializer.Deserialize<InstallationRegistryDocument>(json));
     }
 
     private static IReadOnlyList<Installation> AssertSuccess(Result<IReadOnlyList<Installation>, InstallationRegistryError> result) =>

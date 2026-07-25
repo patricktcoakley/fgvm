@@ -221,7 +221,8 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
             throw new InvalidOperationException("Could not locate solution directory.");
         }
 
-        var projectFile = Path.Combine(slnFile.DirectoryName!, "Fgvm.Cli", "Fgvm.Cli.csproj");
+        var solutionDirectory = Assert.IsType<string>(slnFile.DirectoryName);
+        var projectFile = Path.Combine(solutionDirectory, "Fgvm.Cli", "Fgvm.Cli.csproj");
         var doc = XDocument.Load(projectFile);
         var version = doc.Descendants("Version").FirstOrDefault()?.Value;
         return string.IsNullOrWhiteSpace(version)

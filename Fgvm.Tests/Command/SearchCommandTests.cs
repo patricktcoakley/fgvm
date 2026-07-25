@@ -100,7 +100,8 @@ public sealed class SearchCommandTests
         Assert.DoesNotContain("[orange1]", json);
 
         var entries = JsonSerializer.Deserialize<List<RemoteReleaseView>>(json, SerializerOptions);
-        var entry = Assert.Single(entries!);
+        Assert.NotNull(entries);
+        var entry = Assert.Single(entries);
         Assert.Equal("4.5-stable", entry.Name);
     }
 

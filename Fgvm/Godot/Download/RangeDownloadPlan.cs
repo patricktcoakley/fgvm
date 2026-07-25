@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 
 namespace Fgvm.Godot.Download;
@@ -11,7 +12,10 @@ internal sealed record RangeDownloadPlan(
     RangeEntityValidator Validator
 )
 {
-    public static bool TryCreate(HttpResponseMessage probeResponse, long chunkSize, out RangeDownloadPlan plan)
+    public static bool TryCreate(HttpResponseMessage probeResponse,
+        long chunkSize,
+        [NotNullWhen(true)] out RangeDownloadPlan? plan
+    )
     {
         var range = probeResponse.Content.Headers.ContentRange;
         var validator = RangeEntityValidator.From(probeResponse);
@@ -23,7 +27,7 @@ internal sealed record RangeDownloadPlan(
             !string.Equals(range.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
             probeEnd < 0 || probeEnd >= totalBytes || probeEnd >= chunkSize)
         {
-            plan = null!;
+            plan = null;
             return false;
         }
 
@@ -68,8 +72,11 @@ internal sealed record RangeEntityValidator(string? EntityTag, DateTimeOffset? L
 
     public void Apply(HttpRequestMessage request)
     {
-        request.Headers.IfRange = EntityTag is not null
-            ? new RangeConditionHeaderValue(new EntityTagHeaderValue(EntityTag))
-            : new RangeConditionHeaderValue(LastModified!.Value);
+        request.Headers.IfRange = (EntityTag, LastModified) switch
+        {
+            ({ } entityTag, null) => new RangeConditionHeaderValue(new EntityTagHeaderValue(entityTag)),
+            (null, { } lastModified) => new RangeConditionHeaderValue(lastModified),
+            _ => throw new InvalidOperationException("An If-Range validator requires exactly one value.")
+        };
     }
 }

@@ -158,7 +158,8 @@ public sealed class ParallelZipExtractorTests : IDisposable
             CancellationToken.None));
 
         Assert.Equal(0, openCount);
-        Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(_root)!, "outside.txt")));
+        var rootParent = Assert.IsType<string>(Path.GetDirectoryName(_root));
+        Assert.False(File.Exists(Path.Combine(rootParent, "outside.txt")));
     }
 
     [Fact]

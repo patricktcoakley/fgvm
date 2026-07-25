@@ -2,7 +2,6 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using Fgvm.Environment;
 using Fgvm.Godot;
-using Fgvm.Godot.Download;
 using Fgvm.Progress;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
@@ -83,7 +82,10 @@ public sealed class TemplateInstallationService(
 
             string archiveChecksum;
             switch (await releaseManager.DownloadZipFileAsync(
-                        artifact.FileName, release, archivePath, new DownloadProgressAdapter(progress, verbose), cancellationToken))
+                        artifact.FileName, release, archivePath,
+                        new DownloadOperationProgress<TemplateInstallationStage>(
+                            progress, TemplateInstallationStage.Downloading, "Downloading export templates", verbose),
+                        cancellationToken))
             {
                 case Result<string, NetworkError>.Success(var checksum):
                     archiveChecksum = checksum;
@@ -188,53 +190,6 @@ public sealed class TemplateInstallationService(
         {
             CleanupTempDirectory(stagingPath);
             CleanupTempDirectory(tempRoot);
-        }
-    }
-
-    private sealed class DownloadProgressAdapter(
-        IProgress<OperationProgress<TemplateInstallationStage>> progress,
-        bool verbose
-    )
-        : IProgress<DownloadProgress>
-    {
-        private readonly DateTime _startTime = DateTime.UtcNow;
-
-        public void Report(DownloadProgress value)
-        {
-            if (value.SourceUrl is { } sourceUrl)
-            {
-                if (verbose)
-                {
-                    progress.Report(new OperationProgress<TemplateInstallationStage>(
-                        TemplateInstallationStage.Downloading,
-                        $"Downloading from {sourceUrl}...",
-                        IsVerboseDetail: true));
-                }
-
-                return;
-            }
-
-            if (value.TotalBytes is not { } totalBytes || totalBytes <= 0)
-            {
-                return;
-            }
-
-            var downloadedMB = value.BytesDownloaded / 1024.0 / 1024.0;
-            var totalMB = totalBytes / 1024.0 / 1024.0;
-
-            var elapsedSeconds = (DateTime.UtcNow - _startTime).TotalSeconds;
-            var speedText = "";
-            if (elapsedSeconds > 0.5)
-            {
-                var speedMBps = downloadedMB / elapsedSeconds;
-                speedText = speedMBps >= 1.0
-                    ? $" • {speedMBps:F1} MB/s"
-                    : $" • {speedMBps * 1024:F0} KB/s";
-            }
-
-            progress.Report(new OperationProgress<TemplateInstallationStage>(
-                TemplateInstallationStage.Downloading,
-                $"Downloading export templates • {downloadedMB:F1}/{totalMB:F1} MB{speedText}"));
         }
     }
 

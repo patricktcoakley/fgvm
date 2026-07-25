@@ -185,7 +185,7 @@ public sealed class ReleaseManager(
 
         return FindReleaseByQuery(query, releaseIds, TryCreateRelease) switch
         {
-            Result<Release?, QueryError>.Success(var release) when release is not null =>
+            Result<Release?, QueryError>.Success({ } release) =>
                 new Result<Release, QueryError>.Success(release),
             Result<Release?, QueryError>.Success =>
                 new Result<Release, QueryError>.Failure(new QueryError.NotFound(string.Join(" ", query))),
@@ -205,7 +205,7 @@ public sealed class ReleaseManager(
 
         return FindReleaseByQuery(query, releaseIds, TryCreateReleaseWithoutPlatform) switch
         {
-            Result<Release?, QueryError>.Success(var release) when release is not null =>
+            Result<Release?, QueryError>.Success({ } release) =>
                 new Result<Release, QueryError>.Success(release),
             Result<Release?, QueryError>.Success =>
                 new Result<Release, QueryError>.Failure(new QueryError.NotFound(string.Join(" ", query))),
@@ -222,47 +222,6 @@ public sealed class ReleaseManager(
     /// <inheritdoc />
     public IEnumerable<string> FilterReleasesByQueryWithoutPlatform(string[] query, string[] releaseNames, bool chronological = false)
         => FilterReleasesByQueryCore(query, releaseNames, chronological, TryCreateReleaseWithoutPlatform);
-
-    private IEnumerable<string> FilterReleasesByQueryCore(string[] query,
-        string[] releaseNames,
-        bool chronological,
-        Func<string, Release?> createRelease
-    )
-    {
-        // Extract runtime environment filter (mono/standard)
-        var runtimeFilter = query.Length > 0
-            ? query.FirstOrDefault(x => x.Equals("mono", StringComparison.OrdinalIgnoreCase) ||
-                                        x.Equals("standard", StringComparison.OrdinalIgnoreCase), string.Empty)
-            : string.Empty;
-
-        // Extract release type filter (stable/rc/beta/alpha/dev)
-        var releaseType = query.Length > 0
-            ? query.FirstOrDefault(x => ReleaseType.Prefixes
-                .Any(prefix => x.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)), string.Empty)
-            : string.Empty;
-
-        // Extract version filter (anything that's not runtime or release type)
-        var possibleVersion = query.Length > 0
-            ? query.Where(x => !x.Equals(releaseType, StringComparison.OrdinalIgnoreCase) &&
-                               !x.Equals(runtimeFilter, StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault(string.Empty)
-            : string.Empty;
-
-        var filtered = releaseNames
-            .Where(x => string.IsNullOrEmpty(possibleVersion) || x.StartsWith(possibleVersion, StringComparison.OrdinalIgnoreCase))
-            .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType, StringComparison.OrdinalIgnoreCase))
-            .Where(x => string.IsNullOrEmpty(runtimeFilter) || x.Contains(runtimeFilter, StringComparison.OrdinalIgnoreCase))
-            .Select(name => new { OriginalName = name, Release = createRelease(name) ?? createRelease($"{name}-standard") })
-            .Where(x => x.Release != null)
-            .Select(x => new { x.OriginalName, Release = x.Release! });
-
-        // Display/search paths use the natural Release ordering. Selection paths use explicit preference ordering.
-        var sorted = chronological
-            ? filtered.OrderByDescending(x => x.Release)
-            : OrderBySelectionPreference(filtered, x => x.Release);
-
-        return sorted.Select(x => x.OriginalName);
-    }
 
     /// <inheritdoc />
     public Result<Release, ReleaseParseError> CreateRelease(string versionString)
@@ -367,6 +326,58 @@ public sealed class ReleaseManager(
             .First();
 
         return new Result<string, CompatibilityError>.Success(bestRelease.ReleaseNameWithRuntime);
+    }
+
+    private IEnumerable<string> FilterReleasesByQueryCore(string[] query,
+        string[] releaseNames,
+        bool chronological,
+        Func<string, Release?> createRelease
+    )
+    {
+        // Extract runtime environment filter (mono/standard)
+        var runtimeFilter = query.Length > 0
+            ? query.FirstOrDefault(x => x.Equals("mono", StringComparison.OrdinalIgnoreCase) ||
+                                        x.Equals("standard", StringComparison.OrdinalIgnoreCase), string.Empty)
+            : string.Empty;
+
+        // Extract release type filter (stable/rc/beta/alpha/dev)
+        var releaseType = query.Length > 0
+            ? query.FirstOrDefault(x => ReleaseType.Prefixes
+                .Any(prefix => x.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)), string.Empty)
+            : string.Empty;
+
+        // Extract version filter (anything that's not runtime or release type)
+        var possibleVersion = query.Length > 0
+            ? query.Where(x => !x.Equals(releaseType, StringComparison.OrdinalIgnoreCase) &&
+                               !x.Equals(runtimeFilter, StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault(string.Empty)
+            : string.Empty;
+
+        var filteredNames = releaseNames
+            .Where(x => string.IsNullOrEmpty(possibleVersion) || x.StartsWith(possibleVersion, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrEmpty(runtimeFilter) || x.Contains(runtimeFilter, StringComparison.OrdinalIgnoreCase));
+        var filtered = ResolveReleases(filteredNames, createRelease);
+
+        // Display/search paths use the natural Release ordering. Selection paths use explicit preference ordering.
+        var sorted = chronological
+            ? filtered.OrderByDescending(x => x.Release)
+            : OrderBySelectionPreference(filtered, x => x.Release);
+
+        return sorted.Select(x => x.OriginalName);
+    }
+
+    private static IEnumerable<(string OriginalName, Release Release)> ResolveReleases(IEnumerable<string> releaseNames,
+        Func<string, Release?> createRelease
+    )
+    {
+        foreach (var name in releaseNames)
+        {
+            if ((createRelease(name) ?? createRelease($"{name}-standard")) is { } release)
+            {
+                yield return (name, release);
+            }
+        }
     }
 
     internal Release? TryFindReleaseByQuery(string[] query, string[] releaseNames)
