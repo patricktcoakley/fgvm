@@ -248,7 +248,7 @@ public class InstallationServiceTests
             Assert.Equal("fake executable", await File.ReadAllTextAsync(Path.Combine(extractPath, "Godot")));
             Assert.False(File.Exists(Path.Combine(extractPath, "stale.txt")));
 
-            var installationsDirectory = Path.GetDirectoryName(extractPath)!;
+            var installationsDirectory = Assert.IsType<string>(Path.GetDirectoryName(extractPath));
             Assert.Empty(Directory.GetDirectories(installationsDirectory, ".fgvm-staging-*"));
             Assert.Empty(Directory.GetDirectories(installationsDirectory, "*.backup-*"));
         }
@@ -304,7 +304,8 @@ public class InstallationServiceTests
         // A plain file at the exact destination path makes Directory.Exists false (skipping the
         // backup branch entirely) while still blocking Directory.Move, forcing a generic CommitFailed.
         var extractPath = Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release));
-        Directory.CreateDirectory(Path.GetDirectoryName(extractPath)!);
+        var extractParent = Assert.IsType<string>(Path.GetDirectoryName(extractPath));
+        Directory.CreateDirectory(extractParent);
         await File.WriteAllTextAsync(extractPath, "blocker");
 
         try
@@ -321,7 +322,7 @@ public class InstallationServiceTests
             Assert.Contains($"Unable to install {release.ReleaseNameWithRuntime}", failed.Reason);
             Assert.Equal("blocker", await File.ReadAllTextAsync(extractPath));
 
-            var installationsDirectory = Path.GetDirectoryName(extractPath)!;
+            var installationsDirectory = Assert.IsType<string>(Path.GetDirectoryName(extractPath));
             Assert.Empty(Directory.GetDirectories(installationsDirectory, ".fgvm-staging-*"));
             Assert.Empty(Directory.GetDirectories(installationsDirectory, "*.backup-*"));
             installationRegistry.Verify(x => x.UpsertInstalled(It.IsAny<Release>(), It.IsAny<string>(), It.IsAny<DateTimeOffset?>()),

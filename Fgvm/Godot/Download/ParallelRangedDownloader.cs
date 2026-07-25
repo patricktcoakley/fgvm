@@ -123,7 +123,8 @@ internal static class ParallelRangedDownloader
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(options.ChunkSize, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.WorkerCount, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxAttempts, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxAttemptsWithoutProgress, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxTotalAttemptsPerRange, 1);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.StallTimeout, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.InitialRetryDelay, TimeSpan.Zero);
     }
@@ -131,9 +132,14 @@ internal static class ParallelRangedDownloader
     internal sealed record Options
     {
         // Fixed defaults keep resource use predictable while still overlapping network reads.
-        public long ChunkSize { get; init; } = 4 * 1024 * 1024;
-        public int WorkerCount { get; init; } = 4;
-        public int MaxAttempts { get; init; } = 3;
+        public long ChunkSize { get; init; } = 32L * ByteSize.Mebibyte;
+        public int WorkerCount { get; init; } = 8;
+        // Probe and sequential retries make no durable progress. Ranged recovery resets this
+        // budget whenever an attempt writes bytes successfully.
+        public int MaxAttemptsWithoutProgress { get; init; } = 3;
+        // Partial progress resets the consecutive-failure budget, but this hard cap prevents
+        // a server that repeatedly sends only a few bytes from retrying indefinitely.
+        public int MaxTotalAttemptsPerRange { get; init; } = 8;
         public TimeSpan StallTimeout { get; init; } = TimeSpan.FromSeconds(30);
         public TimeSpan InitialRetryDelay { get; init; } = TimeSpan.FromMilliseconds(250);
     }

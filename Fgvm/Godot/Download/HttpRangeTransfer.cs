@@ -14,29 +14,26 @@ internal sealed class HttpRangeTransfer(
     ParallelRangedDownloader.Options options
 )
 {
-    private const int ReadBufferSize = 1024 * 1024;
+    private const int ReadBufferSize = checked((int)ByteSize.Mebibyte);
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromSeconds(30);
+    private readonly RetryPolicy _retryPolicy = new(options);
 
-    public async Task<HttpResponseMessage> ProbeAsync(CancellationToken cancellationToken)
-    {
-        HttpResponseMessage? result = null;
-        await RetryAsync(async () =>
+    public Task<HttpResponseMessage> ProbeAsync(CancellationToken cancellationToken) =>
+        RetryAsync(async () =>
         {
             var response = await SendRequestAsync(
                 new RangeHeaderValue(0, options.ChunkSize - 1), null, cancellationToken);
             if (!IsTransient(response.StatusCode))
             {
                 // The caller may reuse this response as the first chunk, including its unread body.
-                result = response;
-                return;
+                return response;
             }
 
             response.Dispose();
             throw new TransientDownloadException($"Probe returned {(int)response.StatusCode}.");
         }, cancellationToken);
-        return result!;
-    }
 
-    public Task DownloadRangeAsync(RangeChunk chunk,
+    public async Task DownloadRangeAsync(RangeChunk chunk,
         long totalBytes,
         RangeEntityValidator validator,
         SafeFileHandle handle,
@@ -44,32 +41,55 @@ internal sealed class HttpRangeTransfer(
         CancellationToken cancellationToken
     )
     {
-        var firstResponse = chunk.Response;
-        return RetryAsync(async () =>
+        var state = _retryPolicy.StartRange(chunk.Start);
+        var responseFromProbe = chunk.Response;
+
+        while (state.CanRetry)
         {
-            var written = 0L;
+            var attemptBytes = 0L;
+            var remaining = new RangeChunk(state.NextOffset, chunk.End, responseFromProbe);
+            responseFromProbe = null;
             try
             {
-                using var response = firstResponse ?? await SendRequestAsync(
-                    new RangeHeaderValue(chunk.Start, chunk.End), validator, cancellationToken);
-                firstResponse = null;
-                ValidateRangeResponse(response, chunk, totalBytes);
-                await WriteResponseBodyAsync(
-                    response, handle, chunk.Start, chunk.Length,
+                await DownloadRangeAttemptAsync(
+                    remaining, totalBytes, validator, handle,
                     bytesWritten =>
                     {
-                        written += bytesWritten;
-                        progress.Add(bytesWritten);
+                        attemptBytes += bytesWritten;
+                        progress.ReportBytesWritten(bytesWritten);
                     },
                     cancellationToken);
+
+                return;
             }
-            catch
+            catch (TransientDownloadException)
             {
-                // Each retry starts the range over, so discard progress from the failed attempt.
-                progress.Subtract(written);
-                throw;
+                state = state.AfterFailure(attemptBytes);
+                if (!state.CanRetry)
+                {
+                    throw;
+                }
+
+                await Task.Delay(_retryPolicy.DelayAfter(state), cancellationToken);
             }
-        }, cancellationToken);
+        }
+
+        throw new InvalidOperationException("Range recovery started without an available attempt.");
+    }
+
+    private async Task DownloadRangeAttemptAsync(RangeChunk range,
+        long totalBytes,
+        RangeEntityValidator validator,
+        SafeFileHandle handle,
+        Action<int> bytesWritten,
+        CancellationToken cancellationToken
+    )
+    {
+        using var response = range.Response ?? await SendRequestAsync(
+            new RangeHeaderValue(range.Start, range.End), validator, cancellationToken);
+        ValidateRangeResponse(response, range, totalBytes);
+        await WriteResponseBodyAsync(
+            response, handle, range.Start, range.Length, bytesWritten, cancellationToken);
     }
 
     public Task DownloadSequentialAsync(HttpResponseMessage? probeResponse,
@@ -192,13 +212,16 @@ internal sealed class HttpRangeTransfer(
             {
                 var position = offset;
                 var written = 0L;
-                while (true)
+                while (expectedLength is not { } expected || written < expected)
                 {
+                    var bytesToRead = expectedLength is { } length
+                        ? checked((int)Math.Min(buffer.Length, length - written))
+                        : buffer.Length;
                     int bytesRead;
                     try
                     {
                         bytesRead = await DownloadStreamReader.ReadAsync(
-                            stream, buffer, options.StallTimeout, cancellationToken);
+                            stream, buffer.AsMemory(0, bytesToRead), options.StallTimeout, cancellationToken);
                     }
                     catch (Exception ex) when (IsTransientTransportFailure(ex, cancellationToken))
                     {
@@ -216,10 +239,10 @@ internal sealed class HttpRangeTransfer(
                     bytesWritten?.Invoke(bytesRead);
                 }
 
-                if (expectedLength is { } expected && written != expected)
+                if (expectedLength is { } declaredLength && written != declaredLength)
                 {
                     throw new TransientDownloadException(
-                        $"Expected {expected} bytes starting at offset {offset}, but received {written}.");
+                        $"Expected {declaredLength} bytes starting at offset {offset}, but received {written}.");
                 }
             }
             finally
@@ -229,27 +252,28 @@ internal sealed class HttpRangeTransfer(
         }
     }
 
-    private async Task RetryAsync(Func<Task> operation, CancellationToken cancellationToken)
+    private async Task RetryAsync(Func<Task> operation, CancellationToken cancellationToken) =>
+        await RetryAsync(async () =>
+        {
+            await operation();
+            return true;
+        }, cancellationToken);
+
+    private async Task<T> RetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken)
     {
-        for (var attempt = 1;; attempt++)
+        for (var attempt = 1; attempt <= _retryPolicy.MaxAttemptsWithoutProgress; attempt++)
         {
             try
             {
-                await operation();
-                return;
+                return await operation();
             }
-            catch (TransientDownloadException) when (attempt < options.MaxAttempts)
+            catch (TransientDownloadException) when (attempt < _retryPolicy.MaxAttemptsWithoutProgress)
             {
-                // Backoff is bounded so a persistently unhealthy server cannot create very long pauses.
-                var delay = TimeSpan.FromMilliseconds(Math.Min(
-                    options.InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1),
-                    30_000));
-                if (delay > TimeSpan.Zero)
-                {
-                    await Task.Delay(delay, cancellationToken);
-                }
+                await Task.Delay(_retryPolicy.DelayForAttempt(attempt), cancellationToken);
             }
         }
+
+        throw new InvalidOperationException("Retry started without an available attempt.");
     }
 
     // Retry statuses associated with temporary load or availability. Other 4xx responses
@@ -267,4 +291,50 @@ internal sealed class HttpRangeTransfer(
     // Only this exception is caught by RetryAsync; validation failures deliberately bypass retries.
     private sealed class TransientDownloadException(string message, Exception? innerException = null)
         : IOException(message, innerException);
+
+    private readonly record struct RangeRetryState(
+        long NextOffset,
+        int TotalAttemptsRemaining,
+        int AttemptsWithoutProgressRemaining,
+        int MaxAttemptsWithoutProgress
+    )
+    {
+        public bool CanRetry => TotalAttemptsRemaining > 0 && AttemptsWithoutProgressRemaining > 0;
+
+        public int BackoffAttempt => Math.Max(1, MaxAttemptsWithoutProgress - AttemptsWithoutProgressRemaining);
+
+        public RangeRetryState AfterFailure(long bytesWritten) => new(
+            checked(NextOffset + bytesWritten),
+            checked(TotalAttemptsRemaining - 1),
+            bytesWritten > 0
+                ? MaxAttemptsWithoutProgress
+                : checked(AttemptsWithoutProgressRemaining - 1),
+            MaxAttemptsWithoutProgress);
+    }
+
+    private readonly record struct RetryPolicy(
+        int MaxAttemptsWithoutProgress,
+        int MaxTotalRangeAttempts,
+        TimeSpan InitialDelay
+    )
+    {
+        public RetryPolicy(ParallelRangedDownloader.Options options)
+            : this(
+                options.MaxAttemptsWithoutProgress,
+                options.MaxTotalAttemptsPerRange,
+                options.InitialRetryDelay)
+        { }
+
+        public RangeRetryState StartRange(long offset) => new(
+            offset,
+            MaxTotalRangeAttempts,
+            MaxAttemptsWithoutProgress,
+            MaxAttemptsWithoutProgress);
+
+        public TimeSpan DelayAfter(RangeRetryState state) => DelayForAttempt(state.BackoffAttempt);
+
+        public TimeSpan DelayForAttempt(int attempt) => TimeSpan.FromMilliseconds(Math.Min(
+            InitialDelay.TotalMilliseconds * Math.Pow(2, attempt - 1),
+            MaximumRetryDelay.TotalMilliseconds));
+    }
 }

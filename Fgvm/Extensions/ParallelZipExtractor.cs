@@ -21,7 +21,7 @@ internal readonly record struct ZipExtractionWorkItem(
 /// </summary>
 internal static class ParallelZipExtractor
 {
-    private const int ArchiveIoBufferSize = 1024 * 1024;
+    private const int ArchiveIoBufferSize = checked((int)ByteSize.Mebibyte);
     private const int UnixModeShift = 16;
 
     private const UnixFileMode UnixPermissionMask = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
@@ -129,7 +129,10 @@ internal static class ParallelZipExtractor
         }
 
         var entry = archive.Entries[workItem.EntryIndex];
-        Directory.CreateDirectory(Path.GetDirectoryName(workItem.DestinationPath)!);
+        var destinationDirectory = Path.GetDirectoryName(workItem.DestinationPath)
+                                   ?? throw new InvalidDataException(
+                                       $"Extraction destination has no parent directory: {workItem.DestinationPath}");
+        Directory.CreateDirectory(destinationDirectory);
         await entry.ExtractToFileAsync(workItem.DestinationPath, overwrite, cancellationToken);
         if (workItem.ApplyUnixPermissions)
         {

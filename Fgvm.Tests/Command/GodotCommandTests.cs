@@ -89,7 +89,7 @@ public sealed class GodotCommandTests
     public async Task Launch_ProjectFlag_PrependsDetectedProjectPathToExplicitArguments()
     {
         var projectFilePath = Path.Combine(Path.GetTempPath(), "fgvm-project", "project.godot");
-        var projectDirectory = Path.GetDirectoryName(projectFilePath)!;
+        var projectDirectory = Assert.IsType<string>(Path.GetDirectoryName(projectFilePath));
         GodotLaunchRequest? captured = null;
         _launcher.Setup(x => x.LaunchAsync(
                 It.IsAny<GodotLaunchRequest>(),

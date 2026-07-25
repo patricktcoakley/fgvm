@@ -29,7 +29,7 @@ public class SpectreProgressHandlerTests
         {
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
-                $"Downloading {installPathBase} • 50.0/100.0 MB • 25.5 MB/s"));
+                $"Downloading {installPathBase} • 50.0/100.0 MB • 25.5 MiB/s"));
             await Task.Delay(1);
             return "success";
         });
@@ -37,7 +37,7 @@ public class SpectreProgressHandlerTests
         Assert.Equal("success", result);
         var output = _testConsole.Output;
         Assert.Contains("Downloading", output);
-        Assert.Contains("25.5 MB/s", output);
+        Assert.Contains("25.5 MiB/s", output);
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public class SpectreProgressHandlerTests
             await Task.Delay(1);
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
-                $"Downloading {installPathBase} • 126.7/126.7 MB • 58.0 MB/s"));
+                $"Downloading {installPathBase} • 126.7/126.7 MB • 58.0 MiB/s"));
             await Task.Delay(1);
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));
@@ -166,7 +166,7 @@ public class SpectreProgressHandlerTests
         var output = _testConsole.Output;
 
         Assert.Contains("Downloading", output);
-        Assert.Contains("58.0 MB/s", output);
+        Assert.Contains("58.0 MiB/s", output);
         Assert.Contains("Verifying checksum", output);
         Assert.Contains("Extracting files", output);
         Assert.Contains("Setting as default version", output);

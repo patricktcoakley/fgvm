@@ -25,7 +25,7 @@ public sealed class FixtureDownloadClientTests : IDisposable
         var checksum = await CalculateSha512(zipPath);
         var manifestPath = await WriteManifest(zipPath, checksum);
         var client = new FixtureDownloadClient(manifestPath, NullLogger<FixtureDownloadClient>.Instance);
-        var release = Release.TryParse("4.6.2-stable")!;
+        var release = ParseRelease("4.6.2-stable");
 
         var releases = await client.ListReleases(CancellationToken.None);
         var releaseSuccess = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(releases);
@@ -55,7 +55,7 @@ public sealed class FixtureDownloadClientTests : IDisposable
         var checksum = await CalculateSha512(zipPath);
         var manifestPath = await WriteManifest(zipPath, checksum);
         var client = new FixtureDownloadClient(manifestPath, NullLogger<FixtureDownloadClient>.Instance);
-        var release = Release.TryParse("4.6.2-stable")!;
+        var release = ParseRelease("4.6.2-stable");
 
         var destinationPath = Path.Combine(_root, "downloaded.zip");
         var zip = await client.DownloadZipFileAsync("missing.zip", release, destinationPath, null, CancellationToken.None);
@@ -82,7 +82,7 @@ public sealed class FixtureDownloadClientTests : IDisposable
         var checksum = await CalculateSha512(zipPath);
         var manifestPath = await WriteManifest(zipPath, checksum);
         var client = new FixtureDownloadClient(manifestPath, NullLogger<FixtureDownloadClient>.Instance);
-        var release = Release.TryParse("4.5-stable")!;
+        var release = ParseRelease("4.5-stable");
 
         var manifest = await client.GetReleaseManifest(release, CancellationToken.None);
         var sha512 = await client.GetSha512(release, CancellationToken.None);
@@ -116,6 +116,9 @@ public sealed class FixtureDownloadClientTests : IDisposable
         await writer.WriteAsync("mock executable");
         return zipPath;
     }
+
+    private static Release ParseRelease(string value) =>
+        Assert.IsType<Release>(Release.TryParse(value));
 
     private async Task<string> WriteManifest(string zipPath, string checksum)
     {

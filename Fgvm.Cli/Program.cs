@@ -65,10 +65,10 @@ public class Program
         services.AddSingleton<IGodotPathService, GodotPathService>();
         services.AddSingleton<IHostSystem, HostSystem>();
 
-        if (fixtureMode)
+        if (!string.IsNullOrWhiteSpace(fixtureManifestPath))
         {
             services.AddSingleton<IDownloadClient>(sp =>
-                new FixtureDownloadClient(fixtureManifestPath!, sp.GetRequiredService<ILogger<FixtureDownloadClient>>()));
+                new FixtureDownloadClient(fixtureManifestPath, sp.GetRequiredService<ILogger<FixtureDownloadClient>>()));
         }
         else
         {

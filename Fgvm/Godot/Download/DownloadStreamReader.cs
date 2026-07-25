@@ -9,13 +9,13 @@ internal static class DownloadStreamReader
     ///     Reads the next download chunk, failing when no bytes arrive before the stall timeout expires.
     /// </summary>
     /// <param name="stream">The response body stream to read from.</param>
-    /// <param name="buffer">The destination buffer for the received bytes.</param>
+    /// <param name="buffer">The destination memory for the received bytes.</param>
     /// <param name="stallTimeout">The maximum time to wait for a single read to produce bytes.</param>
     /// <param name="cancellationToken">Cancellation token for caller-requested cancellation.</param>
     /// <returns>The number of bytes read, or zero when the stream reaches EOF.</returns>
     /// <exception cref="IOException">Thrown when the stream stalls for longer than <paramref name="stallTimeout" />.</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken" /> is canceled.</exception>
-    public static async Task<int> ReadAsync(Stream stream, byte[] buffer, TimeSpan stallTimeout, CancellationToken cancellationToken)
+    public static async Task<int> ReadAsync(Stream stream, Memory<byte> buffer, TimeSpan stallTimeout, CancellationToken cancellationToken)
     {
         // Linking the tokens lets the catch filters preserve caller cancellation while translating
         // only the internal timeout into a retryable I/O failure.
@@ -24,7 +24,7 @@ internal static class DownloadStreamReader
 
         try
         {
-            return await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), timeoutCts.Token);
+            return await stream.ReadAsync(buffer, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -114,7 +114,8 @@ public sealed class LogsCommandTests : IDisposable
 
     private static IPathService CreatePathService(string logPath)
     {
-        var rootPath = Path.GetDirectoryName(logPath)!;
+        var rootPath = Path.GetDirectoryName(logPath)
+                       ?? throw new InvalidOperationException($"Log path has no parent directory: {logPath}");
         var binPath = Path.Combine(rootPath, "bin");
 
         var mock = new Mock<IPathService>();

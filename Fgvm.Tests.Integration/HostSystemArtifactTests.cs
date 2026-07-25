@@ -120,7 +120,8 @@ public sealed class HostSystemArtifactTests : IDisposable
         var targetAppPath = Path.Combine(_rootPath, "installations", "4.3-stable-standard", "macos.universal", "Godot.app");
         var oldExecutablePath = Path.Combine(targetAppPath, "Contents", "MacOS", "Godot");
         Directory.CreateDirectory(targetAppPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(oldExecutablePath)!);
+        var executableDirectory = Assert.IsType<string>(Path.GetDirectoryName(oldExecutablePath));
+        Directory.CreateDirectory(executableDirectory);
         File.WriteAllText(oldExecutablePath, "");
         File.CreateSymbolicLink(Path.Combine(_rootPath, "Godot"), oldExecutablePath);
         var hostSystem = CreateHostSystem(OS.MacOS);
