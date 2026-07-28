@@ -1,5 +1,3 @@
-using System.IO.Enumeration;
-using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 
@@ -44,12 +42,6 @@ public interface IHostSystem
     Result<SymlinkInfo, SymlinkError> ResolveCurrentSymlinks();
 
     /// <summary>
-    ///     Lists locally installed Godot versions.
-    /// </summary>
-    /// <returns>Installed release names, or a filesystem error.</returns>
-    Result<string[], FileSystemError> ListInstallations();
-
-    /// <summary>
     ///     Checks whether a file exists.
     /// </summary>
     Result<bool, FileOperationError> FileExists(string path);
@@ -83,6 +75,13 @@ public interface IHostSystem
     ///     Moves a file.
     /// </summary>
     Result<Unit, FileOperationError> MoveFile(string sourcePath, string destinationPath, bool overwrite);
+
+    /// <summary>
+    ///     Renames a directory. Both paths must be on the same volume.
+    /// </summary>
+    /// <param name="sourcePath">The directory to rename.</param>
+    /// <param name="destinationPath">The new path, which must not already exist.</param>
+    Result<Unit, FileOperationError> MoveDirectory(string sourcePath, string destinationPath);
 
     /// <summary>
     ///     Deletes a file if it exists.
@@ -362,6 +361,40 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
         catch (DirectoryNotFoundException)
         {
             return new Result<Unit, FileOperationError>.Failure(new FileOperationError.NotFound(destinationPath));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.PermissionDenied(destinationPath));
+        }
+        catch (PathTooLongException)
+        {
+            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.InvalidPath(destinationPath));
+        }
+        catch (ArgumentException)
+        {
+            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.InvalidPath(destinationPath));
+        }
+        catch (NotSupportedException)
+        {
+            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.UnsupportedPath(destinationPath));
+        }
+        catch (IOException)
+        {
+            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.IoFailure(destinationPath));
+        }
+    }
+
+    /// <inheritdoc />
+    public Result<Unit, FileOperationError> MoveDirectory(string sourcePath, string destinationPath)
+    {
+        try
+        {
+            Directory.Move(sourcePath, destinationPath);
+            return new Result<Unit, FileOperationError>.Success(Unit.Value);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.NotFound(sourcePath));
         }
         catch (UnauthorizedAccessException)
         {
@@ -911,47 +944,6 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
         return new Result<SymlinkInfo, SymlinkError>.Success(
             new SymlinkInfo(file.LinkTarget));
     }
-
-    /// <inheritdoc />
-    public Result<string[], FileSystemError> ListInstallations()
-    {
-        try
-        {
-            var installed = new FileSystemEnumerable<string>(
-                pathService.RootPath,
-                (ref entry) => entry.FileName.ToString())
-            {
-                ShouldIncludePredicate = (ref entry) =>
-                    entry is { IsDirectory: true, FileName: not "bin", IsHidden: false }
-            };
-
-            var releases = installed
-                .Select(Release.TryParse)
-                .OfType<Release>()
-                .OrderByDescending(release => release)
-                .Select(release => release.ReleaseNameWithRuntime)
-                .ToArray();
-
-            return new Result<string[], FileSystemError>.Success(releases);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return new Result<string[], FileSystemError>.Failure(new FileSystemError.PermissionDenied(pathService.RootPath));
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return new Result<string[], FileSystemError>.Failure(new FileSystemError.DirectoryNotFound(pathService.RootPath));
-        }
-        catch (Exception ex) when (ex is IOException)
-        {
-            return new Result<string[], FileSystemError>.Failure(new FileSystemError.EnumerationFailed(pathService.RootPath));
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-        {
-            return new Result<string[], FileSystemError>.Failure(new FileSystemError.InvalidPath(pathService.RootPath));
-        }
-    }
-
 
     private static bool IsSymbolicLinkValid(string symlinkTargetPath)
     {

@@ -38,6 +38,9 @@ public sealed class InstallationRegistryTests : IDisposable
         _hostSystem.Setup(x => x.MoveFile(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
             .Returns((string sourcePath, string destinationPath, bool overwrite) =>
                 filesystem.MoveFile(sourcePath, destinationPath, overwrite));
+        _hostSystem.Setup(x => x.MoveDirectory(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns((string sourcePath, string destinationPath) =>
+                filesystem.MoveDirectory(sourcePath, destinationPath));
         _hostSystem.Setup(x => x.DeleteFileIfExists(It.IsAny<string>()))
             .Returns((string path) => filesystem.DeleteFileIfExists(path));
         _hostSystem.Setup(x => x.DeleteDirectoryIfExists(It.IsAny<string>(), It.IsAny<bool>()))
@@ -171,6 +174,19 @@ public sealed class InstallationRegistryTests : IDisposable
             installation.ReleaseNameWithRuntime == LegacyRelease &&
             installation.Target == armTarget &&
             installation.RelativePath == $"installations/{LegacyRelease}/{armTarget}");
+    }
+
+    [Fact]
+    public void ListInstallations_IgnoresBackupLeftBehindByAnInterruptedCommit()
+    {
+        Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease, Target));
+        Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease,
+            $".backup-{Guid.NewGuid():N}-{Target}"));
+
+        var result = CreateRegistry().ListInstallations();
+
+        var installation = Assert.Single(AssertSuccess(result));
+        Assert.Equal(Target, installation.Target);
     }
 
     [Fact]
@@ -325,6 +341,91 @@ public sealed class InstallationRegistryTests : IDisposable
         Assert.Empty(Directory.EnumerateFiles(_rootPath, "installations.json.*.tmp"));
         var document = ReadRegistry();
         Assert.True(document.Installations.ContainsKey($"{LegacyRelease}@{Target}"));
+    }
+
+    [Fact]
+    public void UpsertInstalled_OnMacOS_RejectsAPathEscapingToACaseVariantSibling()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var release = Assert.IsType<Result<Release, ReleaseParseError>.Success>(CreateRelease(LegacyRelease)).Value;
+        var rootDirectoryName = Path.GetFileName(_rootPath);
+        var relativePath = Path.Combine("..", "..", "FGVM-REGISTRY-TESTS", rootDirectoryName,
+            "installations", LegacyRelease, Target);
+
+        var result = CreateRegistry().UpsertInstalled(release, relativePath);
+
+        var failure = Assert.IsType<Result<Unit, InstallationRegistryError>.Failure>(result);
+        Assert.IsType<InstallationRegistryError.InvalidPath>(failure.Error);
+    }
+
+    // Removal renames the directory away before touching the registry, so this is the state a crash in between leaves
+    [Fact]
+    public void ListInstallations_WhenAListedDirectoryIsGone_DropsTheEntry()
+    {
+        var relativePath = $"installations/{NewLayoutRelease}/{Target}";
+        WriteRegistry(new InstallationRegistryDocument
+        {
+            Default = $"{NewLayoutRelease}@{Target}",
+            Installations =
+            {
+                [$"{NewLayoutRelease}@{Target}"] = new InstallationRegistryEntry { Path = relativePath }
+            }
+        });
+
+        var installations = AssertSuccess(CreateRegistry().ListInstallations());
+
+        Assert.Empty(installations);
+        Assert.Null(ReadRegistry().Default);
+    }
+
+    // The reverse does not repair itself, which is why the registry is never written before the directory is moved
+    [Fact]
+    public void ListInstallations_WhenAPresentDirectoryIsNotListed_DoesNotResurrectIt()
+    {
+        var relativePath = $"installations/{NewLayoutRelease}/{Target}";
+        Directory.CreateDirectory(Path.Combine(_rootPath, relativePath));
+        WriteRegistry(new InstallationRegistryDocument());
+
+        var installations = AssertSuccess(CreateRegistry().ListInstallations());
+
+        Assert.Empty(installations);
+    }
+
+    [Fact]
+    public void Remove_WhileDirectoryIsStagedForRemoval_DoesNotImportTombstoneAsInstallation()
+    {
+        var relativePath = $"installations/{NewLayoutRelease}/{Target}";
+        var installationPath = Path.Combine(_rootPath, relativePath);
+        Directory.CreateDirectory(installationPath);
+        WriteRegistry(new InstallationRegistryDocument
+        {
+            Installations =
+            {
+                [$"{NewLayoutRelease}@{Target}"] = new InstallationRegistryEntry
+                {
+                    Path = relativePath
+                }
+            }
+        });
+        var registry = CreateRegistry();
+
+        var removal = new DirectoryRemoval(_hostSystem.Object, NullLogger<DirectoryRemoval>.Instance);
+        var staged = Assert.IsType<Result<IReadOnlyList<string>, FileOperationError>.Success>(
+            removal.Stage([installationPath])).Value;
+        var result = registry.Remove($"{NewLayoutRelease}@{Target}");
+
+        Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(result);
+        Assert.Empty(AssertSuccess(registry.ListInstallations()));
+
+        removal.Discard(staged);
+
+        Assert.False(Directory.Exists(installationPath));
+        Assert.DoesNotContain(ReadRegistry().Installations.Keys,
+            key => key.Contains(".fgvm-removing-", StringComparison.Ordinal));
     }
 
     [Fact]

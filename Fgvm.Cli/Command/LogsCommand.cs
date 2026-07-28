@@ -109,7 +109,7 @@ public sealed class LogsCommand(
 
             console.WriteLine(entries.ToSlog(malformed));
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled reading the logs.");
             console.MarkupLine(Messages.UserCancelled("reading logs"));

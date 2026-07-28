@@ -92,4 +92,26 @@ Suite "export templates" {
         $templates = Json $templateList.Stdout
         Assert.ContainsAll @($templates.name) "4.6.2.stable" "4.6.2.stable.mono"
     }
+
+    Test "remove with templates removes the editor and matching export templates" {
+        $templatesRoot = Join-Path $Context.RootPath "godot-export-templates"
+        $environment = @{ FGVM_GODOT_EXPORT_TEMPLATES_DIR = $templatesRoot }
+        $templatePath = Join-Path $templatesRoot "4.6.2.stable"
+
+        $install = Run -Environment $environment -Arguments @("install", "--with-templates", "4.6.2")
+        Assert.ExitCode 0 $install "fgvm install --with-templates 4.6.2"
+        Assert.True (Test-Path -LiteralPath $templatePath -PathType Container)
+
+        $remove = Run -Environment $environment -Arguments @("remove", "--with-templates", "4.6.2")
+        Assert.ExitCode 0 $remove "fgvm remove --with-templates 4.6.2"
+        Assert.False (Test-Path -LiteralPath $templatePath)
+
+        $installations = Run "list" "--json"
+        Assert.ExitCode 0 $installations "fgvm list --json"
+        Assert.Empty (Json $installations.Stdout)
+
+        $templates = Run -Environment $environment -Arguments @("template", "list", "--json")
+        Assert.ExitCode 0 $templates "fgvm template list --json"
+        Assert.Empty (Json $templates.Stdout)
+    }
 }

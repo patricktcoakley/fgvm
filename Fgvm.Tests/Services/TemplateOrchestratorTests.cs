@@ -2,6 +2,7 @@ using Fgvm.Cli.Services;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
+using Fgvm.Tests.Progress;
 using Fgvm.Types;
 using Moq;
 using Spectre.Console.Testing;
@@ -26,7 +27,7 @@ public sealed class TemplateOrchestratorTests
             _installationRegistry.Object,
             _templateRegistry.Object,
             _templateInstallationService.Object,
-            new TestProgressHandler<TemplateInstallationStage>(),
+            new SilentProgressHandler(),
             _console);
     }
 
@@ -53,6 +54,46 @@ public sealed class TemplateOrchestratorTests
         _releaseManager.Verify(x => x.ListReleases(It.IsAny<CancellationToken>()), Times.Never);
         _releaseManager.Verify(x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()), Times.Never);
         _releaseManager.Verify(x => x.ResolveReleaseQueryWithoutPlatform(It.IsAny<string[]>(), It.IsAny<string[]>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ResolvedRelease_ExecutesWithoutReadingInstalledEditors()
+    {
+        var release = CreateRelease("4.6-stable-standard");
+        var progress = new Mock<IOperationProgress<TemplateInstallationStage>>();
+        _templateInstallationService.Setup(x => x.InstallAsync(
+                release,
+                progress.Object,
+                false,
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
+                new TemplateInstallationOutcome.NewInstallation(
+                    TemplateInstallation.ToTemplateVersion(release),
+                    "/templates/4.6.stable",
+                    new ChecksumVerification.Verified())));
+
+        var result = await _orchestrator.InstallAsync(
+            release,
+            progress.Object,
+            verbose: true,
+            cancellationToken: CancellationToken.None);
+
+        Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
+        _installationRegistry.Verify(x => x.ListInstallations(), Times.Never);
+        _releaseManager.Verify(
+            x => x.FilterReleasesByQueryWithoutPlatform(
+                It.IsAny<string[]>(),
+                It.IsAny<string[]>(),
+                false),
+            Times.Never);
+        progress.Verify(x => x.Complete("Completed"), Times.Once);
+
+        // Output during a live display corrupts it, so the caller renders
+        Assert.Empty(_console.Output);
+
+        _orchestrator.RenderResult(result);
+        Assert.Contains("Finished installing export templates", _console.Output);
     }
 
     [Fact]
@@ -132,7 +173,7 @@ public sealed class TemplateOrchestratorTests
     }
 
     [Fact]
-    public async Task RemoveAsync_WithExactQuery_RemovesMatchingTemplateDirectory()
+    public async Task SelectForRemovalAsync_ResolvesTemplateWithoutDeletingIt()
     {
         var query = new[] { "4.6" };
         var installation = new TemplateInstallation(
@@ -141,21 +182,19 @@ public sealed class TemplateOrchestratorTests
             RuntimeEnvironment.Standard,
             "/templates/4.6.stable",
             null);
-
         _templateRegistry.Setup(x => x.ListInstallations())
             .Returns(new Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success([installation]));
         _releaseManager.Setup(x => x.FilterReleasesByQueryWithoutPlatform(
                 query,
-                It.Is<string[]>(releases => releases.SequenceEqual(new[] { installation.ReleaseNameWithRuntime })),
+                It.IsAny<string[]>(),
                 false))
             .Returns([installation.ReleaseNameWithRuntime]);
-        _templateRegistry.Setup(x => x.Remove(installation.TemplateVersion))
-            .Returns(new Result<Unit, TemplateRegistryError>.Success(Unit.Value));
 
-        var result = await _orchestrator.RemoveAsync(query);
+        var result = await _orchestrator.SelectForRemovalAsync(query);
 
-        Assert.IsType<Result<Unit, TemplateRegistryError>.Success>(result);
-        _templateRegistry.Verify(x => x.Remove(installation.TemplateVersion), Times.Once);
+        var success =
+            Assert.IsType<Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success>(result);
+        Assert.Equal([installation], success.Value);
     }
 
     private void SetupSuccessfulInstall(Release release, bool verbose = false)
@@ -194,11 +233,5 @@ public sealed class TemplateOrchestratorTests
         var release = Release.TryParse(releaseNameWithRuntime);
         Assert.NotNull(release);
         return release;
-    }
-
-    private sealed class TestProgressHandler<TStage> : IProgressHandler<TStage> where TStage : Enum
-    {
-        public Task<T> TrackProgressAsync<T>(Func<IProgress<OperationProgress<TStage>>, Task<T>> operation) =>
-            operation(new Progress<OperationProgress<TStage>>(_ => { }));
     }
 }

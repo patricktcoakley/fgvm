@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Xml.Linq;
 using Fgvm.Error;
+using Fgvm.Godot;
 
 namespace Fgvm.Tests.Integration;
 
@@ -74,6 +75,20 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
         {
             await fixture.DeletePath(customHome);
         }
+    }
+
+    [Fact]
+    public async Task InvalidExportTemplateOverrideDoesNotPreventUnrelatedCommands()
+    {
+        var result = await fixture.ExecuteCommandWithEnvironment(["list", "--json"],
+            new Dictionary<string, string>
+            {
+                [GodotPathService.ExportTemplatesDirectoryOverride] = "relative/export_templates"
+            });
+
+        await fixture.AssertSuccessfulExecutionAsync(result);
+        using var document = JsonDocument.Parse(result.Stdout);
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
     }
 
     [Fact]

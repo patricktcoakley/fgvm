@@ -27,7 +27,7 @@ public sealed class SetCommand(IVersionManagementService versionManagementServic
         {
             _ = await versionManagementService.SetGlobalVersionAsync(query, cancellationToken: cancellationToken);
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled setting version.");
             console.MarkupLine(Messages.UserCancelled("setting version"));

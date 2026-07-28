@@ -111,6 +111,48 @@ public sealed class InstallCommandTests
         Assert.Contains("Export template installation failed", console.Output);
     }
 
+    [Fact]
+    public async Task Install_WhenEditorInstallationIsCanceled_ReportsCancellationAndSkipsTemplates()
+    {
+        var query = new[] { "4.6.2" };
+        var installationOrchestrator = new Mock<IInstallationOrchestrator>();
+        installationOrchestrator.Setup(x => x.InstallAsync(query, false, false, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+        var templateOrchestrator = new Mock<ITemplateOrchestrator>();
+        var command = CreateCommand(installationOrchestrator.Object, templateOrchestrator.Object, out var console);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            command.Install(withTemplates: true, cancellationToken: CancellationToken.None, query: query));
+
+        Assert.Contains("User cancelled installation operation", console.Output);
+        templateOrchestrator.Verify(x =>
+                x.InstallAsync(It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Install_WhenTemplateInstallationIsCanceled_KeepsTheEditorAndSucceeds()
+    {
+        var query = new[] { "4.6.2" };
+        const string releaseName = "4.6.2-stable-standard";
+        var installationOrchestrator = CreateInstallationOrchestrator(query,
+            new InstallationOutcome.NewInstallation(releaseName, new ChecksumVerification.Verified()));
+        var templateOrchestrator = new Mock<ITemplateOrchestrator>();
+        templateOrchestrator.Setup(x => x.InstallAsync(
+                It.Is<string[]>(q => Enumerable.SequenceEqual(q, new[] { releaseName })),
+                false,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+        var command = CreateCommand(installationOrchestrator.Object, templateOrchestrator.Object, out var console);
+
+        await command.Install(withTemplates: true, cancellationToken: CancellationToken.None, query: query);
+
+        Assert.Contains($"Godot {releaseName} is installed", console.Output);
+        Assert.Contains("Export templates were skipped", console.Output);
+        Assert.DoesNotContain("Export template installation failed", console.Output);
+    }
+
     private static Mock<IInstallationOrchestrator> CreateInstallationOrchestrator(string[] query,
         InstallationOutcome outcome,
         bool verbose = false

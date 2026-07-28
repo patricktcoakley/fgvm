@@ -29,7 +29,7 @@ public sealed class LocalCommand(IVersionManagementService versionManagementServ
                 await versionManagementService.SetLocalVersionAsync(query.Length > 0 ? query : null, cancellationToken: cancellationToken);
             console.MarkupLine(Messages.SetLocalVersion(godotRelease.ReleaseNameWithRuntime));
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled setting local version.");
             console.MarkupLine(Messages.UserCancelled("setting local version"));

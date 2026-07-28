@@ -69,7 +69,7 @@ public sealed class InstallCommand(
             installationResult = await installationOrchestrator.InstallAsync(query, setAsDefault, verbose, cancellationToken);
             ThrowIfInstallationFailed(installationResult, hostSystem);
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled installation.");
             console.MarkupLine(Messages.UserCancelled("installation"));
@@ -104,11 +104,11 @@ public sealed class InstallCommand(
                 console.MarkupLine(Messages.OptionalTemplateInstallationFailed(releaseNameWithRuntime, failureReason));
             }
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
-            logger.LogError("User cancelled template installation.");
-            console.MarkupLine(Messages.UserCancelled("template installation"));
-            throw;
+            // The editor installed, so cancelling the optional step doesn't fail the command
+            logger.LogInformation("User cancelled template installation for {ReleaseName}.", releaseNameWithRuntime);
+            console.MarkupLine(Messages.OptionalTemplateInstallationCancelled(releaseNameWithRuntime));
         }
         catch (Exception e)
         {

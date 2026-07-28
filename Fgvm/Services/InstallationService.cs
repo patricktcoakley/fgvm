@@ -107,9 +107,6 @@ public class InstallationService(
             var installPathBase = godotRelease.ReleaseNameWithRuntime;
             var relativeInstallPath = InstallationRegistry.CreateRelativeInstallPath(godotRelease);
 
-            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Initializing,
-                $"Initializing installation of {installPathBase}..."));
-
             // Check if already installed
             switch (installationRegistry.FindByReleaseName(installPathBase))
             {
@@ -125,6 +122,9 @@ public class InstallationService(
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
+
+            progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Initializing,
+                $"Initializing installation of {installPathBase}..."));
 
             // Show progress immediately before HTTP request
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
@@ -143,7 +143,12 @@ public class InstallationService(
             }
 
             var zipFileName = artifact.FileName;
-            Directory.CreateDirectory(tempRoot);
+            if (hostSystem.CreateDirectory(tempRoot) is Result<Unit, FileOperationError>.Failure(var tempRootError))
+            {
+                return new Result<InstallationOutcome, InstallationError>.Failure(
+                    new InstallationError.Failed($"Unable to create temporary directory `{tempRoot}`: {tempRootError}"));
+            }
+
             var archivePath = Path.Combine(tempRoot, Path.GetFileName(zipFileName));
 
             string archiveChecksum;
@@ -181,7 +186,13 @@ public class InstallationService(
             // Keep staging beside the destination so the commit is a same-volume rename.
             var installationDirectory = Path.GetDirectoryName(extractPath)
                                         ?? throw new InvalidOperationException($"Installation path has no parent: {extractPath}");
-            Directory.CreateDirectory(installationDirectory);
+            if (hostSystem.CreateDirectory(installationDirectory) is Result<Unit, FileOperationError>.Failure(var installDirError))
+            {
+                return new Result<InstallationOutcome, InstallationError>.Failure(
+                    new InstallationError.Failed(
+                        $"Unable to create installation directory `{installationDirectory}`: {installDirError}"));
+            }
+
             stagingPath = Path.Combine(installationDirectory, $".fgvm-staging-{Guid.NewGuid():N}");
             await ZipArchiveExtensions.ExtractWithFlatteningSupportAsync(
                 archivePath,
@@ -190,7 +201,7 @@ public class InstallationService(
                 cancellationToken);
 
             // Overwrite: a stale destination (e.g. from a crashed prior install) must not block reinstalling.
-            switch (StagedDirectoryCommitter.Commit(stagingPath, extractPath, overwrite: true, logger))
+            switch (StagedDirectoryCommitter.Commit(hostSystem, stagingPath, extractPath, overwrite: true, logger))
             {
                 case Result<Unit, DirectoryCommitError>.Success:
                     committed = true;
@@ -448,18 +459,14 @@ public class InstallationService(
     /// <param name="tempRoot">The temporary directory to remove.</param>
     private void CleanupTempDirectory(string tempRoot)
     {
-        if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot))
+        if (string.IsNullOrWhiteSpace(tempRoot))
         {
             return;
         }
 
-        try
+        if (hostSystem.DeleteDirectoryIfExists(tempRoot, true) is Result<Unit, FileOperationError>.Failure(var error))
         {
-            Directory.Delete(tempRoot, true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            logger.LogWarning(ex, "Failed to clean up temporary install directory {TempRoot}", tempRoot);
+            logger.LogWarning("Failed to clean up temporary install directory {TempRoot}: {Error}", tempRoot, error);
         }
     }
 }
