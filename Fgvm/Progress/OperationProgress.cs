@@ -7,5 +7,13 @@ namespace Fgvm.Progress;
 /// <param name="Stage">The current stage of the operation</param>
 /// <param name="Message">A descriptive message about the current progress</param>
 /// <param name="IsVerboseDetail">Whether the message is an additional verbose line rather than a status replacement.</param>
-public readonly record struct OperationProgress<TStage>(TStage Stage, string Message, bool IsVerboseDetail = false)
+/// <param name="BytesDownloaded">Downloaded bytes when reporting byte progress.</param>
+/// <param name="TotalBytes">Total bytes when known.</param>
+public readonly record struct OperationProgress<TStage>(
+    TStage Stage,
+    string Message,
+    bool IsVerboseDetail = false,
+    long? BytesDownloaded = null,
+    long? TotalBytes = null
+)
     where TStage : Enum;

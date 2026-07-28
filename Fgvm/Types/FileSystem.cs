@@ -38,20 +38,6 @@ public abstract record ShimError
 }
 
 /// <summary>
-///     Represents failures while reading installation filesystem state.
-/// </summary>
-public abstract record FileSystemError
-{
-    public sealed record DirectoryNotFound(string Directory) : FileSystemError;
-
-    public sealed record PermissionDenied(string Path) : FileSystemError;
-
-    public sealed record InvalidPath(string Path) : FileSystemError;
-
-    public sealed record EnumerationFailed(string Path) : FileSystemError;
-}
-
-/// <summary>
 ///     Represents failures while committing a staged directory into its final destination.
 /// </summary>
 public abstract record DirectoryCommitError(string Path)

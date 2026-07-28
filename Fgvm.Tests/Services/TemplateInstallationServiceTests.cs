@@ -38,11 +38,13 @@ public sealed class TemplateInstallationServiceTests : IDisposable
         var release = CreateRelease("4.4-stable-standard");
         var service = CreateService(release, CreateTemplateArchive("4.4.stable"), out var templatesRoot);
         Directory.CreateDirectory(Path.Combine(templatesRoot, "4.4.stable"));
+        var progress = new RecordingProgress<TemplateInstallationStage>();
 
-        var result = await service.InstallAsync(release, new Progress<OperationProgress<TemplateInstallationStage>>());
+        var result = await service.InstallAsync(release, progress);
 
         var success = Assert.IsType<Result<TemplateInstallationOutcome, TemplateInstallationError>.Success>(result);
         Assert.IsType<TemplateInstallationOutcome.AlreadyInstalled>(success.Value);
+        Assert.Empty(progress.Reports);
     }
 
     [Fact]

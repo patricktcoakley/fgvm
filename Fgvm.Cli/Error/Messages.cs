@@ -204,6 +204,8 @@ public static class Messages
     public static string TemplateInstallationFailed(string reason) => $"[red]Export template installation failed: {reason}[/]";
     public static string OptionalTemplateInstallationFailed(string releaseNameWithRuntime, string reason) =>
         $"[orange1]Godot {releaseNameWithRuntime} is installed, but export template installation failed: {reason}[/]";
+    public static string OptionalTemplateInstallationCancelled(string releaseNameWithRuntime) =>
+        $"[orange1]Godot {releaseNameWithRuntime} is installed. Export templates were skipped.[/]";
     public static string NoTemplatesMatchingQuery(string query) =>
         $"[orange1]Couldn't find any export templates with query `{query}`. Please try again. [/]";
     public static string FoundExactTemplateMatch(string versionToRemove) =>

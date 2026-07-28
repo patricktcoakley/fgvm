@@ -4,6 +4,7 @@ using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
+using Fgvm.Tests.Progress;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -33,7 +34,7 @@ public class VersionManagementServiceTests
         var mockLogger = new Mock<ILogger<VersionManagementService>>();
 
         _console = new TestConsole();
-        var installFlowProgressHandler = new TestProgressHandler<InstallationStage>();
+        var installFlowProgressHandler = new SilentProgressHandler();
 
         mockPathService.Setup(x => x.RootPath).Returns("/test/fgvm");
         mockPathService.Setup(x => x.ReleasesPath).Returns("/test/fgvm/releases.json");
@@ -1133,10 +1134,4 @@ public class VersionManagementServiceTests
 
     private static Result<Release, QueryError> QueryNotFound(string query = "test") =>
         new Result<Release, QueryError>.Failure(new QueryError.NotFound(query));
-
-    private sealed class TestProgressHandler<TStage> : IProgressHandler<TStage> where TStage : Enum
-    {
-        public Task<T> TrackProgressAsync<T>(Func<IProgress<OperationProgress<TStage>>, Task<T>> operation) =>
-            operation(new Progress<OperationProgress<TStage>>(_ => { }));
-    }
 }

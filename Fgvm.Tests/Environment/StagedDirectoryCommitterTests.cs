@@ -1,6 +1,7 @@
 using Fgvm.Environment;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Fgvm.Tests.Environment;
 
@@ -8,9 +9,14 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fgvm-staged-commit-tests", Guid.NewGuid().ToString("N"));
 
+    private readonly IHostSystem _hostSystem;
+
     public StagedDirectoryCommitterTests()
     {
         Directory.CreateDirectory(_root);
+        var pathService = new Mock<IPathService>();
+        pathService.SetupGet(x => x.RootPath).Returns(_root);
+        _hostSystem = new HostSystem(new SystemInfo(), pathService.Object, NullLogger<HostSystem>.Instance);
     }
 
     [Fact]
@@ -19,7 +25,7 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
         var staged = CreateDirectoryWithFile("staged", "file.txt", "new");
         var destination = Path.Combine(_root, "destination");
 
-        var result = StagedDirectoryCommitter.Commit(staged, destination, overwrite: false, NullLogger.Instance);
+        var result = StagedDirectoryCommitter.Commit(_hostSystem, staged, destination, overwrite: false, NullLogger.Instance);
 
         Assert.IsType<Result<Unit, DirectoryCommitError>.Success>(result);
         Assert.Equal("new", File.ReadAllText(Path.Combine(destination, "file.txt")));
@@ -32,7 +38,7 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
         var staged = CreateDirectoryWithFile("staged", "file.txt", "new");
         var destination = CreateDirectoryWithFile("destination", "file.txt", "old");
 
-        var result = StagedDirectoryCommitter.Commit(staged, destination, overwrite: false, NullLogger.Instance);
+        var result = StagedDirectoryCommitter.Commit(_hostSystem, staged, destination, overwrite: false, NullLogger.Instance);
 
         var failure = Assert.IsType<Result<Unit, DirectoryCommitError>.Failure>(result);
         Assert.IsType<DirectoryCommitError.DestinationExists>(failure.Error);
@@ -47,7 +53,7 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
         var staged = CreateDirectoryWithFile("staged", "file.txt", "new");
         var destination = CreateDirectoryWithFile("destination", "old.txt", "old");
 
-        var result = StagedDirectoryCommitter.Commit(staged, destination, overwrite: true, NullLogger.Instance);
+        var result = StagedDirectoryCommitter.Commit(_hostSystem, staged, destination, overwrite: true, NullLogger.Instance);
 
         Assert.IsType<Result<Unit, DirectoryCommitError>.Success>(result);
         Assert.Equal("new", File.ReadAllText(Path.Combine(destination, "file.txt")));
@@ -72,13 +78,15 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
 
         try
         {
-            var result = StagedDirectoryCommitter.Commit(staged, destination, overwrite: true, NullLogger.Instance);
+            var result = StagedDirectoryCommitter.Commit(_hostSystem, staged, destination, overwrite: true, NullLogger.Instance);
 
             Assert.IsType<Result<Unit, DirectoryCommitError>.Success>(result);
             Assert.Equal("new", File.ReadAllText(Path.Combine(destination, "file.txt")));
             Assert.False(File.Exists(Path.Combine(destination, "old.txt")));
             // The old version could not be fully removed, but the commit must not have been rolled back.
-            Assert.Single(BackupDirectories());
+            var backup = Assert.Single(BackupDirectories());
+            // Dot-prefixed, so what it leaves behind is skipped by the registry scans rather than listed as an install.
+            Assert.StartsWith(".backup-", Path.GetFileName(backup), StringComparison.Ordinal);
         }
         finally
         {
@@ -96,7 +104,7 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
         var missingStaged = Path.Combine(_root, "staged-does-not-exist");
         var destination = CreateDirectoryWithFile("destination", "file.txt", "old");
 
-        var result = StagedDirectoryCommitter.Commit(missingStaged, destination, overwrite: true, NullLogger.Instance);
+        var result = StagedDirectoryCommitter.Commit(_hostSystem, missingStaged, destination, overwrite: true, NullLogger.Instance);
 
         var failure = Assert.IsType<Result<Unit, DirectoryCommitError>.Failure>(result);
         Assert.IsType<DirectoryCommitError.CommitFailed>(failure.Error);
@@ -110,7 +118,7 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
         var backupPath = Path.Combine(_root, "missing-backup");
         var destinationPath = Path.Combine(_root, "missing-destination");
 
-        var exception = Record.Exception(() => StagedDirectoryCommitter.RestoreBackup(backupPath, destinationPath, NullLogger.Instance));
+        var exception = Record.Exception(() => StagedDirectoryCommitter.RestoreBackup(_hostSystem, backupPath, destinationPath, NullLogger.Instance));
 
         Assert.Null(exception);
         Assert.False(Directory.Exists(destinationPath));

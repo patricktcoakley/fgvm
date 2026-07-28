@@ -9,8 +9,6 @@ public interface ITemplateRegistry
     Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError> ListInstallations();
 
     Result<TemplateInstallation, TemplateRegistryError> FindByReleaseName(string releaseNameWithRuntime);
-
-    Result<Unit, TemplateRegistryError> Remove(string templateVersion);
 }
 
 public sealed class TemplateRegistry(
@@ -76,19 +74,6 @@ public sealed class TemplateRegistry(
                     new TemplateRegistryError.NotFound(releaseNameWithRuntime)),
             Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Failure(var error) =>
                 new Result<TemplateInstallation, TemplateRegistryError>.Failure(error),
-            _ => throw new InvalidOperationException("Unexpected Result type")
-        };
-    }
-
-    public Result<Unit, TemplateRegistryError> Remove(string templateVersion)
-    {
-        var path = godotPathService.GetExportTemplateVersionPath(templateVersion);
-        return hostSystem.DeleteDirectoryIfExists(path, true) switch
-        {
-            Result<Unit, FileOperationError>.Success =>
-                new Result<Unit, TemplateRegistryError>.Success(Unit.Value),
-            Result<Unit, FileOperationError>.Failure(var error) =>
-                new Result<Unit, TemplateRegistryError>.Failure(new TemplateRegistryError.RemoveFailed(error)),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
     }

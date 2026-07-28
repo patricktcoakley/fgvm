@@ -16,9 +16,33 @@ public interface ITemplateOrchestrator
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    ///     Installs export templates for an already-resolved release using a caller-owned progress operation. Writes
+    ///     nothing to the console; the caller renders with <see cref="RenderResult" /> once the session has ended.
+    /// </summary>
+    /// <param name="release">The release whose export templates to install.</param>
+    /// <param name="progress">The progress operation to drive.</param>
+    /// <param name="force">Whether to replace existing export templates.</param>
+    /// <param name="verbose">Whether to report each download source as it is tried.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(Release release,
+        IOperationProgress<TemplateInstallationStage> progress,
+        bool force = false,
+        bool verbose = false,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    ///     Renders the outcome of an export template installation. Call only outside a progress session.
+    /// </summary>
+    /// <param name="result">The installation result to render.</param>
+    void RenderResult(Result<TemplateInstallationOutcome, TemplateInstallationError> result);
+
     Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError> List();
 
-    Task<Result<Unit, TemplateRegistryError>> RemoveAsync(string[] query, CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>> SelectForRemovalAsync(string[] query,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public sealed class TemplateOrchestrator(
@@ -26,7 +50,7 @@ public sealed class TemplateOrchestrator(
     IInstallationRegistry installationRegistry,
     ITemplateRegistry templateRegistry,
     ITemplateInstallationService templateInstallationService,
-    IProgressHandler<TemplateInstallationStage> progressHandler,
+    IProgressHandler progressHandler,
     IAnsiConsole console
 ) : ITemplateOrchestrator
 {
@@ -48,9 +72,33 @@ public sealed class TemplateOrchestrator(
                 throw new InvalidOperationException("Unexpected Result type");
         }
 
-        var result = await progressHandler.TrackProgressAsync(progress =>
-            templateInstallationService.InstallAsync(release, progress, force, verbose, cancellationToken));
+        var result = await progressHandler.TrackProgressAsync(session =>
+            InstallAsync(
+                release,
+                session.AddOperation<TemplateInstallationStage>("Templates"),
+                force,
+                verbose,
+                cancellationToken));
 
+        RenderResult(result);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<TemplateInstallationOutcome, TemplateInstallationError>> InstallAsync(Release release,
+        IOperationProgress<TemplateInstallationStage> progress,
+        bool force = false,
+        bool verbose = false,
+        CancellationToken cancellationToken = default
+    ) =>
+        await progress.RunAsync(
+            async () => await templateInstallationService.InstallAsync(
+                release, progress, force, verbose, cancellationToken),
+            result => result is Result<TemplateInstallationOutcome, TemplateInstallationError>.Success);
+
+    /// <inheritdoc />
+    public void RenderResult(Result<TemplateInstallationOutcome, TemplateInstallationError> result)
+    {
         switch (result)
         {
             case Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
@@ -67,14 +115,14 @@ public sealed class TemplateOrchestrator(
                 console.MarkupLine(Messages.TemplateAlreadyInstalled(templateVersion, path));
                 break;
         }
-
-        return result;
     }
 
     public Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError> List() =>
         templateRegistry.ListInstallations();
 
-    public async Task<Result<Unit, TemplateRegistryError>> RemoveAsync(string[] query, CancellationToken cancellationToken = default)
+    public async Task<Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>> SelectForRemovalAsync(string[] query,
+        CancellationToken cancellationToken = default
+    )
     {
         IReadOnlyList<TemplateInstallation> installations;
         switch (templateRegistry.ListInstallations())
@@ -83,7 +131,7 @@ public sealed class TemplateOrchestrator(
                 installations = installed;
                 break;
             case Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Failure(var error):
-                return new Result<Unit, TemplateRegistryError>.Failure(error);
+                return new Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Failure(error);
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
@@ -91,7 +139,7 @@ public sealed class TemplateOrchestrator(
         if (installations.Count == 0)
         {
             console.MarkupLine(Messages.NoTemplatesToRemove);
-            return new Result<Unit, TemplateRegistryError>.Success(Unit.Value);
+            return new Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success([]);
         }
 
         var installedReleaseNames = installations.Select(installation => installation.ReleaseNameWithRuntime).ToArray();
@@ -99,7 +147,7 @@ public sealed class TemplateOrchestrator(
         if (filtered.Length == 0)
         {
             console.MarkupLine(Messages.NoTemplatesMatchingQuery(string.Join(' ', query)));
-            return new Result<Unit, TemplateRegistryError>.Success(Unit.Value);
+            return new Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success([]);
         }
 
         IEnumerable<string> releasesToRemove;
@@ -113,29 +161,21 @@ public sealed class TemplateOrchestrator(
             releasesToRemove = await Remove.ShowVersionRemovalPrompt(filtered, console, cancellationToken);
         }
 
+        var selected = new List<TemplateInstallation>();
         foreach (var releaseNameWithRuntime in releasesToRemove)
         {
             if (installations.FirstOrDefault(installation =>
                     string.Equals(installation.ReleaseNameWithRuntime, releaseNameWithRuntime, StringComparison.OrdinalIgnoreCase)) is
                 not { } installation)
             {
-                return new Result<Unit, TemplateRegistryError>.Failure(
+                return new Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Failure(
                     new TemplateRegistryError.NotFound(releaseNameWithRuntime));
             }
 
-            switch (templateRegistry.Remove(installation.TemplateVersion))
-            {
-                case Result<Unit, TemplateRegistryError>.Success:
-                    console.MarkupLine(Messages.TemplateSuccessfullyRemoved(installation.TemplateVersion, installation.Path));
-                    break;
-                case Result<Unit, TemplateRegistryError>.Failure(var error):
-                    return new Result<Unit, TemplateRegistryError>.Failure(error);
-                default:
-                    throw new InvalidOperationException("Unexpected Result type");
-            }
+            selected.Add(installation);
         }
 
-        return new Result<Unit, TemplateRegistryError>.Success(Unit.Value);
+        return new Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success(selected);
     }
 
     private async Task<Result<Release, TemplateInstallationError>> ResolveTemplateRelease(string[] query,

@@ -128,6 +128,7 @@ public class InstallationServiceTests
             .ReturnsAsync(new Result<ReleaseArtifact, NetworkError>.Success(new ReleaseArtifact(release.ZipFileName, null)));
 
         var hostSystem = new Mock<IHostSystem>();
+        WireFilesystem(hostSystem, rootPath);
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
@@ -207,6 +208,7 @@ public class InstallationServiceTests
                 new ReleaseArtifact(release.ZipFileName, Sha512(archive))));
 
         var hostSystem = new Mock<IHostSystem>();
+        WireFilesystem(hostSystem, rootPath);
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
@@ -282,6 +284,7 @@ public class InstallationServiceTests
                 new ReleaseArtifact(release.ZipFileName, Sha512(archive))));
 
         var hostSystem = new Mock<IHostSystem>();
+        WireFilesystem(hostSystem, rootPath);
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
@@ -356,6 +359,7 @@ public class InstallationServiceTests
             .ReturnsAsync(new Result<ReleaseArtifact, NetworkError>.Success(new ReleaseArtifact(release.ZipFileName, null)));
 
         var hostSystem = new Mock<IHostSystem>();
+        WireFilesystem(hostSystem, rootPath);
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
@@ -427,6 +431,7 @@ public class InstallationServiceTests
         var extractPath = Path.Combine(rootPath, InstallationRegistry.CreateRelativeInstallPath(release));
 
         var hostSystem = new Mock<IHostSystem>();
+        WireFilesystem(hostSystem, rootPath);
         hostSystem.Setup(x => x.DeleteDirectoryIfExists(extractPath, true))
             .Returns(new Result<Unit, FileOperationError>.Failure(new FileOperationError.IoFailure(extractPath)));
 
@@ -503,6 +508,7 @@ public class InstallationServiceTests
             .ReturnsAsync(new Result<ReleaseArtifact, NetworkError>.Success(new ReleaseArtifact(release.ZipFileName, null)));
 
         var hostSystem = new Mock<IHostSystem>();
+        WireFilesystem(hostSystem, rootPath);
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(rootPath, "releases.json"));
@@ -755,9 +761,10 @@ public class InstallationServiceTests
 
     private static InstallationService CreateService(IReleaseManager releaseManager, IReleaseCatalog releaseCatalog)
     {
-        var hostSystem = new Mock<IHostSystem>();
-        var pathService = new Mock<IPathService>();
         var rootPath = Path.Combine(Path.GetTempPath(), "fgvm-install-service-tests", Guid.NewGuid().ToString("N"));
+        var hostSystem = new Mock<IHostSystem>();
+        WireFilesystem(hostSystem, rootPath);
+        var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);
         pathService.SetupGet(x => x.ReleasesPath).Returns(Path.Combine(Path.GetTempPath(), "releases.json"));
         pathService.SetupGet(x => x.InstallationsPath).Returns(Path.Combine(rootPath, "installations.json"));
@@ -801,6 +808,26 @@ public class InstallationServiceTests
 
     private static byte[] CreateZipArchive(int payloadBytes = 0) =>
         ZipArchiveTestBuilder.CreateArchive([("Godot", "fake executable")], "payload.bin", payloadBytes);
+
+    /// <summary>
+    ///     The service delegates real directory work to <see cref="IHostSystem" />, so these tests pass those calls
+    ///     through to a real host system over the test root. Per-test setups registered afterwards still win.
+    /// </summary>
+    private static void WireFilesystem(Mock<IHostSystem> hostSystem, string rootPath)
+    {
+        var pathService = new Mock<IPathService>();
+        pathService.SetupGet(x => x.RootPath).Returns(rootPath);
+        var real = new HostSystem(new SystemInfo(), pathService.Object, NullLogger<HostSystem>.Instance);
+
+        hostSystem.Setup(x => x.DirectoryExists(It.IsAny<string>()))
+            .Returns((string path) => real.DirectoryExists(path));
+        hostSystem.Setup(x => x.CreateDirectory(It.IsAny<string>()))
+            .Returns((string path) => real.CreateDirectory(path));
+        hostSystem.Setup(x => x.MoveDirectory(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns((string source, string destination) => real.MoveDirectory(source, destination));
+        hostSystem.Setup(x => x.DeleteDirectoryIfExists(It.IsAny<string>(), It.IsAny<bool>()))
+            .Returns((string path, bool recursive) => real.DeleteDirectoryIfExists(path, recursive));
+    }
 
     private static string Sha512(byte[] bytes)
     {

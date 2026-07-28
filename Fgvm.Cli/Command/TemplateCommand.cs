@@ -14,6 +14,7 @@ namespace Fgvm.Cli.Command;
 
 public sealed class TemplateCommand(
     ITemplateOrchestrator templateOrchestrator,
+    IRemovalService removalService,
     IPathService pathService,
     IAnsiConsole console,
     ILogger<TemplateCommand> logger
@@ -53,7 +54,7 @@ public sealed class TemplateCommand(
                     throw new InvalidOperationException("Unknown template installation result type.");
             }
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled template installation.");
             console.MarkupLine(Messages.UserCancelled("template installation"));
@@ -154,17 +155,29 @@ public sealed class TemplateCommand(
     {
         try
         {
-            switch (await templateOrchestrator.RemoveAsync(query, cancellationToken))
+            IReadOnlyList<TemplateInstallation> templates;
+            switch (await templateOrchestrator.SelectForRemovalAsync(query, cancellationToken))
             {
-                case Result<Unit, TemplateRegistryError>.Success:
-                    return;
-                case Result<Unit, TemplateRegistryError>.Failure(var error):
-                    throw new InvalidOperationException($"Unable to remove export templates: {error}");
+                case Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success(var selected):
+                    templates = selected;
+                    break;
+                case Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Failure(var error):
+                    throw new InvalidOperationException($"Unable to select export templates for removal: {error}");
                 default:
                     throw new InvalidOperationException("Unexpected Result type");
             }
+
+            if (templates.Count == 0)
+            {
+                return;
+            }
+
+            // Not cancellable past this point; selection above is where the user decides
+            var staged = removalService.Stage(templates.Select(template => template.Path));
+            removalService.WriteTemplateRemovalMessages(templates);
+            removalService.Discard(staged);
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled template removal.");
             console.MarkupLine(Messages.UserCancelled("template removal"));

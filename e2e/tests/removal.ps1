@@ -72,4 +72,55 @@ Suite "removal" {
         Assert.ExitCode 0 $remove "fgvm remove with no installations"
         Assert.Contains "No installations" $remove.Stdout
     }
+
+    Test "cleans up after a removal that was interrupted" {
+        $stable = Add-FixtureInstallation "4.6.2-stable" -Default
+        $leftover = Join-Path $Context.InstallationsDirectoryPath "4.5-stable" ".fgvm-removing-00000000000000000000000000000000-macos.universal"
+        New-Item -ItemType Directory -Path $leftover -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $leftover "godot") -Value "half-deleted"
+
+        $list = Run "list" "--json"
+
+        # The leftover is swept, and the installation that is actually present is untouched.
+        Assert.ExitCode 0 $list "fgvm list with an interrupted removal left behind"
+        Assert.False (Test-Path -LiteralPath $leftover)
+        Assert.True (Test-Path -LiteralPath $stable.InstallationPath)
+        Assert.Equal @($stable.Name) @((Json $list.Stdout).name)
+    }
+
+    Test "removes case-variant paths according to host filesystem semantics" {
+        $installation = Add-FixtureInstallation "4.6.2-stable"
+        $lowerParent = Join-Path $Context.FgvmRootPath "case-root"
+        $upperParent = Join-Path $Context.FgvmRootPath "CASE-ROOT"
+        $editorPath = Join-Path $lowerParent "4.6.2.stable"
+        $templatePath = Join-Path $upperParent "4.6.2.stable"
+
+        New-Item -ItemType Directory -Path $lowerParent -Force | Out-Null
+        Move-Item -LiteralPath $installation.InstallationPath -Destination $editorPath
+
+        $registry = Manifest.From $Context.InstallationsPath
+        $registry["installations"][$installation.Key]["path"] = "case-root/4.6.2.stable"
+        Manifest.Write $Context.InstallationsPath $registry
+
+        # These are distinct directories on a case-sensitive volume and aliases everywhere else.
+        New-Item -ItemType Directory -Path $templatePath -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $templatePath "template.txt") -Value "template"
+        $parentNames = @(Get-ChildItem -LiteralPath $Context.FgvmRootPath -Directory -Force | ForEach-Object Name)
+        $filesystemMode = if ($parentNames -ccontains "case-root" -and $parentNames -ccontains "CASE-ROOT") {
+            "case-distinct"
+        }
+        else {
+            "case-aliased"
+        }
+
+        $environment = @{ FGVM_GODOT_EXPORT_TEMPLATES_DIR = $upperParent }
+        $remove = Run -Environment $environment -Arguments @("remove", "--with-templates", "4.6.2")
+
+        Assert.ExitCode 0 $remove "fgvm remove case-variant paths ($filesystemMode)"
+        Assert.False (Test-Path -LiteralPath $editorPath) "The editor path should be removed ($filesystemMode)."
+        Assert.False (Test-Path -LiteralPath $templatePath) "The template path should be removed ($filesystemMode)."
+        $tombstones = @(Get-ChildItem -LiteralPath $Context.FgvmRootPath -Directory -Recurse -Force |
+                Where-Object Name -Like ".fgvm-removing-*")
+        Assert.Empty $tombstones "No removal tombstones should remain ($filesystemMode)."
+    }
 }

@@ -36,8 +36,12 @@ internal sealed class DownloadOperationProgress<TStage>(
             return;
         }
 
-        var progressText = DownloadProgressFormatter.Format(
-            value.BytesDownloaded, totalBytes, Stopwatch.GetElapsedTime(_startTimestamp));
-        progress.Report(new OperationProgress<TStage>(stage, $"{label} • {progressText}"));
+        var elapsed = Stopwatch.GetElapsedTime(_startTimestamp);
+        var progressText = DownloadProgressFormatter.Format(value.BytesDownloaded, totalBytes, elapsed);
+        progress.Report(new OperationProgress<TStage>(
+            stage,
+            $"{label} • {progressText}",
+            BytesDownloaded: value.BytesDownloaded,
+            TotalBytes: totalBytes));
     }
 }

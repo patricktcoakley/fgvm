@@ -33,13 +33,46 @@ public interface IInstallationOrchestrator
         bool verbose = false,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    ///     Installs an already-resolved release using a caller-owned progress operation. Writes nothing to the console;
+    ///     the caller renders with <see cref="RenderResult" /> once the progress session has ended.
+    /// </summary>
+    /// <param name="release">The release to install.</param>
+    /// <param name="progress">The progress operation to drive.</param>
+    /// <param name="setAsDefault">Whether to set the installed version as default.</param>
+    /// <param name="verbose">Whether to report each download source as it is tried.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<InstallationAttempt> InstallAsync(Release release,
+        IOperationProgress<InstallationStage> progress,
+        bool setAsDefault = false,
+        bool verbose = false,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    ///     Renders the outcome of an installation. Call only outside a progress session.
+    /// </summary>
+    /// <param name="attempt">The installation to render.</param>
+    /// <param name="setAsDefault">Whether the caller asked for the version to become the default.</param>
+    void RenderResult(InstallationAttempt attempt, bool setAsDefault);
 }
+
+/// <summary>
+///     An installation result plus the policy decision that only the installing call knows about.
+/// </summary>
+/// <param name="Result">The installation result.</param>
+/// <param name="WasAutoSetAsDefault">Whether it became the default because it was the only version installed.</param>
+public sealed record InstallationAttempt(
+    Result<InstallationOutcome, InstallationError> Result,
+    bool WasAutoSetAsDefault
+);
 
 public sealed class InstallationOrchestrator(
     IReleaseManager releaseManager,
     IInstallationRegistry installationRegistry,
     IInstallationService installationService,
-    IProgressHandler<InstallationStage> progressHandler,
+    IProgressHandler progressHandler,
     IAnsiConsole console
 ) : IInstallationOrchestrator
 {
@@ -63,68 +96,101 @@ public sealed class InstallationOrchestrator(
             var releaseNames = await FetchReleaseNames(cancellationToken);
             var version = await Install.ShowVersionSelectionPrompt(releaseNames, console, cancellationToken);
             var godotRelease = CreateRelease(version);
+            return await TrackResolvedRelease(godotRelease, setAsDefault, verbose, cancellationToken);
+        }
 
-            if (IsInstalled(godotRelease.ReleaseNameWithRuntime))
-            {
-                installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-                    new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
-            }
-            else
-            {
+        var availableReleases = await FetchReleaseNames(cancellationToken);
+        switch (releaseManager.ResolveReleaseQuery(query, availableReleases))
+        {
+            case Result<Release, QueryError>.Success(var godotRelease):
+                return await TrackResolvedRelease(godotRelease, setAsDefault, verbose, cancellationToken);
+
+            case Result<Release, QueryError>.Failure(QueryError.NotFound):
                 var installedVersions = ListInstallations();
                 var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
                 wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
+                installationResult = await TrackQueryInstallation(
+                    query, autoSetAsDefault, verbose, cancellationToken);
+                break;
 
-                installationResult = await progressHandler.TrackProgressAsync(progress =>
-                    installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, verbose, cancellationToken));
-            }
+            case Result<Release, QueryError>.Failure(var error):
+                installationResult = new Result<InstallationOutcome, InstallationError>.Failure(
+                    MapQueryError(error, query));
+                break;
+
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
-        else
-        {
-            var releaseNames = await FetchReleaseNames(cancellationToken);
-            switch (releaseManager.ResolveReleaseQuery(query, releaseNames))
+
+        RenderResult(new InstallationAttempt(installationResult, wasAutoSetAsDefault), setAsDefault);
+        return installationResult;
+    }
+
+    /// <inheritdoc />
+    public async Task<InstallationAttempt> InstallAsync(Release release,
+        IOperationProgress<InstallationStage> progress,
+        bool setAsDefault = false,
+        bool verbose = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var wasAutoSetAsDefault = false;
+        var installationResult = await progress.RunAsync(
+            async () =>
             {
-                case Result<Release, QueryError>.Success(var godotRelease):
+                if (IsInstalled(release.ReleaseNameWithRuntime))
                 {
-                    if (IsInstalled(godotRelease.ReleaseNameWithRuntime))
-                    {
-                        installationResult = new Result<InstallationOutcome, InstallationError>.Success(
-                            new InstallationOutcome.AlreadyInstalled(godotRelease.ReleaseNameWithRuntime));
-                    }
-                    else
-                    {
-                        var installedVersions = ListInstallations();
-                        var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
-                        wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
-
-                        installationResult = await progressHandler.TrackProgressAsync(progress =>
-                            installationService.InstallReleaseAsync(godotRelease, progress, autoSetAsDefault, verbose, cancellationToken));
-                    }
-
-                    break;
+                    return new Result<InstallationOutcome, InstallationError>.Success(
+                        new InstallationOutcome.AlreadyInstalled(release.ReleaseNameWithRuntime));
                 }
 
-                case Result<Release, QueryError>.Failure(QueryError.NotFound):
-                {
-                    var installedVersions = ListInstallations();
-                    var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
-                    wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
+                var installedVersions = ListInstallations();
+                var autoSetAsDefault = setAsDefault || installedVersions.Count == 0;
+                wasAutoSetAsDefault = !setAsDefault && installedVersions.Count == 0;
+                return await installationService.InstallReleaseAsync(
+                    release, progress, autoSetAsDefault, verbose, cancellationToken);
+            },
+            result => result is Result<InstallationOutcome, InstallationError>.Success);
 
-                    installationResult = await progressHandler.TrackProgressAsync(progress =>
-                        installationService.InstallByQueryAsync(query, progress, autoSetAsDefault, verbose, cancellationToken));
+        return new InstallationAttempt(installationResult, wasAutoSetAsDefault);
+    }
 
-                    break;
-                }
+    private async Task<Result<InstallationOutcome, InstallationError>> TrackResolvedRelease(Release release,
+        bool setAsDefault,
+        bool verbose,
+        CancellationToken cancellationToken
+    )
+    {
+        var attempt = await progressHandler.TrackProgressAsync(session =>
+            InstallAsync(
+                release,
+                session.AddOperation<InstallationStage>("Editor"),
+                setAsDefault,
+                verbose,
+                cancellationToken));
 
-                case Result<Release, QueryError>.Failure(var error):
-                    installationResult = new Result<InstallationOutcome, InstallationError>.Failure(MapQueryError(error, query));
-                    break;
+        RenderResult(attempt, setAsDefault);
+        return attempt.Result;
+    }
 
-                default:
-                    throw new InvalidOperationException("Unexpected Result type");
-            }
-        }
+    private async Task<Result<InstallationOutcome, InstallationError>> TrackQueryInstallation(string[] query,
+        bool setAsDefault,
+        bool verbose,
+        CancellationToken cancellationToken
+    ) =>
+        await progressHandler.TrackProgressAsync(async session =>
+        {
+            var progress = session.AddOperation<InstallationStage>("Editor");
+            return await progress.RunAsync(
+                async () => await installationService.InstallByQueryAsync(
+                    query, progress, setAsDefault, verbose, cancellationToken),
+                result => result is Result<InstallationOutcome, InstallationError>.Success);
+        });
 
+    /// <inheritdoc />
+    public void RenderResult(InstallationAttempt attempt, bool setAsDefault)
+    {
+        var (installationResult, wasAutoSetAsDefault) = attempt;
         switch (installationResult)
         {
             case Result<InstallationOutcome, InstallationError>.Success(
@@ -162,8 +228,6 @@ public sealed class InstallationOrchestrator(
                 console.MarkupLine(Messages.AlreadyInstalled(release));
                 break;
         }
-
-        return installationResult;
     }
 
     private async Task<string[]> FetchReleaseNames(CancellationToken cancellationToken)

@@ -49,15 +49,15 @@ public sealed class TemplateInstallationService(
 
         try
         {
-            progress.Report(new OperationProgress<TemplateInstallationStage>(
-                TemplateInstallationStage.Initializing,
-                $"Initializing export template installation for {release.ReleaseNameWithRuntime}..."));
-
             if (!force && hostSystem.DirectoryExists(destinationPath) is Result<bool, FileOperationError>.Success { Value: true })
             {
                 return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
                     new TemplateInstallationOutcome.AlreadyInstalled(expectedTemplateVersion, destinationPath));
             }
+
+            progress.Report(new OperationProgress<TemplateInstallationStage>(
+                TemplateInstallationStage.Initializing,
+                $"Initializing export template installation for {release.ReleaseNameWithRuntime}..."));
 
             ReleaseArtifact artifact;
             switch (await releaseCatalog.FindOrHydrateExportTemplateArtifact(release, cancellationToken))
@@ -77,7 +77,12 @@ public sealed class TemplateInstallationService(
                 TemplateInstallationStage.Downloading,
                 $"Downloading {artifact.FileName}..."));
 
-            Directory.CreateDirectory(tempRoot);
+            if (hostSystem.CreateDirectory(tempRoot) is Result<Unit, FileOperationError>.Failure(var tempRootError))
+            {
+                return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
+                    new TemplateInstallationError.Failed($"Unable to create temporary directory `{tempRoot}`: {tempRootError}"));
+            }
+
             var archivePath = Path.Combine(tempRoot, Path.GetFileName(artifact.FileName));
 
             string archiveChecksum;
@@ -117,9 +122,19 @@ public sealed class TemplateInstallationService(
             // Keep staging beside the destination so the commit is a same-volume rename.
             var templatesDirectory = Path.GetDirectoryName(destinationPath)
                                      ?? throw new InvalidOperationException($"Template path has no parent: {destinationPath}");
-            Directory.CreateDirectory(templatesDirectory);
+            if (hostSystem.CreateDirectory(templatesDirectory) is Result<Unit, FileOperationError>.Failure(var templatesDirError))
+            {
+                return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
+                    new TemplateInstallationError.Failed(
+                        $"Unable to create export template directory `{templatesDirectory}`: {templatesDirError}"));
+            }
+
             stagingPath = Path.Combine(templatesDirectory, $".fgvm-template-staging-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(stagingPath);
+            if (hostSystem.CreateDirectory(stagingPath) is Result<Unit, FileOperationError>.Failure(var stagingError))
+            {
+                return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
+                    new TemplateInstallationError.Failed($"Unable to create staging directory `{stagingPath}`: {stagingError}"));
+            }
 
             var templateVersionResult = await ExtractTemplateArchiveAsync(archivePath, stagingPath, cancellationToken);
             string actualTemplateVersion;
@@ -152,7 +167,7 @@ public sealed class TemplateInstallationService(
                     new TemplateInstallationError.Failed($"Unable to create export template directory: {createError}"));
             }
 
-            switch (StagedDirectoryCommitter.Commit(stagingPath, destinationPath, force, logger))
+            switch (StagedDirectoryCommitter.Commit(hostSystem, stagingPath, destinationPath, force, logger))
             {
                 case Result<Unit, DirectoryCommitError>.Success:
                     break;
@@ -351,18 +366,14 @@ public sealed class TemplateInstallationService(
     /// <param name="tempRoot">The temporary directory to remove.</param>
     private void CleanupTempDirectory(string tempRoot)
     {
-        if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot))
+        if (string.IsNullOrWhiteSpace(tempRoot))
         {
             return;
         }
 
-        try
+        if (hostSystem.DeleteDirectoryIfExists(tempRoot, true) is Result<Unit, FileOperationError>.Failure(var error))
         {
-            Directory.Delete(tempRoot, true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            logger.LogWarning(ex, "Failed to clean up temporary template install directory {TempRoot}", tempRoot);
+            logger.LogWarning("Failed to clean up temporary template install directory {TempRoot}: {Error}", tempRoot, error);
         }
     }
 }

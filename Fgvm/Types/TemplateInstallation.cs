@@ -80,8 +80,6 @@ public abstract record TemplateRegistryError
 {
     public sealed record ReadFailed(FileOperationError Error) : TemplateRegistryError;
 
-    public sealed record RemoveFailed(FileOperationError Error) : TemplateRegistryError;
-
     public sealed record NotFound(string TemplateVersion) : TemplateRegistryError;
 }
 

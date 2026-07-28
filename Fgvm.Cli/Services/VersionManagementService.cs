@@ -419,7 +419,7 @@ public class VersionManagementService(
             var godotRelease = CreateRelease(versionToSet);
 
             var versionFilePath = Path.Combine(Directory.GetCurrentDirectory(), ".fgvm-version");
-            var fileExists = File.Exists(versionFilePath);
+            var fileExists = hostSystem.FileExists(versionFilePath) is Result<bool, FileOperationError>.Success { Value: true };
 
             // Create or update the `.fgvm-version` file
             CreateOrUpdateVersionFile(godotRelease.ReleaseNameWithRuntime);

@@ -18,7 +18,7 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
         {
             exitCode = ExitCodes.SymlinkError;
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             exitCode = ExitCodes.Cancelled;
         }

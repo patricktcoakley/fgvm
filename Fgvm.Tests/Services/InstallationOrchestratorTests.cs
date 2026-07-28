@@ -1,8 +1,10 @@
+using System.Text.RegularExpressions;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
+using Fgvm.Tests.Progress;
 using Fgvm.Types;
 using Moq;
 using Spectre.Console.Testing;
@@ -50,7 +52,7 @@ public sealed class InstallationOrchestratorTests : IDisposable
             _mockReleaseManager.Object,
             _mockInstallationRegistry.Object,
             _mockInstallationService.Object,
-            new TestProgressHandler<InstallationStage>(),
+            new SilentProgressHandler(),
             _console);
     }
 
@@ -85,7 +87,9 @@ public sealed class InstallationOrchestratorTests : IDisposable
         var success = Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(result);
         var alreadyInstalled = Assert.IsType<InstallationOutcome.AlreadyInstalled>(success.Value);
         Assert.Equal(release.ReleaseNameWithRuntime, alreadyInstalled.ReleaseNameWithRuntime);
-        Assert.Contains("already installed", _console.Output, StringComparison.OrdinalIgnoreCase);
+
+        // Rendering moved out of the session-scoped overload, so this path must render once, not once per layer
+        Assert.Single(Regex.Matches(_console.Output, "already installed", RegexOptions.IgnoreCase));
 
         _mockInstallationService.Verify(
             x => x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
@@ -98,6 +102,100 @@ public sealed class InstallationOrchestratorTests : IDisposable
                 false,
                 It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ResolvedRelease_ExecutesWithoutResolvingQuery()
+    {
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        var progress = new Mock<IOperationProgress<InstallationStage>>();
+        _mockInstallationService.Setup(x => x.InstallReleaseAsync(
+                release,
+                progress.Object,
+                true,
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
+                new InstallationOutcome.NewInstallation(
+                    release.ReleaseNameWithRuntime,
+                    new ChecksumVerification.Verified())));
+
+        var attempt = await _orchestrator.InstallAsync(
+            release,
+            progress.Object,
+            verbose: true,
+            cancellationToken: CancellationToken.None);
+
+        Assert.IsType<Result<InstallationOutcome, InstallationError>.Success>(attempt.Result);
+        _mockInstallationService.Verify(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()), Times.Never);
+        _mockReleaseManager.Verify(
+            x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()),
+            Times.Never);
+        progress.Verify(x => x.Complete("Completed"), Times.Once);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ResolvedRelease_WritesNothingWhileTheProgressSessionIsOpen()
+    {
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        var progress = new Mock<IOperationProgress<InstallationStage>>();
+        _mockInstallationService.Setup(x => x.InstallReleaseAsync(
+                release,
+                progress.Object,
+                It.IsAny<bool>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
+                new InstallationOutcome.NewInstallation(
+                    release.ReleaseNameWithRuntime,
+                    new ChecksumVerification.Verified())));
+
+        var attempt = await _orchestrator.InstallAsync(
+            release,
+            progress.Object,
+            cancellationToken: CancellationToken.None);
+
+        // Output during a live display corrupts it, so the caller renders
+        Assert.Empty(_console.Output);
+
+        _orchestrator.RenderResult(attempt, setAsDefault: false);
+        Assert.Contains("Finished installing", _console.Output);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ResolvedReleaseCancellation_MarksOnlyThatOperationCanceled()
+    {
+        if (Release.TryParse("4.4-stable-standard") is not { } release)
+        {
+            throw new InvalidOperationException("Expected release to parse.");
+        }
+
+        var progress = new Mock<IOperationProgress<InstallationStage>>();
+        _mockInstallationService.Setup(x => x.InstallReleaseAsync(
+                release,
+                progress.Object,
+                It.IsAny<bool>(),
+                false,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            _orchestrator.InstallAsync(
+                release,
+                progress.Object,
+                cancellationToken: CancellationToken.None));
+
+        progress.Verify(x => x.Cancel("Canceled"), Times.Once);
+        progress.Verify(x => x.Complete(It.IsAny<string>()), Times.Never);
+        progress.Verify(x => x.Fail(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -294,11 +392,5 @@ public sealed class InstallationOrchestratorTests : IDisposable
             _mockInstallationRegistry.Setup(x => x.FindByReleaseName(installation.ReleaseNameWithRuntime))
                 .Returns(new Result<Installation, InstallationRegistryError>.Success(installation));
         }
-    }
-
-    private sealed class TestProgressHandler<TStage> : IProgressHandler<TStage> where TStage : Enum
-    {
-        public Task<T> TrackProgressAsync<T>(Func<IProgress<OperationProgress<TStage>>, Task<T>> operation) =>
-            operation(new Progress<OperationProgress<TStage>>(_ => { }));
     }
 }

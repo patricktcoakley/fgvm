@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using Fgvm.Cli.Progress;
+using Fgvm.Extensions;
 using Fgvm.Progress;
 using Fgvm.Services;
 using Spectre.Console.Testing;
@@ -22,14 +24,18 @@ public class SpectreProgressHandlerTests
     [Fact]
     public async Task TrackProgressAsync_ShouldDisplayDownloadProgress_WhenDownloadingStage()
     {
-        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+        var handler = new SpectreProgressHandler(_testConsole);
         const string installPathBase = "4.4.1-stable-standard";
 
-        var result = await handler.TrackProgressAsync(async progress =>
+        var result = await handler.TrackProgressAsync(async session =>
         {
+            var progress = session.AddOperation<InstallationStage>("Editor");
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
-                $"Downloading {installPathBase} • 50.0/100.0 MB • 25.5 MiB/s"));
+                $"Downloading {installPathBase} • 50.0/100.0 MB • 25.5 MiB/s",
+                BytesDownloaded: 50L * ByteSize.Megabyte,
+                TotalBytes: 100L * ByteSize.Megabyte));
+            progress.Complete();
             await Task.Delay(1);
             return "success";
         });
@@ -43,10 +49,11 @@ public class SpectreProgressHandlerTests
     [Fact]
     public async Task TrackProgressAsync_WritesVerboseDetailsWithoutReplacingStatus()
     {
-        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+        var handler = new SpectreProgressHandler(_testConsole);
 
-        await handler.TrackProgressAsync(async progress =>
+        await handler.TrackProgressAsync(async session =>
         {
+            var progress = session.AddOperation<InstallationStage>("Editor");
             progress.Report(new OperationProgress<InstallationStage>(
                 InstallationStage.Downloading,
                 "Downloading..."));
@@ -57,6 +64,7 @@ public class SpectreProgressHandlerTests
             progress.Report(new OperationProgress<InstallationStage>(
                 InstallationStage.VerifyingChecksum,
                 "Verifying checksum..."));
+            progress.Complete();
             await Task.Delay(1);
             return true;
         });
@@ -68,11 +76,13 @@ public class SpectreProgressHandlerTests
     [Fact]
     public async Task TrackProgressAsync_ShouldDisplayChecksumStage_WhenVerifyingChecksum()
     {
-        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+        var handler = new SpectreProgressHandler(_testConsole);
 
-        var result = await handler.TrackProgressAsync(async progress =>
+        var result = await handler.TrackProgressAsync(async session =>
         {
+            var progress = session.AddOperation<InstallationStage>("Editor");
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));
+            progress.Complete();
             await Task.Delay(1);
             return "checksum_verified";
         });
@@ -85,11 +95,13 @@ public class SpectreProgressHandlerTests
     [Fact]
     public async Task TrackProgressAsync_ShouldDisplayExtractionStage_WhenExtracting()
     {
-        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+        var handler = new SpectreProgressHandler(_testConsole);
 
-        var result = await handler.TrackProgressAsync(async progress =>
+        var result = await handler.TrackProgressAsync(async session =>
         {
+            var progress = session.AddOperation<InstallationStage>("Editor");
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Extracting, "Extracting files..."));
+            progress.Complete();
             await Task.Delay(1);
             return "extracted";
         });
@@ -102,11 +114,13 @@ public class SpectreProgressHandlerTests
     [Fact]
     public async Task TrackProgressAsync_ShouldDisplaySettingDefaultStage_WhenSettingDefault()
     {
-        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+        var handler = new SpectreProgressHandler(_testConsole);
 
-        var result = await handler.TrackProgressAsync(async progress =>
+        var result = await handler.TrackProgressAsync(async session =>
         {
+            var progress = session.AddOperation<InstallationStage>("Editor");
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.SettingDefault, "Setting as default version..."));
+            progress.Complete();
             await Task.Delay(1);
             return "default_set";
         });
@@ -119,14 +133,16 @@ public class SpectreProgressHandlerTests
     [Fact]
     public async Task TrackProgressAsync_ShouldHandleExceptions_WhenOperationFails()
     {
-        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+        var handler = new SpectreProgressHandler(_testConsole);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            await handler.TrackProgressAsync<string>(async progress =>
+            await handler.TrackProgressAsync<string>(async session =>
             {
+                var progress = session.AddOperation<InstallationStage>("Editor");
                 progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, "Starting download..."));
                 await Task.Delay(1);
+                progress.Fail();
                 throw new InvalidOperationException("Network error during download");
             });
         });
@@ -138,16 +154,19 @@ public class SpectreProgressHandlerTests
     [Fact]
     public async Task TrackProgressAsync_ShouldSequentiallyDisplayStages_WhenFullInstallationFlow()
     {
-        var handler = new SpectreProgressHandler<InstallationStage>(_testConsole);
+        var handler = new SpectreProgressHandler(_testConsole);
         const string installPathBase = "4.4.1-stable-standard";
 
-        var result = await handler.TrackProgressAsync(async progress =>
+        var result = await handler.TrackProgressAsync(async session =>
         {
+            var progress = session.AddOperation<InstallationStage>("Editor");
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading, $"Downloading {installPathBase}..."));
             await Task.Delay(1);
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.Downloading,
-                $"Downloading {installPathBase} • 126.7/126.7 MB • 58.0 MiB/s"));
+                $"Downloading {installPathBase} • 126.7/126.7 MB • 58.0 MiB/s",
+                BytesDownloaded: 1267L,
+                TotalBytes: 1267L));
             await Task.Delay(1);
 
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.VerifyingChecksum, "Verifying checksum..."));
@@ -159,6 +178,7 @@ public class SpectreProgressHandlerTests
             progress.Report(new OperationProgress<InstallationStage>(InstallationStage.SettingDefault, "Setting as default version..."));
             await Task.Delay(1);
 
+            progress.Complete();
             return "installation_complete";
         });
 
@@ -170,5 +190,135 @@ public class SpectreProgressHandlerTests
         Assert.Contains("Verifying checksum", output);
         Assert.Contains("Extracting files", output);
         Assert.Contains("Setting as default version", output);
+    }
+
+    [Fact]
+    public async Task TrackProgressAsync_DisplaysMultipleOperationsAndKeepsIndependentTerminalStates()
+    {
+        var handler = new SpectreProgressHandler(_testConsole);
+
+        await handler.TrackProgressAsync(async session =>
+        {
+            var editor = session.AddOperation<InstallationStage>("Editor");
+            var templates = session.AddOperation<TemplateInstallationStage>("Templates");
+            editor.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.Downloading,
+                "Downloading",
+                BytesDownloaded: 50,
+                TotalBytes: 100));
+            templates.Report(new OperationProgress<TemplateInstallationStage>(
+                TemplateInstallationStage.Downloading,
+                "Downloading",
+                BytesDownloaded: 10,
+                TotalBytes: 100));
+            editor.Complete();
+            templates.Report(new OperationProgress<TemplateInstallationStage>(
+                TemplateInstallationStage.Extracting,
+                "Extracting"));
+            templates.Cancel();
+            await Task.Yield();
+            return true;
+        });
+
+        Assert.Contains("Editor", _testConsole.Output);
+        Assert.Contains("Completed", _testConsole.Output);
+        Assert.Contains("Templates", _testConsole.Output);
+        Assert.Contains("Canceled", _testConsole.Output);
+    }
+
+    [Fact]
+    public async Task TrackProgressAsync_DoesNotDisplayOperationThatOnlyReportsTerminalState()
+    {
+        var handler = new SpectreProgressHandler(_testConsole);
+
+        await handler.TrackProgressAsync(session =>
+        {
+            session.AddOperation<InstallationStage>("Editor").Complete();
+            return Task.FromResult(true);
+        });
+
+        Assert.DoesNotContain("Editor", _testConsole.Output);
+    }
+
+    [Fact]
+    public async Task TrackProgressAsync_PreservesMeasuredProgressWithinTheSameStage()
+    {
+        var handler = new SpectreProgressHandler(_testConsole);
+
+        await handler.TrackProgressAsync(session =>
+        {
+            var progress = session.AddOperation<InstallationStage>("Editor");
+            progress.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.Downloading,
+                "Downloading",
+                BytesDownloaded: 40,
+                TotalBytes: 100));
+            progress.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.Downloading,
+                "Retrying download"));
+            progress.Cancel();
+            return Task.FromResult(true);
+        });
+
+        Assert.Matches(@"Editor • Canceled[^\r\n]*\s40%", _testConsole.Output);
+    }
+
+    [Fact]
+    public async Task TrackProgressAsync_ResetsMeasuredProgressWhenStageChanges()
+    {
+        var handler = new SpectreProgressHandler(_testConsole);
+
+        await handler.TrackProgressAsync(session =>
+        {
+            var progress = session.AddOperation<InstallationStage>("Editor");
+            progress.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.Downloading,
+                "Downloading",
+                BytesDownloaded: 100,
+                TotalBytes: 100));
+            progress.Report(new OperationProgress<InstallationStage>(
+                InstallationStage.Extracting,
+                "Extracting"));
+            progress.Cancel();
+            return Task.FromResult(true);
+        });
+
+        Assert.Matches(@"Editor • Canceled[^\r\n]*\s0%", _testConsole.Output);
+    }
+
+    [Fact]
+    public async Task TrackProgressAsync_TreatsTheFirstReportAsANewStage_EvenInTheDefaultStage()
+    {
+        // Tracking the first report by testing for null used to skip the reset for operations starting in stage 0
+        var defaultStageOutput = await RenderSingleReport(InstallationStage.Initializing);
+        var laterStageOutput = await RenderSingleReport(InstallationStage.Downloading);
+
+        // An indeterminate bar is a colour gradient; a determinate 0% bar is one flat colour
+        Assert.True(BarColours(laterStageOutput) > 2, "expected a later stage to render an indeterminate bar");
+        Assert.True(BarColours(defaultStageOutput) > 2, "expected the default stage to render an indeterminate bar");
+    }
+
+    private static int BarColours(string output) =>
+        Regex.Matches(output, @"\[38;2;\d+;\d+;\d+m")
+            .Select(match => match.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+
+    private static async Task<string> RenderSingleReport(InstallationStage stage)
+    {
+        var console = new TestConsole
+        {
+            Profile = { Capabilities = { Interactive = true } }
+        };
+        console.EmitAnsiSequences();
+
+        await new SpectreProgressHandler(console).TrackProgressAsync(session =>
+        {
+            session.AddOperation<InstallationStage>("Editor")
+                .Report(new OperationProgress<InstallationStage>(stage, "Working"));
+            return Task.FromResult(true);
+        });
+
+        return console.Output;
     }
 }

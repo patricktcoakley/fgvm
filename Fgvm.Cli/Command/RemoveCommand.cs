@@ -1,5 +1,6 @@
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
+using Fgvm.Cli.Services;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Services;
@@ -14,6 +15,9 @@ public sealed class RemoveCommand(
     IHostSystem hostSystem,
     IReleaseManager releaseManager,
     IInstallationRegistry installationRegistry,
+    ITemplateRegistry templateRegistry,
+    ITemplateOrchestrator templateOrchestrator,
+    IRemovalService removalService,
     IPathService pathService,
     IAnsiConsole console,
     ILogger<RemoveCommand> logger
@@ -22,6 +26,7 @@ public sealed class RemoveCommand(
     /// <summary>
     ///     Remove an installed Godot version.
     /// </summary>
+    /// <param name="withTemplates">Remove export templates matching each removed editor.</param>
     /// <param name="cancellationToken"></param>
     /// <param name="query"></param>
     /// <exception cref="InvalidOperationException">
@@ -30,7 +35,10 @@ public sealed class RemoveCommand(
     /// </exception>
     /// <exception cref="OperationCanceledException">Thrown when removal is canceled.</exception>
     [Command("remove|r")]
-    public async Task Remove(CancellationToken cancellationToken = default, [Argument] params string[] query)
+    public async Task Remove(bool withTemplates = false,
+        CancellationToken cancellationToken = default,
+        [Argument] params string[] query
+    )
     {
         try
         {
@@ -42,6 +50,11 @@ public sealed class RemoveCommand(
                 ClearDefault();
                 RemoveSymbolicLinks();
                 console.MarkupLine(Messages.NoInstallationsToRemove);
+                if (withTemplates)
+                {
+                    await RemoveTemplatesMatching(query, cancellationToken);
+                }
+
                 return;
             }
 
@@ -51,6 +64,11 @@ public sealed class RemoveCommand(
                 var queryJoin = string.Join(' ', query);
                 logger.LogInformation("Query didn't find any installations: {QueryJoin}.", queryJoin);
                 console.MarkupLine(Messages.NoVersionsMatchingQuery(queryJoin));
+                if (withTemplates)
+                {
+                    await RemoveTemplatesMatching(query, cancellationToken);
+                }
+
                 return;
             }
 
@@ -67,54 +85,69 @@ public sealed class RemoveCommand(
                 versionsToDelete = await Prompts.Remove.ShowVersionRemovalPrompt(filteredInstallations, console, cancellationToken);
             }
 
-            var removedSymlinks = false;
-            foreach (var version in versionsToDelete)
+            var selectedInstallations = versionsToDelete.Select(FindInstallation).ToArray();
+            var templatesToRemove = withTemplates
+                ? FindTemplates(selectedInstallations)
+                : [];
+
+            var editorPaths = new List<string>();
+            foreach (var installation in selectedInstallations)
             {
-                var installation = FindInstallation(version);
-                var removingDefault = IsDefaultInstallation(installation.Key);
                 var selectionPath = Path.Combine(pathService.RootPath, installation.RelativePath);
                 switch (hostSystem.DirectoryExists(selectionPath))
                 {
                     case Result<bool, FileOperationError>.Failure(var existsError):
                         throw new InvalidOperationException($"Unable to read installation path `{selectionPath}`: {existsError}");
                     case Result<bool, FileOperationError>.Success { Value: true }:
-                        if (hostSystem.DeleteDirectoryIfExists(selectionPath, true) is
-                            Result<Unit, FileOperationError>.Failure(var deleteError))
-                        {
-                            throw new InvalidOperationException($"Unable to remove installation `{selectionPath}`: {deleteError}");
-                        }
-
-                        logger.LogInformation("Removed installation: {Version}", version);
-                        console.MarkupLine(Messages.SuccessfullyRemoved(selectionPath));
+                        editorPaths.Add(selectionPath);
                         break;
                     case Result<bool, FileOperationError>.Success { Value: false }:
                     case null:
-                        logger.LogWarning("Installation {Version} does not exist at {SelectionPath}, skipping removal.", version,
+                        logger.LogWarning("Installation {Version} does not exist at {SelectionPath}, skipping removal.",
+                            installation.ReleaseNameWithRuntime,
                             selectionPath);
                         break;
                     default:
                         throw new InvalidOperationException("Unexpected Result type");
                 }
+            }
 
-                if (installationRegistry.Remove(installation.Key) is Result<Unit, InstallationRegistryError>.Failure(var removeError))
+            // Read once: GetDefault re-reads and re-validates the whole registry, and can rewrite it
+            var defaultKey = GetDefaultKey();
+            var removingDefault = selectedInstallations.Any(installation =>
+                string.Equals(installation.Key, defaultKey, StringComparison.Ordinal));
+            var pathsToRemove = editorPaths.Concat(templatesToRemove.Select(template => template.Path));
+
+            // Not cancellable past this point; the rename and delete are over before anyone could interrupt
+            var staged = removalService.Stage(pathsToRemove);
+
+            foreach (var installation in selectedInstallations)
+            {
+                if (installationRegistry.Remove(installation.Key) is
+                    Result<Unit, InstallationRegistryError>.Failure(var removeError))
                 {
                     throw new InvalidOperationException($"Unable to update installation registry: {removeError}");
                 }
 
-                if (removingDefault)
-                {
-                    RemoveSymbolicLinks();
-                    removedSymlinks = true;
-                }
+                logger.LogInformation("Removed installation: {Version}", installation.ReleaseNameWithRuntime);
             }
 
-            if (!removedSymlinks && ListInstallations().Length == 0)
+            foreach (var editorPath in editorPaths)
             {
-                logger.LogInformation("No installations remaining, removing Godot symlinks.");
+                console.MarkupLine(Messages.SuccessfullyRemoved(editorPath));
+            }
+
+            removalService.WriteTemplateRemovalMessages(templatesToRemove);
+            if (removingDefault || ListInstallations().Length == 0)
+            {
+                logger.LogInformation("Removed the default or final installation, removing Godot symlinks.");
                 RemoveSymbolicLinks();
             }
+
+            // Deleted last so the user isn't waiting on a large recursive delete before seeing the result
+            removalService.Discard(staged);
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             logger.LogError("User cancelled removal.");
             console.MarkupLine(Messages.UserCancelled("removal"));
@@ -151,12 +184,11 @@ public sealed class RemoveCommand(
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
 
-    private bool IsDefaultInstallation(string key) =>
+    private string? GetDefaultKey() =>
         installationRegistry.GetDefault() switch
         {
-            Result<Installation, InstallationRegistryError>.Success(var installation) =>
-                string.Equals(installation.Key, key, StringComparison.Ordinal),
-            Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound) => false,
+            Result<Installation, InstallationRegistryError>.Success(var installation) => installation.Key,
+            Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound) => null,
             Result<Installation, InstallationRegistryError>.Failure =>
                 throw new InvalidOperationException("Unable to read default Godot installation."),
             _ => throw new InvalidOperationException("Unexpected Result type")
@@ -176,5 +208,55 @@ public sealed class RemoveCommand(
         {
             throw new InvalidOperationException("Unable to remove Godot symlinks.");
         }
+    }
+
+    // Not SelectForRemovalAsync: that one prints and prompts, which has no place once the user has already chosen
+    private IReadOnlyList<TemplateInstallation> FindTemplates(IEnumerable<Installation> installations)
+    {
+        var templates = new List<TemplateInstallation>();
+        foreach (var installation in installations)
+        {
+            switch (templateRegistry.FindByReleaseName(installation.ReleaseNameWithRuntime))
+            {
+                case Result<TemplateInstallation, TemplateRegistryError>.Success(var template):
+                    templates.Add(template);
+                    break;
+                case Result<TemplateInstallation, TemplateRegistryError>.Failure(TemplateRegistryError.NotFound):
+                    break;
+                case Result<TemplateInstallation, TemplateRegistryError>.Failure(var error):
+                    throw new InvalidOperationException(
+                        $"Unable to read export templates for `{installation.ReleaseNameWithRuntime}`: {error}");
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
+        }
+
+        return templates;
+    }
+
+    // Selection is interactive here because the user hasn't picked anything yet
+    private async Task RemoveTemplatesMatching(string[] query, CancellationToken cancellationToken)
+    {
+        var templates = (await templateOrchestrator.SelectForRemovalAsync(query, cancellationToken)) switch
+        {
+            Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success(var installations) => installations,
+            Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Failure(var error) =>
+                throw new InvalidOperationException($"Unable to select export templates for removal: {error}"),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+        RemoveTemplates(templates);
+    }
+
+    private void RemoveTemplates(IReadOnlyList<TemplateInstallation> templates)
+    {
+        if (templates.Count == 0)
+        {
+            return;
+        }
+
+        var staged = removalService.Stage(templates.Select(template => template.Path));
+        removalService.WriteTemplateRemovalMessages(templates);
+        removalService.Discard(staged);
     }
 }

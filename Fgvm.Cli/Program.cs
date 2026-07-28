@@ -94,16 +94,21 @@ public class Program
         services.AddSingleton<IProjectManager, ProjectManager>();
         services.AddSingleton<IInstallationOrchestrator, InstallationOrchestrator>();
         services.AddSingleton<ITemplateOrchestrator, TemplateOrchestrator>();
+        services.AddSingleton<IDirectoryRemoval, DirectoryRemoval>();
+        services.AddSingleton<IRemovalService, RemovalService>();
         services.AddSingleton<IVersionManagementService, VersionManagementService>();
         services.AddSingleton<IGodotArgumentService, GodotArgumentService>();
         services.AddSingleton<IGodotLauncher, GodotLauncher>();
         services.AddSingleton<IAnsiConsole>(_ => AnsiConsole.Console);
 
         // Progress handling
-        services.AddSingleton<IProgressHandler<InstallationStage>, SpectreProgressHandler<InstallationStage>>();
-        services.AddSingleton<IProgressHandler<TemplateInstallationStage>, SpectreProgressHandler<TemplateInstallationStage>>();
+        services.AddSingleton<IProgressHandler, SpectreProgressHandler>();
 
         using var serviceProvider = services.BuildServiceProvider();
+
+        // Cleans up after an interrupted removal; failures are logged, not thrown, so they can't take down the
+        // command that follows
+        serviceProvider.GetRequiredService<IRemovalService>().Sweep();
 
         if (serviceProvider.GetRequiredService<IHostSystem>().CreateDirectory(pathService.BinPath) is
             Result<Unit, FileOperationError>.Failure(var binError))
