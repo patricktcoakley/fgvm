@@ -180,7 +180,7 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
 
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 logger.LogDebug("HTTP GET {Url} returned {StatusCode}. Body: {Body}", source.Url, response.StatusCode, body);
-                lastError = new NetworkError.RequestFailure(source.Url, (int)response.StatusCode, body);
+                lastError = new NetworkError.RequestFailure(source.Url, response.StatusCode, body);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

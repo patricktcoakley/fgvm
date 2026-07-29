@@ -23,14 +23,14 @@ internal sealed class HttpRangeTransfer(
         {
             var response = await SendRequestAsync(
                 new RangeHeaderValue(0, options.ChunkSize - 1), null, cancellationToken);
-            if (!IsTransient(response.StatusCode))
+            if (!response.StatusCode.IsTransient)
             {
                 // The caller may reuse this response as the first chunk, including its unread body.
                 return response;
             }
 
             response.Dispose();
-            throw new TransientDownloadException($"Probe returned {(int)response.StatusCode}.");
+            throw new TransientDownloadException($"Probe returned {response.StatusCode.Describe()}.");
         }, cancellationToken);
 
     public async Task DownloadRangeAsync(RangeChunk chunk,
@@ -110,13 +110,14 @@ internal sealed class HttpRangeTransfer(
 
             if (response.StatusCode != HttpStatusCode.OK)
             {
-                if (IsTransient(response.StatusCode))
+                if (response.StatusCode.IsTransient)
                 {
                     throw new TransientDownloadException(
-                        $"Sequential download returned {(int)response.StatusCode}.");
+                        $"Sequential download returned {response.StatusCode.Describe()}.");
                 }
 
-                throw new IOException($"Expected 200 for sequential download, got {(int)response.StatusCode}.");
+                throw new IOException(
+                    $"Expected {HttpStatusCode.OK.Describe()} for sequential download, got {response.StatusCode.Describe()}.");
             }
 
             totalBytes ??= response.Content.Headers.ContentLength;
@@ -140,6 +141,9 @@ internal sealed class HttpRangeTransfer(
     )
     {
         using var request = createRequest(range);
+        // Every request from here is retried by RetryAsync or DownloadRangeAsync, including the sequential
+        // fallback, which carries no Range header for an outer handler to recognise.
+        request.MarkSelfRetrying();
         validator?.Apply(request);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(options.StallTimeout);
@@ -156,7 +160,7 @@ internal sealed class HttpRangeTransfer(
         {
             throw new TransientDownloadException("The server did not respond before the stall timeout.", ex);
         }
-        catch (Exception ex) when (IsTransientTransportFailure(ex, cancellationToken))
+        catch (Exception ex) when (ex.IsTransientTransportFailure(cancellationToken))
         {
             throw new TransientDownloadException("The HTTP request failed.", ex);
         }
@@ -167,14 +171,15 @@ internal sealed class HttpRangeTransfer(
         // A 206 alone is not enough: an unexpected range would be written at the wrong file offset.
         if (response.StatusCode != HttpStatusCode.PartialContent)
         {
-            if (IsTransient(response.StatusCode))
+            if (response.StatusCode.IsTransient)
             {
                 throw new TransientDownloadException(
-                    $"Range {chunk.Start}-{chunk.End} returned {(int)response.StatusCode}.");
+                    $"Range {chunk.Start}-{chunk.End} returned {response.StatusCode.Describe()}.");
             }
 
             throw new IOException(
-                $"Expected 206 for range {chunk.Start}-{chunk.End}, got {(int)response.StatusCode}.");
+                $"Expected {HttpStatusCode.PartialContent.Describe()} for range {chunk.Start}-{chunk.End}, " +
+                $"got {response.StatusCode.Describe()}.");
         }
 
         var range = response.Content.Headers.ContentRange;
@@ -200,7 +205,7 @@ internal sealed class HttpRangeTransfer(
         {
             stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         }
-        catch (Exception ex) when (IsTransientTransportFailure(ex, cancellationToken))
+        catch (Exception ex) when (ex.IsTransientTransportFailure(cancellationToken))
         {
             throw new TransientDownloadException("Failed to open the response body.", ex);
         }
@@ -223,7 +228,7 @@ internal sealed class HttpRangeTransfer(
                         bytesRead = await DownloadStreamReader.ReadAsync(
                             stream, buffer.AsMemory(0, bytesToRead), options.StallTimeout, cancellationToken);
                     }
-                    catch (Exception ex) when (IsTransientTransportFailure(ex, cancellationToken))
+                    catch (Exception ex) when (ex.IsTransientTransportFailure(cancellationToken))
                     {
                         throw new TransientDownloadException("Failed while reading the response body.", ex);
                     }
@@ -275,18 +280,6 @@ internal sealed class HttpRangeTransfer(
 
         throw new InvalidOperationException("Retry started without an available attempt.");
     }
-
-    // Retry statuses associated with temporary load or availability. Other 4xx responses
-    // indicate a request or protocol problem that another attempt is unlikely to fix.
-    private static bool IsTransient(HttpStatusCode statusCode) =>
-        statusCode == HttpStatusCode.RequestTimeout ||
-        statusCode == (HttpStatusCode)429 ||
-        (int)statusCode >= 500;
-
-    // A fresh request can recover from transport and stream failures. Caller cancellation cannot.
-    private static bool IsTransientTransportFailure(Exception exception, CancellationToken cancellationToken) =>
-        exception is HttpRequestException or IOException ||
-        exception is TaskCanceledException && !cancellationToken.IsCancellationRequested;
 
     // Only this exception is caught by RetryAsync; validation failures deliberately bypass retries.
     private sealed class TransientDownloadException(string message, Exception? innerException = null)

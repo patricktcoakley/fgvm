@@ -91,8 +91,10 @@ public sealed class RemovalService(
         }
     }
 
-    private void AddStagingDirectory(ICollection<string> stagingDirectories, Func<string> resolvePath,
-        string description)
+    private void AddStagingDirectory(ICollection<string> stagingDirectories,
+        Func<string> resolvePath,
+        string description
+    )
     {
         if (ResolveStagingDirectory(resolvePath, description) is { } path)
         {
@@ -106,8 +108,10 @@ public sealed class RemovalService(
         {
             return resolvePath();
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or
-                                          NotSupportedException or IOException)
+        catch (Exception exception) when (exception is InvalidOperationException
+                                              or ArgumentException
+                                              or NotSupportedException
+                                              or IOException)
         {
             logger.LogWarning(exception,
                 "Could not resolve {StagingDirectory} while checking for interrupted removals; skipping it",

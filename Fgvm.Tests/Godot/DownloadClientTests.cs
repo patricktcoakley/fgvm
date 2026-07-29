@@ -92,7 +92,7 @@ public sealed class DownloadClientTests : IDisposable
 
         var failure = Assert.IsType<Result<string, NetworkError>.Failure>(result);
         var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
-        Assert.Equal((int)HttpStatusCode.ServiceUnavailable, requestFailure.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, requestFailure.StatusCode);
     }
 
     [Fact]
@@ -313,7 +313,7 @@ public sealed class DownloadClientTests : IDisposable
 
         var failure = Assert.IsType<Result<string, NetworkError>.Failure>(result);
         var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
-        Assert.Equal((int)HttpStatusCode.NotFound, requestFailure.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, requestFailure.StatusCode);
     }
 
     private DownloadClient CreateDownloadClient(Mock<HttpMessageHandler> httpHandler) =>

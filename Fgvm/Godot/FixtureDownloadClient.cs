@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -109,7 +110,7 @@ public sealed class FixtureDownloadClient : IDownloadClient
         if (fixtureRelease is null)
         {
             return new Result<GodotReleaseManifest, NetworkError>.Failure(
-                new NetworkError.RequestFailure($"fixture://manifest/godot-{release.ReleaseName}.json", 404,
+                new NetworkError.RequestFailure($"fixture://manifest/godot-{release.ReleaseName}.json", HttpStatusCode.NotFound,
                     "Release not found in fixture manifest."));
         }
 
@@ -142,7 +143,7 @@ public sealed class FixtureDownloadClient : IDownloadClient
         if (artifacts.Length == 0)
         {
             return new Result<string, NetworkError>.Failure(
-                new NetworkError.RequestFailure($"fixture://checksums/{release.ReleaseName}/SHA512-SUMS.txt", 404,
+                new NetworkError.RequestFailure($"fixture://checksums/{release.ReleaseName}/SHA512-SUMS.txt", HttpStatusCode.NotFound,
                     "Release checksums not found in fixture manifest."));
         }
 
@@ -164,7 +165,7 @@ public sealed class FixtureDownloadClient : IDownloadClient
         if (artifact is null)
         {
             return new Result<string, NetworkError>.Failure(
-                new NetworkError.RequestFailure($"fixture://zips/{release.ReleaseName}/{filename}", 404,
+                new NetworkError.RequestFailure($"fixture://zips/{release.ReleaseName}/{filename}", HttpStatusCode.NotFound,
                     "Artifact not found in fixture manifest."));
         }
 

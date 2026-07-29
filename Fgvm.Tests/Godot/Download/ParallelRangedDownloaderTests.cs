@@ -353,6 +353,26 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
         Assert.Equal(4, handler.RequestCount);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DownloadAsync_MarksEveryRequestSelfRetrying_SoOuterHandlersDoNotMultiplyTheBudget(bool honorsRange)
+    {
+        // The sequential fallback carries no Range header, so the marker is what keeps an outer retry handler off it.
+        var expected = CreateRandomBytes(8 * 1024 * 1024);
+        var handler = new RangeAwareHandler(expected, honorsRange);
+        using var httpClient = new HttpClient(handler);
+        var destinationPath = Path.Combine(_root, "out.bin");
+
+        var result = await ParallelRangedDownloader.DownloadAsync(
+            httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
+            TestOptions(workerCount: 2));
+
+        Assert.IsType<Result<Unit, NetworkError>.Success>(result);
+        Assert.True(handler.RequestCount > 0);
+        Assert.Equal(0, handler.UnmarkedRequestCount);
+    }
+
     [Fact]
     public async Task DownloadAsync_RangedDownload_UsesConfiguredFourWorkers()
     {
@@ -494,12 +514,12 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
     }
 
     [Fact]
-    public void Options_DefaultsToEightWorkersAndThirtyTwoMiBChunks()
+    public void Options_DefaultsToEightWorkersAndEightMiBChunks()
     {
         var options = new ParallelRangedDownloader.Options();
 
         Assert.Equal(8, options.WorkerCount);
-        Assert.Equal(32L * ByteSize.Mebibyte, options.ChunkSize);
+        Assert.Equal(8L * ByteSize.Mebibyte, options.ChunkSize);
     }
 
     public void Dispose()
@@ -635,10 +655,12 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
         private int _requestCount;
         private int _ifRangeRequestCount;
         private int _nonRangeRequestCount;
+        private int _unmarkedRequestCount;
         private readonly Lock _rangesLock = new();
         private readonly List<(long? From, long? To)> _requestedRanges = [];
         public int IfRangeRequestCount => _ifRangeRequestCount;
         public int NonRangeRequestCount => _nonRangeRequestCount;
+        public int UnmarkedRequestCount => _unmarkedRequestCount;
         public int RequestCount => _requestCount;
         public int PeakConcurrentRequests => _peakConcurrentRequests;
         public IReadOnlyList<(long? From, long? To)> RequestedRanges
@@ -655,6 +677,11 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var requestNumber = Interlocked.Increment(ref _requestCount);
+
+            if (!request.IsSelfRetrying)
+            {
+                Interlocked.Increment(ref _unmarkedRequestCount);
+            }
 
             if (forceStatusCode is { } status)
             {

@@ -60,7 +60,7 @@ internal static class ParallelRangedDownloader
                 default:
                     var responseBody = await probeResponse.Content.ReadAsStringAsync(cancellationToken);
                     return new Result<Unit, NetworkError>.Failure(
-                        new NetworkError.RequestFailure(sourceUrl, (int)probeResponse.StatusCode, responseBody));
+                        new NetworkError.RequestFailure(sourceUrl, probeResponse.StatusCode, responseBody));
             }
         }
         catch (OperationCanceledException cancellationError) when (cancellationToken.IsCancellationRequested)
@@ -131,8 +131,10 @@ internal static class ParallelRangedDownloader
 
     internal sealed record Options
     {
-        // Fixed defaults keep resource use predictable while still overlapping network reads.
-        public long ChunkSize { get; init; } = 32L * ByteSize.Mebibyte;
+        // Fixed defaults keep resource use predictable while still overlapping network reads. The chunk size was
+        // chosen by measurement: it is deliberately small enough that a typical release archive yields several
+        // chunks per worker, so the pool stays saturated instead of idling on a handful of large ranges.
+        public long ChunkSize { get; init; } = 8L * ByteSize.Mebibyte;
         public int WorkerCount { get; init; } = 8;
         // Probe and sequential retries make no durable progress. Ranged recovery resets this
         // budget whenever an attempt writes bytes successfully.

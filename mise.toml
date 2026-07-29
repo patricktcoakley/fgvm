@@ -7,20 +7,29 @@ description = "Run the unit and integration suites."
 dir = "."
 depends = ["test:unit", "test:integration"]
 
+# `depends` entries run in parallel, so every task below builds through this one first and then tests with
+# --no-build. Without it two concurrent MSBuild graphs write Fgvm's Release output and race on fgvm-core.deps.json.
+[tasks."test:build"]
+description = "Build every project once so the parallel test tasks never race on shared build output."
+dir = "."
+run = "dotnet build --nologo --configuration Release Fgvm.slnx"
+
 [tasks."test:unit"]
 description = "Run the faster unit tests only."
 dir = "."
-run = "dotnet test --nologo --configuration Release Fgvm.Tests/Fgvm.Tests.csproj"
+depends = ["test:build"]
+run = "dotnet test --nologo --no-build --configuration Release Fgvm.Tests/Fgvm.Tests.csproj"
 
 [tasks."test:integration"]
 description = "Run only the integration tests."
 dir = "."
 depends = ["integration:prepare"]
-run = "dotnet test --nologo --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj"
+run = "dotnet test --nologo --no-build --configuration Release Fgvm.Tests.Integration/Fgvm.Tests.Integration.csproj"
 
 [tasks."integration:prepare"]
 description = "Publish the CLI used by integration tests."
 dir = "."
+depends = ["test:build"]
 run = "dotnet run Fgvm.Tests.Integration/Fixtures/PublishCli.cs"
 
 [tasks."e2e:prepare"]
