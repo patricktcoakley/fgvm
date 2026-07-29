@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Fgvm.Environment;
@@ -295,7 +296,7 @@ public sealed class ReleaseCatalog(
                 artifacts = OverlaySha512Sums(artifacts, ParseSha512SumsContent(sha512Sums));
                 break;
 
-            case Result<string, NetworkError>.Failure(NetworkError.RequestFailure { StatusCode: 404 }):
+            case Result<string, NetworkError>.Failure(NetworkError.RequestFailure { StatusCode: HttpStatusCode.NotFound }):
                 logger.LogInformation(
                     "No SHA512-SUMS.txt found for {ReleaseName}. Using release manifest checksums",
                     fallbackRelease.ReleaseName);

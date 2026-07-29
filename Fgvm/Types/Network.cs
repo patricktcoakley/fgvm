@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Fgvm.Types;
 
 /// <summary>
@@ -5,7 +7,10 @@ namespace Fgvm.Types;
 /// </summary>
 public abstract record NetworkError
 {
-    public record RequestFailure(string Url, int StatusCode, string? Body = null) : NetworkError;
+    public record RequestFailure(string Url, HttpStatusCode StatusCode, string? Body = null) : NetworkError
+    {
+        public override string ToString() => $"Request to {Url} failed with {StatusCode.Describe()}";
+    }
 
     public record ConnectionFailure(string Message, string? Details = null) : NetworkError;
 

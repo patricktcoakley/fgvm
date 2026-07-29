@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.ViewModels;
@@ -103,6 +104,21 @@ public sealed class SearchCommandTests
         Assert.NotNull(entries);
         var entry = Assert.Single(entries);
         Assert.Equal("4.5-stable", entry.Name);
+    }
+
+    [Fact]
+    public async Task SearchCommand_RequestFailure_ReportsBothTheStatusNumberAndItsName()
+    {
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), It.IsAny<ReleaseFetchMode>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
+                new NetworkError.RequestFailure("https://api.github.com/repos", HttpStatusCode.Forbidden, "rate limit")));
+
+        var command = CreateCommand(releaseManager.Object, out _);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => command.Search());
+
+        Assert.Contains("403 (Forbidden)", error.Message);
     }
 
     private static SearchCommand CreateCommand(IReleaseManager releaseManager, out TestConsole console)

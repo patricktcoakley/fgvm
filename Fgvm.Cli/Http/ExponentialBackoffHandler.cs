@@ -1,9 +1,10 @@
-using System.Net;
+using Fgvm.Extensions;
 
 namespace Fgvm.Cli.Http;
 
 internal sealed class ExponentialBackoffHandler : DelegatingHandler
 {
+    private static readonly TimeSpan MaximumRetryAfterDelay = TimeSpan.FromSeconds(30);
     private readonly TimeSpan _initialDelay;
     private readonly int _maxRetries;
 
@@ -17,8 +18,9 @@ internal sealed class ExponentialBackoffHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        // Range downloads retry individual chunks themselves; retrying here would multiply their attempt budget.
-        if (request.Headers.Range is not null)
+        // The ranged downloader retries probes, chunks, and its sequential fallback itself; retrying here would
+        // multiply both its attempt budget and its backoff delays.
+        if (request.IsSelfRetrying)
         {
             return await base.SendAsync(request, cancellationToken);
         }
@@ -30,32 +32,29 @@ internal sealed class ExponentialBackoffHandler : DelegatingHandler
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            TimeSpan? serverRequestedDelay = null;
+
             try
             {
                 var response = await base.SendAsync(request, cancellationToken);
 
-                if (!ShouldRetry(response.StatusCode) || attempt >= _maxRetries)
+                if (!response.StatusCode.IsTransient || attempt >= _maxRetries)
                 {
                     return response;
                 }
 
+                // Read before disposing: the server's own pacing beats a guess, and 429 and 503 usually send one.
+                serverRequestedDelay = ReadRetryAfter(response);
                 response.Dispose();
             }
-            catch (HttpRequestException) when (attempt < _maxRetries)
+            catch (Exception ex) when (ex.IsTransientTransportFailure(cancellationToken) && attempt < _maxRetries)
             { }
-            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested && attempt < _maxRetries)
-            {
-                if (ex.InnerException is OperationCanceledException && cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-            }
 
             attempt++;
 
             try
             {
-                await Task.Delay(delay, cancellationToken);
+                await Task.Delay(serverRequestedDelay ?? delay, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -66,8 +65,21 @@ internal sealed class ExponentialBackoffHandler : DelegatingHandler
         }
     }
 
-    private static bool ShouldRetry(HttpStatusCode statusCode) =>
-        statusCode == HttpStatusCode.RequestTimeout ||
-        statusCode == (HttpStatusCode)429 || // Too Many Requests
-        (int)statusCode >= 500;
+    /// <summary>
+    ///     Reads Retry-After as either a delay or an absolute date, ignoring values that have already elapsed. The
+    ///     result is capped so a long server-side cooldown fails fast instead of hanging the command.
+    /// </summary>
+    private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    {
+        var requested = response.Headers.RetryAfter switch
+        {
+            { Delta: { } delta } => delta,
+            { Date: { } date } => date - DateTimeOffset.UtcNow,
+            _ => (TimeSpan?)null
+        };
+
+        return requested is { } value && value > TimeSpan.Zero
+            ? value < MaximumRetryAfterDelay ? value : MaximumRetryAfterDelay
+            : null;
+    }
 }

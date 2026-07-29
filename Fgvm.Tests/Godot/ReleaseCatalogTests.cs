@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Fgvm.Environment;
 using Fgvm.Godot;
@@ -26,7 +27,8 @@ public sealed class ReleaseCatalogTests : IDisposable
         _catalog = new ReleaseCatalog(_downloadClient.Object, pathService.Object, hostSystem, NullLogger<ReleaseCatalog>.Instance);
 
         _downloadClient.Setup(x => x.GetSha512(It.IsAny<Release>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Result<string, NetworkError>.Failure(new NetworkError.RequestFailure("SHA512-SUMS.txt", 404)));
+            .ReturnsAsync(new Result<string, NetworkError>.Failure(
+                new NetworkError.RequestFailure("SHA512-SUMS.txt", HttpStatusCode.NotFound)));
     }
 
     public void Dispose()
@@ -207,8 +209,8 @@ public sealed class ReleaseCatalogTests : IDisposable
 
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
-                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403,
-                    "rate limit")));
+                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases",
+                    HttpStatusCode.Forbidden, "rate limit")));
 
         var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.UseCache, CancellationToken.None);
 
@@ -235,14 +237,14 @@ public sealed class ReleaseCatalogTests : IDisposable
 
         _downloadClient.Setup(x => x.ListReleases(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
-                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases", 403,
-                    "rate limit")));
+                new NetworkError.RequestFailure("https://api.github.com/repos/godotengine/godot-builds/contents/releases",
+                    HttpStatusCode.Forbidden, "rate limit")));
 
         var result = await _catalog.ReadReleaseIds(ReleaseFetchMode.ForceRemote, CancellationToken.None);
 
         var failure = Assert.IsType<Result<string[], NetworkError>.Failure>(result);
         var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
-        Assert.Equal(403, requestFailure.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, requestFailure.StatusCode);
         _downloadClient.Verify(x => x.ListReleases(It.IsAny<CancellationToken>()), Times.Once);
     }
 

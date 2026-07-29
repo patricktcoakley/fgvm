@@ -118,7 +118,8 @@ public sealed class StagedDirectoryCommitterTests : IDisposable
         var backupPath = Path.Combine(_root, "missing-backup");
         var destinationPath = Path.Combine(_root, "missing-destination");
 
-        var exception = Record.Exception(() => StagedDirectoryCommitter.RestoreBackup(_hostSystem, backupPath, destinationPath, NullLogger.Instance));
+        var exception = Record.Exception(() =>
+            StagedDirectoryCommitter.RestoreBackup(_hostSystem, backupPath, destinationPath, NullLogger.Instance));
 
         Assert.Null(exception);
         Assert.False(Directory.Exists(destinationPath));

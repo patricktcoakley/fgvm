@@ -3,6 +3,7 @@ using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
+using Fgvm.Extensions;
 using Fgvm.Godot;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
@@ -65,7 +66,7 @@ public sealed class SearchCommand(
                 var errorMessage = error switch
                 {
                     NetworkError.RequestFailure(var url, var statusCode, _) =>
-                        $"Request to {url} failed with status code {statusCode}",
+                        $"Request to {url} failed with status code {statusCode.Describe()}",
                     NetworkError.ConnectionFailure(var message, _) =>
                         $"Network error: {message}",
                     NetworkError.CacheReadFailure(var fileError) =>
