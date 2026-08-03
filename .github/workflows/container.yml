@@ -1,15 +1,20 @@
 name: Container
 
+# Called by release.yml so a failed image blocks the release; dispatch republishes out of band.
 on:
+  workflow_call:
+    inputs:
+      # Declared so `inputs.version` resolves when called without one; tags come from the semver ref.
+      version:
+        description: "Unused when called from release.yml; tags are derived from the semver git ref."
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       version:
         description: "Image tag to publish for fgvm and fgvm-godot (e.g. 2.3.0). Builds from the selected ref and also updates :latest and :<major>.<minor>."
         required: true
         type: string
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: read

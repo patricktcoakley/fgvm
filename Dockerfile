@@ -94,33 +94,35 @@ ENV FGVM_HOME=/fgvm \
     XDG_DATA_HOME=/workspace/.local/share \
     DEBIAN_FRONTEND=noninteractive
 
+# Unpinned: each apt pocket indexes only the newest version, so `pkg=<exact>` stops resolving as soon
+# as a revision lands. Use a snapshot.ubuntu.com timestamp if reproducible versions are ever needed.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates=20260601~24.04.1 \
-      libssl3t64=3.0.13-0ubuntu3.11 \
-      libfontconfig1=2.15.0-1.1ubuntu2 \
-      libx11-6=2:1.8.7-1build1 \
-      libxcursor1=1:1.2.1-1build1 \
-      libxext6=2:1.3.4-1build2 \
-      libxi6=2:1.8.1-1build1 \
-      libxinerama1=2:1.1.4-3build1 \
-      libxrandr2=2:1.5.2-2build1 \
-      libxrender1=1:0.9.10-1.1build1 \
-      libwayland-client0=1.22.0-2.1build1 \
-      libwayland-cursor0=1.22.0-2.1build1 \
-      libwayland-egl1=1.22.0-2.1build1 \
-      libdecor-0-0=0.2.2-1build2 \
-      libxkbcommon0=1.6.0-1build1 \
-      libgl1=1.7.0-1build1 \
-      libegl1=1.7.0-1build1 \
-      libvulkan1=1.3.275.0-1build1 \
-      mesa-vulkan-drivers=25.2.8-0ubuntu0.24.04.2 \
-      libasound2t64=1.2.11-1ubuntu0.2 \
-      libpulse0=1:16.1+dfsg1-2ubuntu10.1 \
-      libudev1=255.4-1ubuntu8.16 \
-      libdbus-1-3=1.14.10-4ubuntu4.1 \
-      xvfb=2:21.1.12-1ubuntu1.6 \
-      xauth=1:1.1.2-1build1 \
+      ca-certificates \
+      libssl3t64 \
+      libfontconfig1 \
+      libx11-6 \
+      libxcursor1 \
+      libxext6 \
+      libxi6 \
+      libxinerama1 \
+      libxrandr2 \
+      libxrender1 \
+      libwayland-client0 \
+      libwayland-cursor0 \
+      libwayland-egl1 \
+      libdecor-0-0 \
+      libxkbcommon0 \
+      libgl1 \
+      libegl1 \
+      libvulkan1 \
+      mesa-vulkan-drivers \
+      libasound2t64 \
+      libpulse0 \
+      libudev1 \
+      libdbus-1-3 \
+      xvfb \
+      xauth \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/bin/fgvm /usr/local/bin/fgvm

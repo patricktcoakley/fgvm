@@ -74,14 +74,25 @@ jobs:
             ${{ steps.package.outputs.artifact_name }}.sha256
           if-no-files-found: error
 
+  # Runs after the binaries so nothing is published until every artifact has built.
+  containers:
+    needs: [test, build]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/container.yml
+
   release:
-    needs: build
+    needs: [build, containers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      # Scoped: a called workflow shares this run, so container.yml's digest artifacts land here too.
       - uses: actions/download-artifact@v8
+        with:
+          pattern: fgvm-*
 
       - name: Create Release
         uses: softprops/action-gh-release@v3
