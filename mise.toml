@@ -350,6 +350,18 @@ try {
         throw "origin/$branch does not point to $commit. Push the current commit before publishing a preview."
     }
 
+    # Set FGVM_SKIP_CONTAINER_CHECK=1 to bypass container builds.
+    if ($env:FGVM_SKIP_CONTAINER_CHECK -eq "1") {
+        Write-Warning "Skipping the fgvm-godot container check because FGVM_SKIP_CONTAINER_CHECK=1."
+    } else {
+        Write-Host ""
+        Write-Host "Verifying the fgvm-godot container image builds..."
+        & mise run container:build:fgvm-godot
+        if ($LASTEXITCODE -ne 0) {
+            throw "The fgvm-godot container image failed to build. Fix it before publishing a preview."
+        }
+    }
+
     & gh workflow run preview.yml `
         --ref $branch `
         --raw-field "commit=$commit" `
