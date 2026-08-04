@@ -256,7 +256,7 @@ See [Build](#build) for instructions on how to build fgvm from source.
 Install the latest stable standard build, set it as the global default, and launch Godot:
 
 ```shell
-fgvm install latest --default
+fgvm install --default latest
 fgvm godot
 ```
 
@@ -266,7 +266,7 @@ New installations are stored under `installations/<VERSION>-<TYPE>-<RUNTIME>/<TA
 To install export templates alongside the editor, add `--with-templates`:
 
 ```shell
-fgvm install 4.4.1 --with-templates
+fgvm install --with-templates 4.4.1
 ```
 
 By default, fgvm records the selected version in `installations.json`. It also creates a stable PATH shim at `bin/godot` on macOS/Linux or `bin/godot.cmd` on Windows, and best-effort creates a root symlink named `Godot` on Linux, `Godot.app` on macOS, or a `Godot.url` shortcut on Windows for GUI launch compatibility.
@@ -287,6 +287,9 @@ but here is a detailed summary of the available commands:
 
 > **Note:** Many commands support short-form aliases for faster usage (e.g., `fgvm i` for `fgvm install`, `fgvm g` for `fgvm godot`).
 
+> **Note:** Commands that take a `[<...strings>]` query read every remaining word as part of that query, so options must come before it: `fgvm install --default 4.4.1`, not
+> `fgvm install 4.4.1 --default`. An option placed after the query is treated as another query word rather than an option.
+
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
 - `fgvm install` or `fgvm i` `[<...strings>]` [`-D|--default`] [`--with-templates`] will prompt the user to install a version if no arguments are supplied, or will
   try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
@@ -298,8 +301,8 @@ but here is a detailed summary of the available commands:
     - Examples:
         - `fgvm install 4.3` - Install 4.3 stable
         - `fgvm install 4.3 mono` - Install 4.3 stable mono
-        - `fgvm i latest --default` - Install latest stable standard and set as default
-        - `fgvm install 4.4.1 --with-templates` - Install 4.4.1 stable standard and its export templates
+        - `fgvm i --default latest` - Install latest stable standard and set as default
+        - `fgvm install --with-templates 4.4.1` - Install 4.4.1 stable standard and its export templates
 - `fgvm godot` or `fgvm g` [`-i|--interactive`] [`-a|--attached`] [`-P|--project`] [`--query <string>`] [`--args <string>`] runs the appropriate Godot version, or resolves the optional query against installed versions and launches that match. With the `--interactive` or `-i` flag, it will prompt the user to launch an installed version, even if a query is supplied. When run in a project directory with a `.fgvm-version`
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
   `project.godot` file is found.
@@ -348,7 +351,7 @@ Installed template directories use Godot's template version format, such as `4.4
 Use `install --with-templates` when you want editor and template installation in one command:
 
 ```shell
-fgvm install 4.4.1 --with-templates
+fgvm install --with-templates 4.4.1
 ```
 
 Use `template install` when the editor is already installed:
