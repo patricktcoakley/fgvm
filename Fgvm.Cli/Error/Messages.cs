@@ -51,6 +51,10 @@ public static class Messages
     public static string NoVersionsInstalledPrompt => "No versions installed. Install a version first with: `fgvm install <version>`";
     public static string VersionQueryRequiredInNonInteractiveShell(string command) =>
         $"No version query was provided and `{command}` cannot prompt because the current terminal is not interactive. Pass a version query, for example: `{command} latest`";
+    public static string AmbiguousQueryInNonInteractiveShell(string command, string query, IEnumerable<string> matches) =>
+        $"`{query}` matches {string.Join(", ", matches)} and `{command}` cannot prompt because the current terminal is not " +
+        $"interactive. Narrow the query, for example: `{command} {matches.First()}`";
+
     public static string InstallationFailedNoVersions => "Installation failed and no versions available.";
     public static string UnknownInstallationOutcome => "Unknown installation outcome";
     public static string UnknownInstallationResultType => "Unknown installation result type";

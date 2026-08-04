@@ -94,6 +94,7 @@ public class Program
         services.AddSingleton<IProjectManager, ProjectManager>();
         services.AddSingleton<IInstallationOrchestrator, InstallationOrchestrator>();
         services.AddSingleton<ITemplateOrchestrator, TemplateOrchestrator>();
+        services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IDirectoryRemoval, DirectoryRemoval>();
         services.AddSingleton<IRemovalService, RemovalService>();
         services.AddSingleton<IVersionManagementService, VersionManagementService>();

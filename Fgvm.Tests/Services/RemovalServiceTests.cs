@@ -27,7 +27,7 @@ public sealed class RemovalServiceTests
             .Returns(new Result<bool, FileOperationError>.Success(true));
         hostSystem.Setup(x => x.EnumerateDirectories(installationsPath))
             .Returns(new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(
-                [new HostDirectoryEntry(releasePath, Path.GetFileName(releasePath), FileAttributes.Directory)]));
+                [new HostDirectoryEntry(releasePath, Path.GetFileName(releasePath), FileAttributes.Directory, DateTimeOffset.UtcNow)]));
 
         var pathService = new Mock<IPathService>();
         pathService.SetupGet(x => x.RootPath).Returns(rootPath);

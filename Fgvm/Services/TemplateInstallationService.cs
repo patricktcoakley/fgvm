@@ -129,7 +129,7 @@ public sealed class TemplateInstallationService(
                         $"Unable to create export template directory `{templatesDirectory}`: {templatesDirError}"));
             }
 
-            stagingPath = Path.Combine(templatesDirectory, $".fgvm-template-staging-{Guid.NewGuid():N}");
+            stagingPath = StagedDirectoryNames.CreateTemplateStagingPath(templatesDirectory);
             if (hostSystem.CreateDirectory(stagingPath) is Result<Unit, FileOperationError>.Failure(var stagingError))
             {
                 return new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(

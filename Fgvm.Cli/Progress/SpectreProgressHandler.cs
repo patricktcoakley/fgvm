@@ -88,8 +88,12 @@ public sealed class SpectreProgressHandler(IAnsiConsole console) : IProgressHand
                     value.TotalBytes is { } total &&
                     total > 0)
                 {
-                    task.IsIndeterminate = false;
-                    task.Value = Math.Clamp(downloaded * 100d / total, 0d, 100d);
+                    var percentage = Math.Clamp(downloaded * 100d / total, 0d, 100d);
+                    if (percentage >= task.Value)
+                    {
+                        task.IsIndeterminate = false;
+                        task.Value = percentage;
+                    }
                 }
 
                 context.Refresh();
@@ -97,13 +101,13 @@ public sealed class SpectreProgressHandler(IAnsiConsole console) : IProgressHand
         }
 
         public void Complete(string message = "Completed") =>
-            Stop(message, complete: true);
+            Stop(message, true);
 
         public void Cancel(string message = "Canceled") =>
-            Stop(message, complete: false);
+            Stop(message, false);
 
         public void Fail(string message = "Failed") =>
-            Stop(message, complete: false);
+            Stop(message, false);
 
         private void Stop(string message, bool complete)
         {

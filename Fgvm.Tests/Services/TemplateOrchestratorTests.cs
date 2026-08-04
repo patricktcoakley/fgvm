@@ -173,6 +173,27 @@ public sealed class TemplateOrchestratorTests
     }
 
     [Fact]
+    public async Task SelectForRemovalAsync_WithAmbiguousQueryOnANonInteractiveConsole_Throws()
+    {
+        var query = new[] { "4.6" };
+        var installations = new[]
+        {
+            new TemplateInstallation("4.6.stable", "4.6-stable-standard", RuntimeEnvironment.Standard, "/templates/4.6.stable", null),
+            new TemplateInstallation("4.6.stable.mono", "4.6-stable-mono", RuntimeEnvironment.Mono, "/templates/4.6.stable.mono", null)
+        };
+        _templateRegistry.Setup(x => x.ListInstallations())
+            .Returns(new Result<IReadOnlyList<TemplateInstallation>, TemplateRegistryError>.Success(installations));
+        _releaseManager.Setup(x => x.FilterReleasesByQueryWithoutPlatform(query, It.IsAny<string[]>(), false))
+            .Returns(["4.6-stable-standard", "4.6-stable-mono"]);
+
+        // _console is left non-interactive, which is what a pipe or CI job looks like.
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => _orchestrator.SelectForRemovalAsync(query));
+
+        Assert.Contains("not interactive", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("fgvm template remove", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SelectForRemovalAsync_ResolvesTemplateWithoutDeletingIt()
     {
         var query = new[] { "4.6" };

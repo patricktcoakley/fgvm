@@ -6,7 +6,11 @@ namespace Fgvm.Environment;
 /// <summary>
 ///     Provides host OS and filesystem operations used by fgvm.
 /// </summary>
-public sealed record HostDirectoryEntry(string FullName, string Name, FileAttributes Attributes);
+/// <param name="LastWriteTimeUtc">
+///     Ages out marker directories. Write time rather than creation time, which is not reported consistently
+///     across platforms.
+/// </param>
+public sealed record HostDirectoryEntry(string FullName, string Name, FileAttributes Attributes, DateTimeOffset LastWriteTimeUtc);
 
 public interface IHostSystem
 {
@@ -507,7 +511,7 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
                 .Select(directory =>
                 {
                     var info = new DirectoryInfo(directory);
-                    return new HostDirectoryEntry(info.FullName, info.Name, info.Attributes);
+                    return new HostDirectoryEntry(info.FullName, info.Name, info.Attributes, info.LastWriteTimeUtc);
                 })
                 .ToArray();
 

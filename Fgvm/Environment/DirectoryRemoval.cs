@@ -23,15 +23,22 @@ public interface IDirectoryRemoval
     void Discard(IEnumerable<string> stagedPaths);
 
     /// <summary>
-    ///     Deletes tombstones left behind by an interrupted removal. Never throws, so it is safe to call on startup.
+    ///     Deletes marker directories left behind by an interrupted removal, install, or template extraction. Never
+    ///     throws, so it is safe to call on startup.
     /// </summary>
-    /// <param name="parentDirectories">Directories that removals stage into.</param>
+    /// <param name="parentDirectories">Directories that removals and commits stage into.</param>
     void Sweep(IEnumerable<string> parentDirectories);
 }
 
-public sealed class DirectoryRemoval(IHostSystem hostSystem, ILogger<DirectoryRemoval> logger) : IDirectoryRemoval
+public sealed class DirectoryRemoval(
+    IHostSystem hostSystem,
+    ILogger<DirectoryRemoval> logger,
+    TimeProvider timeProvider
+) : IDirectoryRemoval
 {
-    private const string TombstonePrefix = ".fgvm-removing-";
+    // Unlike a tombstone, staging and backup directories may belong to an install running in another process, and
+    // Sweep runs on every command. Nothing takes a day, so waiting this long removes that race entirely.
+    private static readonly TimeSpan StaleMarkerAge = TimeSpan.FromHours(24);
 
     /// <inheritdoc />
     public Result<IReadOnlyList<string>, FileOperationError> Stage(IEnumerable<string> directoryPaths)
@@ -47,7 +54,7 @@ public sealed class DirectoryRemoval(IHostSystem hostSystem, ILogger<DirectoryRe
                 continue;
             }
 
-            var tombstonePath = CreateTombstonePath(directoryPath);
+            var tombstonePath = StagedDirectoryNames.CreateTombstonePath(directoryPath);
             switch (hostSystem.MoveDirectory(directoryPath, tombstonePath))
             {
                 case Result<Unit, FileOperationError>.Success:
@@ -86,9 +93,12 @@ public sealed class DirectoryRemoval(IHostSystem hostSystem, ILogger<DirectoryRe
             switch (hostSystem.EnumerateDirectories(parentDirectory))
             {
                 case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var entries):
-                    foreach (var entry in entries.Where(entry => IsTombstoneName(entry.Name)))
+                    foreach (var entry in entries)
                     {
-                        Delete(entry.FullName);
+                        if (ShouldDelete(entry))
+                        {
+                            Delete(entry.FullName);
+                        }
                     }
 
                     break;
@@ -114,24 +124,18 @@ public sealed class DirectoryRemoval(IHostSystem hostSystem, ILogger<DirectoryRe
         }
     }
 
-    private static string CreateTombstonePath(string directoryPath)
+    private bool ShouldDelete(HostDirectoryEntry entry)
     {
-        var parentPath = Path.GetDirectoryName(directoryPath) ??
-                         throw new InvalidOperationException($"Removal path `{directoryPath}` has no parent directory.");
-        return Path.Combine(parentPath, $"{TombstonePrefix}{Guid.NewGuid():N}-{Path.GetFileName(directoryPath)}");
-    }
-
-    private static bool IsTombstoneName(string directoryName)
-    {
-        if (!directoryName.StartsWith(TombstonePrefix, StringComparison.Ordinal))
+        if (!StagedDirectoryNames.TryClassify(entry.Name, out var kind))
         {
             return false;
         }
 
-        const int guidLength = 32;
-        var marker = directoryName.AsSpan(TombstonePrefix.Length);
-        return marker.Length > guidLength + 1 &&
-               marker[guidLength] == '-' &&
-               Guid.TryParseExact(marker[..guidLength], "N", out _);
+        if (kind is StagedDirectoryKind.Tombstone)
+        {
+            return true;
+        }
+
+        return timeProvider.GetUtcNow() - entry.LastWriteTimeUtc >= StaleMarkerAge;
     }
 }

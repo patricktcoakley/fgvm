@@ -413,7 +413,7 @@ public sealed class InstallationRegistryTests : IDisposable
         });
         var registry = CreateRegistry();
 
-        var removal = new DirectoryRemoval(_hostSystem.Object, NullLogger<DirectoryRemoval>.Instance);
+        var removal = new DirectoryRemoval(_hostSystem.Object, NullLogger<DirectoryRemoval>.Instance, TimeProvider.System);
         var staged = Assert.IsType<Result<IReadOnlyList<string>, FileOperationError>.Success>(
             removal.Stage([installationPath])).Value;
         var result = registry.Remove($"{NewLayoutRelease}@{Target}");

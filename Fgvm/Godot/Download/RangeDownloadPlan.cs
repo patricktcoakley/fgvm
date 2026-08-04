@@ -4,7 +4,7 @@ using System.Net.Http.Headers;
 namespace Fgvm.Godot.Download;
 
 /// <summary>
-///     Validates the probe response and divides the representation into non-overlapping ranges.
+///     Validates the probe response and divides the entity into non-overlapping ranges.
 /// </summary>
 internal sealed record RangeDownloadPlan(
     long TotalBytes,
@@ -20,7 +20,7 @@ internal sealed record RangeDownloadPlan(
         var range = probeResponse.Content.Headers.ContentRange;
         var validator = RangeEntityValidator.From(probeResponse);
 
-        // Separate requests are safe to combine only when they identify the same representation
+        // Separate requests are safe to combine only when they identify the same entity
         // and the probe describes a valid first range of the complete file.
         if (validator is null ||
             range is not { From: 0, To: { } probeEnd, Length: { } totalBytes } ||
@@ -52,7 +52,7 @@ internal readonly record struct RangeChunk(long Start, long End, HttpResponseMes
 }
 
 /// <summary>
-///     A stable representation identifier sent with If-Range to prevent mixing file versions.
+///     A stable entity identifier sent with If-Range to prevent mixing file versions.
 /// </summary>
 internal sealed record RangeEntityValidator(string? EntityTag, DateTimeOffset? LastModified)
 {

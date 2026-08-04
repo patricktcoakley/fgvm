@@ -548,6 +548,41 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
         return bytes;
     }
 
+    // A source that replaces the file mid-download answers the If-Range requests with the whole new file, so
+    // the only correct recovery is to start over rather than mix the two entities.
+    [Fact]
+    public async Task DownloadAsync_RestartsAndSucceeds_WhenTheFileChangesMidDownload()
+    {
+        var oldContent = CreateRandomBytes(20 * 1024 * 1024 + 777);
+        var newContent = CreateRandomBytes(17 * 1024 * 1024 + 31);
+        var handler = new EntityChangingHandler(oldContent, newContent);
+        using var httpClient = new HttpClient(handler);
+        var destinationPath = Path.Combine(_root, "out.bin");
+
+        var result = await ParallelRangedDownloader.DownloadAsync(
+            httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
+            TestOptions());
+
+        Assert.IsType<Result<Unit, NetworkError>.Success>(result);
+        Assert.True(handler.Changed);
+        Assert.Equal(newContent, await File.ReadAllBytesAsync(destinationPath));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_FailsWithoutLoopingForever_WhenTheFileKeepsChanging()
+    {
+        var handler = new AlwaysChangingHandler(CreateRandomBytes(20 * 1024 * 1024 + 777));
+        using var httpClient = new HttpClient(handler);
+        var destinationPath = Path.Combine(_root, "out.bin");
+
+        var result = await ParallelRangedDownloader.DownloadAsync(
+            httpClient, "https://example.test/file", CreateRequest, destinationPath, null, CancellationToken.None,
+            TestOptions());
+
+        Assert.IsType<Result<Unit, NetworkError>.Failure>(result);
+        Assert.False(File.Exists(destinationPath));
+    }
+
     private static ParallelRangedDownloader.Options TestOptions(int workerCount = 4,
         int maxAttemptsWithoutProgress = 3,
         TimeSpan? stallTimeout = null
@@ -625,6 +660,72 @@ public sealed class ParallelRangedDownloaderTests : IDisposable
 
             public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         }
+    }
+
+    /// <summary>
+    ///     Serves the old entity until the first If-Range request, answers that one with the whole new
+    ///     file as a real server does when the validator stops matching, then serves the new one.
+    /// </summary>
+    private sealed class EntityChangingHandler(byte[] oldContent, byte[] newContent) : HttpMessageHandler
+    {
+        private volatile bool _changed;
+
+        public bool Changed => _changed;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Headers.IfRange is not null && !_changed)
+            {
+                _changed = true;
+                var replaced = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(newContent) };
+                replaced.Headers.ETag = new EntityTagHeaderValue("\"new\"");
+                return Task.FromResult(replaced);
+            }
+
+            return Task.FromResult(CreateRangeResponse(request, _changed ? newContent : oldContent, _changed ? "\"new\"" : "\"old\""));
+        }
+    }
+
+    /// <summary>
+    ///     Answers every If-Range request with the whole file, so the entity never settles.
+    /// </summary>
+    private sealed class AlwaysChangingHandler(byte[] content) : HttpMessageHandler
+    {
+        private int _generation;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Headers.IfRange is not null)
+            {
+                var replaced = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+                replaced.Headers.ETag = new EntityTagHeaderValue($"\"gen-{Interlocked.Increment(ref _generation)}\"");
+                return Task.FromResult(replaced);
+            }
+
+            return Task.FromResult(CreateRangeResponse(
+                request, content, $"\"gen-{Interlocked.Increment(ref _generation)}\""));
+        }
+    }
+
+    private static HttpResponseMessage CreateRangeResponse(HttpRequestMessage request, byte[] content, string etag)
+    {
+        var range = request.Headers.Range?.Ranges.FirstOrDefault();
+        if (range is null)
+        {
+            var whole = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+            whole.Headers.ETag = new EntityTagHeaderValue(etag);
+            return whole;
+        }
+
+        var from = (int)(range.From ?? 0);
+        var to = (int)Math.Min(range.To ?? content.Length - 1, content.Length - 1);
+        var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+        {
+            Content = new ByteArrayContent(content[from..(to + 1)])
+        };
+        response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, to, content.Length);
+        response.Headers.ETag = new EntityTagHeaderValue(etag);
+        return response;
     }
 
     private sealed class RangeAwareHandler(

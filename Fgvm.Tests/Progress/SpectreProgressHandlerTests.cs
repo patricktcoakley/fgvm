@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Fgvm.Cli.Progress;
 using Fgvm.Extensions;
@@ -263,6 +264,66 @@ public class SpectreProgressHandlerTests
         Assert.Matches(@"Editor • Canceled[^\r\n]*\s40%", _testConsole.Output);
     }
 
+    // RangeDownloadProgress guarantees a monotonic sequence of byte counts; this covers the other half of that
+    // chain, that the handler renders them in the order it receives them rather than reordering or dropping any.
+    [Fact]
+    public async Task TrackProgressAsync_RendersRisingByteCountsAsRisingPercentages()
+    {
+        var handler = new SpectreProgressHandler(_testConsole);
+
+        await handler.TrackProgressAsync(session =>
+        {
+            var progress = session.AddOperation<InstallationStage>("Editor");
+            foreach (var downloaded in new long[] { 10, 25, 40, 55, 70, 85, 100 })
+            {
+                progress.Report(new OperationProgress<InstallationStage>(
+                    InstallationStage.Downloading,
+                    $"Downloading {downloaded}",
+                    BytesDownloaded: downloaded,
+                    TotalBytes: 100));
+            }
+
+            progress.Complete();
+            return Task.FromResult(true);
+        });
+
+        var percentages = RenderedPercentages(_testConsole.Output);
+
+        Assert.NotEmpty(percentages);
+        Assert.Equal(percentages.OrderBy(percentage => percentage), percentages);
+        Assert.Equal(100, percentages[^1]);
+    }
+
+    // Defence in depth for the bar itself: whatever a producer does, a rendered percentage never slides backwards.
+    [Fact]
+    public async Task TrackProgressAsync_NeverRendersAPercentageLowerThanOneAlreadyShown()
+    {
+        var handler = new SpectreProgressHandler(_testConsole);
+
+        await handler.TrackProgressAsync(session =>
+        {
+            var progress = session.AddOperation<InstallationStage>("Editor");
+            foreach (var downloaded in new long[] { 10, 60, 30, 90, 50, 80 })
+            {
+                progress.Report(new OperationProgress<InstallationStage>(
+                    InstallationStage.Downloading,
+                    $"Downloading {downloaded}",
+                    BytesDownloaded: downloaded,
+                    TotalBytes: 100));
+            }
+
+            progress.Complete();
+            return Task.FromResult(true);
+        });
+
+        var percentages = RenderedPercentages(_testConsole.Output);
+
+        Assert.NotEmpty(percentages);
+        Assert.Equal(percentages.OrderBy(percentage => percentage), percentages);
+        // The highest value reported still wins; dropping the stale reports must not cap the bar.
+        Assert.Equal(100, percentages[^1]);
+    }
+
     [Fact]
     public async Task TrackProgressAsync_ResetsMeasuredProgressWhenStageChanges()
     {
@@ -303,6 +364,12 @@ public class SpectreProgressHandlerTests
             .Select(match => match.Value)
             .Distinct(StringComparer.Ordinal)
             .Count();
+
+    // The percentage column is the only place the handler's numeric progress reaches the screen.
+    private static int[] RenderedPercentages(string output) =>
+        Regex.Matches(output, @"(?<percentage>\d{1,3})%")
+            .Select(match => int.Parse(match.Groups["percentage"].Value, CultureInfo.InvariantCulture))
+            .ToArray();
 
     private static async Task<string> RenderSingleReport(InstallationStage stage)
     {

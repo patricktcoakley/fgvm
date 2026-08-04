@@ -82,6 +82,12 @@ public sealed class RemoveCommand(
             }
             else
             {
+                if (!console.Profile.Capabilities.Interactive)
+                {
+                    throw new ArgumentException(Messages.AmbiguousQueryInNonInteractiveShell(
+                        "fgvm remove", string.Join(' ', query), filteredInstallations));
+                }
+
                 versionsToDelete = await Prompts.Remove.ShowVersionRemovalPrompt(filteredInstallations, console, cancellationToken);
             }
 
@@ -152,6 +158,11 @@ public sealed class RemoveCommand(
             logger.LogError("User cancelled removal.");
             console.MarkupLine(Messages.UserCancelled("removal"));
 
+            throw;
+        }
+        // Argument errors carry their own actionable message and exit code; the generic notice below would bury it.
+        catch (ArgumentException)
+        {
             throw;
         }
         catch (Exception e)

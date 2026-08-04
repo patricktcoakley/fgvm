@@ -865,6 +865,11 @@ public class VersionManagementService(
                 throw new ArgumentException(Messages.NoVersionsInstalledPrompt);
             }
 
+            if (!console.Profile.Capabilities.Interactive)
+            {
+                throw new ArgumentException(Messages.VersionQueryRequiredInNonInteractiveShell("fgvm local"));
+            }
+
             console.MarkupLine(Messages.ProjectSpecifiesVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
             console.MarkupLine(Messages.ChooseFromInstalled);
             return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);

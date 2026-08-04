@@ -454,6 +454,51 @@ public class RemoveCommandTests : IDisposable
         _mockInstallationRegistry.Verify(x => x.GetDefault(), Times.Once);
     }
 
+    // A non-interactive console cannot show the selection prompt, so an ambiguous query has to fail with a message
+    // the user can act on rather than the prompt's own "terminal isn't interactive" crash.
+    [Fact]
+    public async Task Remove_WithAmbiguousQueryOnANonInteractiveConsole_ThrowsWithAnActionableMessage()
+    {
+        var installedVersions = new[] { "4.3.0-stable", "4.3.0-mono", "4.2.0-stable" };
+        var query = new[] { "4.3.0" };
+        var filteredVersions = new[] { "4.3.0-stable", "4.3.0-mono" };
+
+        SetupInstallations(installedVersions);
+        _mockReleaseManager.Setup(x => x.FilterReleasesByQuery(query, installedVersions, false))
+            .Returns(filteredVersions);
+
+        // Left non-interactive: TestConsole defaults to it, which is what a pipe or CI job looks like.
+        var testConsole = new TestConsole();
+        var removeCommand = CreateRemoveCommandWithConsole(testConsole);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            removeCommand.Remove(cancellationToken: CancellationToken.None, query: query));
+
+        Assert.Contains("4.3.0-stable", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("4.3.0-mono", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("not interactive", exception.Message, StringComparison.Ordinal);
+        // The generic failure notice would bury the actionable message above.
+        Assert.DoesNotContain("Something went wrong", testConsole.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Remove_WithASingleMatchOnANonInteractiveConsole_StillRemoves()
+    {
+        var installedVersions = new[] { "4.3.0-stable", "4.2.0-stable" };
+        var query = new[] { "4.3.0" };
+
+        SetupInstallationsSequence(installedVersions, ["4.2.0-stable"]);
+        _mockReleaseManager.Setup(x => x.FilterReleasesByQuery(query, installedVersions, false))
+            .Returns(["4.3.0-stable"]);
+
+        var testConsole = new TestConsole();
+        var removeCommand = CreateRemoveCommandWithConsole(testConsole);
+
+        await removeCommand.Remove(cancellationToken: CancellationToken.None, query: query);
+
+        _mockInstallationRegistry.Verify(x => x.Remove(It.IsAny<string>()), Times.Once);
+    }
+
     [Fact]
     public async Task Remove_WhenUserCancelsPrompt_ThrowsOperationCanceledException()
     {
@@ -582,7 +627,7 @@ public class RemoveCommandTests : IDisposable
     {
         var hostSystem = new HostSystem(new SystemInfo(), _mockPathService.Object, NullLogger<HostSystem>.Instance);
         return new RemovalService(
-            new DirectoryRemoval(hostSystem, NullLogger<DirectoryRemoval>.Instance),
+            new DirectoryRemoval(hostSystem, NullLogger<DirectoryRemoval>.Instance, TimeProvider.System),
             hostSystem,
             _mockPathService.Object,
             _mockGodotPathService.Object,
