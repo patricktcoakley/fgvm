@@ -15,7 +15,7 @@ public sealed class DirectoryRemovalTests : IDisposable
     public DirectoryRemovalTests()
     {
         Directory.CreateDirectory(_root);
-        _removal = new DirectoryRemoval(CreateHostSystem(), NullLogger<DirectoryRemoval>.Instance);
+        _removal = new DirectoryRemoval(CreateHostSystem(), NullLogger<DirectoryRemoval>.Instance, TimeProvider.System);
     }
 
     public void Dispose()
@@ -115,7 +115,7 @@ public sealed class DirectoryRemovalTests : IDisposable
                 return new Result<Unit, FileOperationError>.Success(Unit.Value);
             });
 
-        var removal = new DirectoryRemoval(hostSystem.Object, NullLogger<DirectoryRemoval>.Instance);
+        var removal = new DirectoryRemoval(hostSystem.Object, NullLogger<DirectoryRemoval>.Instance, TimeProvider.System);
 
         var staged = AssertStaged(removal.Stage([lowercasePath, uppercasePath]));
 
@@ -131,7 +131,7 @@ public sealed class DirectoryRemovalTests : IDisposable
         var second = CreateDirectory("templates");
         var removal = new DirectoryRemoval(
             CreateHostSystem(failMoveFrom: second),
-            NullLogger<DirectoryRemoval>.Instance);
+            NullLogger<DirectoryRemoval>.Instance, TimeProvider.System);
 
         var result = removal.Stage([first, second]);
 
@@ -223,7 +223,7 @@ public sealed class DirectoryRemovalTests : IDisposable
         var staged = AssertStaged(_removal.Stage([installationPath]));
         var removal = new DirectoryRemoval(
             CreateHostSystem(failDeleteOf: staged[0]),
-            NullLogger<DirectoryRemoval>.Instance);
+            NullLogger<DirectoryRemoval>.Instance, TimeProvider.System);
 
         // Sweep runs on startup; throwing here would take down whatever command the user ran
         removal.Sweep([_root]);
@@ -244,7 +244,7 @@ public sealed class DirectoryRemovalTests : IDisposable
             .Returns(new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(
                 new FileOperationError.PermissionDenied(_root)));
 
-        new DirectoryRemoval(hostSystem.Object, NullLogger<DirectoryRemoval>.Instance).Sweep([_root]);
+        new DirectoryRemoval(hostSystem.Object, NullLogger<DirectoryRemoval>.Instance, TimeProvider.System).Sweep([_root]);
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public sealed class DirectoryRemovalTests : IDisposable
         var staged = AssertStaged(_removal.Stage([installationPath]));
         var removal = new DirectoryRemoval(
             CreateHostSystem(failDeleteOf: staged[0]),
-            NullLogger<DirectoryRemoval>.Instance);
+            NullLogger<DirectoryRemoval>.Instance, TimeProvider.System);
 
         // The removal already happened; a failed delete waits for the next sweep
         removal.Discard(staged);
@@ -314,4 +314,109 @@ public sealed class DirectoryRemovalTests : IDisposable
     }
 
     private string[] Tombstones() => Directory.GetDirectories(_root, ".*removing-*");
+
+    private DirectoryRemoval CreateRemovalAt(DateTimeOffset now) =>
+        new(CreateHostSystem(), NullLogger<DirectoryRemoval>.Instance, new StubTimeProvider(now));
+
+    private string CreateMarker(string name, TimeSpan age)
+    {
+        var path = Path.Combine(_root, name);
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "contents.txt"), "contents");
+        Directory.SetLastWriteTimeUtc(path, DateTime.UtcNow - age);
+        return path;
+    }
+
+    [Fact]
+    public void Sweep_LeavesARecentStagingDirectoryAlone()
+    {
+        var staging = CreateMarker($".fgvm-staging-{Guid.NewGuid():N}", TimeSpan.FromMinutes(5));
+
+        _removal.Sweep([_root]);
+
+        Assert.True(Directory.Exists(staging));
+    }
+
+    [Fact]
+    public void Sweep_LeavesARecentBackupAlone()
+    {
+        var backup = CreateMarker($".backup-{Guid.NewGuid():N}-editor", TimeSpan.FromMinutes(5));
+
+        _removal.Sweep([_root]);
+
+        Assert.True(Directory.Exists(backup));
+    }
+
+    [Fact]
+    public void Sweep_DeletesAStaleStagingDirectory()
+    {
+        var staging = CreateMarker($".fgvm-staging-{Guid.NewGuid():N}", TimeSpan.FromDays(3));
+
+        _removal.Sweep([_root]);
+
+        Assert.False(Directory.Exists(staging));
+    }
+
+    [Fact]
+    public void Sweep_DeletesAStaleTemplateStagingDirectory()
+    {
+        var staging = CreateMarker($".fgvm-template-staging-{Guid.NewGuid():N}", TimeSpan.FromDays(3));
+
+        _removal.Sweep([_root]);
+
+        Assert.False(Directory.Exists(staging));
+    }
+
+    [Fact]
+    public void Sweep_DeletesAStaleBackup()
+    {
+        var backup = CreateMarker($".backup-{Guid.NewGuid():N}-editor", TimeSpan.FromDays(3));
+
+        _removal.Sweep([_root]);
+
+        Assert.False(Directory.Exists(backup));
+    }
+
+    // A tombstone's content is already doomed, so age is irrelevant to it.
+    [Fact]
+    public void Sweep_DeletesAFreshTombstone()
+    {
+        var installationPath = CreateDirectory("editor");
+        var staged = AssertStaged(_removal.Stage([installationPath]));
+
+        _removal.Sweep([_root]);
+
+        Assert.False(Directory.Exists(staged[0]));
+    }
+
+    [Fact]
+    public void Sweep_NeverTouchesDirectoriesThatAreNotOurs()
+    {
+        var installation = CreateDirectory("4.3-stable");
+        var lookalike = CreateMarker(".backup-notes", TimeSpan.FromDays(30));
+        var dotted = CreateMarker(".config", TimeSpan.FromDays(30));
+
+        _removal.Sweep([_root]);
+
+        Assert.True(Directory.Exists(installation));
+        Assert.True(Directory.Exists(lookalike));
+        Assert.True(Directory.Exists(dotted));
+    }
+
+    [Fact]
+    public void Sweep_UsesTheClockRatherThanWallTime()
+    {
+        var staging = CreateMarker($".fgvm-staging-{Guid.NewGuid():N}", TimeSpan.FromHours(1));
+
+        CreateRemovalAt(DateTimeOffset.UtcNow + TimeSpan.FromHours(22)).Sweep([_root]);
+        Assert.True(Directory.Exists(staging));
+
+        CreateRemovalAt(DateTimeOffset.UtcNow + TimeSpan.FromHours(25)).Sweep([_root]);
+        Assert.False(Directory.Exists(staging));
+    }
+
+    private sealed class StubTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 }

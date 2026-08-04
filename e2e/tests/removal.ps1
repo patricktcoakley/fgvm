@@ -14,6 +14,25 @@ Suite "removal" {
         Assert.Equal @($stable.Name) @((Json $list.Stdout).name)
     }
 
+    # The e2e harness redirects output, so it is non-interactive exactly like a script or CI job. An ambiguous
+    # query cannot show its selection prompt there and has to fail with something the user can act on.
+    Test "reports an actionable error for an ambiguous query instead of crashing" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        Add-FixtureInstallation "4.6.2-stable" "mono" | Out-Null
+
+        $remove = Run "remove" "4.6.2"
+        $list = Run "list" "--json"
+
+        # Console width wraps the message at an arbitrary point, so collapse whitespace before matching.
+        $normalized = ($remove.Stdout -replace "\s+", " ").Trim()
+
+        Assert.ExitCode 2 $remove "fgvm remove with an ambiguous query"
+        Assert.Contains "not interactive" $normalized
+        Assert.Contains "Narrow the query" $normalized
+        Assert.NotContains "Something went wrong" $normalized "The actionable message should not be buried."
+        Assert.Equal 2 @((Json $list.Stdout)).Count "Nothing should be removed when the query is ambiguous."
+    }
+
     Test "removes only the requested runtime" {
         $standard = Add-FixtureInstallation "4.6.2-stable" -Default
         $mono = Add-FixtureInstallation "4.6.2-stable" "mono"

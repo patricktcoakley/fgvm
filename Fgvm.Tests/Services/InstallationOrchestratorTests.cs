@@ -64,6 +64,16 @@ public sealed class InstallationOrchestratorTests : IDisposable
         }
     }
 
+    // This guard already existed but had no test, which is how four sibling prompt sites drifted without one.
+    [Fact]
+    public async Task InstallAsync_WithNoQueryOnANonInteractiveConsole_Throws()
+    {
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => _orchestrator.InstallAsync([]));
+
+        Assert.Contains("not interactive", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("fgvm install", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task InstallAsync_InstalledRelease_ReturnsAlreadyInstalledAndSkipsInstall()
     {

@@ -26,7 +26,8 @@ public static class StagedDirectoryCommitter
         ILogger logger
     )
     {
-        var backupPath = CreateBackupPath(destinationPath);
+        // Kept in the destination's own parent so the backup is a same-volume rename.
+        var backupPath = StagedDirectoryNames.CreateBackupPath(destinationPath);
         var backupMoved = false;
 
         if (DirectoryExists(hostSystem, destinationPath))
@@ -91,15 +92,6 @@ public static class StagedDirectoryCommitter
             logger.LogWarning("Failed to restore {DestinationPath} from backup {BackupPath} after a commit error: {Error}",
                 destinationPath, backupPath, error);
         }
-    }
-
-    // Kept in the destination's own parent so the backup is a same-volume rename, and dot-prefixed so a hard kill
-    // mid-commit leaves something both registries skip rather than a directory they scan as an installation.
-    private static string CreateBackupPath(string destinationPath)
-    {
-        var parentPath = Path.GetDirectoryName(destinationPath) ??
-                         throw new InvalidOperationException($"Destination path `{destinationPath}` has no parent directory.");
-        return Path.Combine(parentPath, $".backup-{Guid.NewGuid():N}-{Path.GetFileName(destinationPath)}");
     }
 
     private static bool DirectoryExists(IHostSystem hostSystem, string path) =>

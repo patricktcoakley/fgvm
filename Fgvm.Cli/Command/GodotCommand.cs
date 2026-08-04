@@ -80,6 +80,12 @@ public sealed class GodotCommand(
                     return;
                 }
 
+                if (!console.Profile.Capabilities.Interactive)
+                {
+                    throw new ArgumentException(Messages.AmbiguousQueryInNonInteractiveShell(
+                        "fgvm godot", query, installed));
+                }
+
                 var selection = await Prompts.Godot.ShowGodotSelectionPrompt(installed, console, cancellationToken);
                 versionResult = versionManagementService.ResolveInteractiveVersion(selection);
             }

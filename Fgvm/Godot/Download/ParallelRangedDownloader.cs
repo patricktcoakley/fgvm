@@ -17,6 +17,9 @@ public readonly record struct DownloadProgress(long BytesDownloaded, long? Total
 /// </summary>
 internal static class ParallelRangedDownloader
 {
+    // The initial attempt plus one restart for an entity that changed underneath it.
+    private const int MaxEntityChangeAttempts = 2;
+
     internal static async Task<Result<Unit, NetworkError>> DownloadAsync(HttpClient httpClient,
         string sourceUrl,
         Func<RangeHeaderValue?, HttpRequestMessage> createRequest,
@@ -32,36 +35,22 @@ internal static class ParallelRangedDownloader
 
         try
         {
-            // The destination is written directly, so never leave an older file in place.
-            File.Delete(destinationPath);
-            using var probeResponse = await transfer.ProbeAsync(cancellationToken);
-            var resolvedSourceUrl = probeResponse.RequestMessage?.RequestUri?.AbsoluteUri ?? sourceUrl;
-            progress?.Report(new DownloadProgress(0, null, resolvedSourceUrl));
-
-            switch (probeResponse.StatusCode)
+            // One restart covers a file replaced mid-download; an unlimited one would spin on a source that
+            // changes constantly.
+            for (var attempt = 1; attempt <= MaxEntityChangeAttempts; attempt++)
             {
-                case HttpStatusCode.OK:
-                    // The server ignored Range and returned the complete body; keep reading it.
-                    await transfer.DownloadSequentialAsync(probeResponse, destinationPath, progress, cancellationToken);
-                    return new Result<Unit, NetworkError>.Success(Unit.Value);
-
-                case HttpStatusCode.PartialContent
-                    when RangeDownloadPlan.TryCreate(probeResponse, options.ChunkSize, out var plan):
-                    await DownloadRangesAsync(transfer, plan, destinationPath, progress, options, cancellationToken);
-                    return new Result<Unit, NetworkError>.Success(Unit.Value);
-
-                case HttpStatusCode.PartialContent:
-                    // Parallel requests need a stable validator and a complete Content-Range.
-                    // Start a normal request when the probe cannot guarantee both.
-                    probeResponse.Dispose();
-                    await transfer.DownloadSequentialAsync(null, destinationPath, progress, cancellationToken);
-                    return new Result<Unit, NetworkError>.Success(Unit.Value);
-
-                default:
-                    var responseBody = await probeResponse.Content.ReadAsStringAsync(cancellationToken);
-                    return new Result<Unit, NetworkError>.Failure(
-                        new NetworkError.RequestFailure(sourceUrl, probeResponse.StatusCode, responseBody));
+                try
+                {
+                    return await AttemptDownloadAsync(
+                        transfer, sourceUrl, destinationPath, progress, options, cancellationToken);
+                }
+                catch (Exception ex) when (attempt < MaxEntityChangeAttempts && IsEntityChanged(ex))
+                {
+                    File.Delete(destinationPath);
+                }
             }
+
+            throw new InvalidOperationException("Download restart started without an available attempt.");
         }
         catch (OperationCanceledException cancellationError) when (cancellationToken.IsCancellationRequested)
         {
@@ -94,6 +83,52 @@ internal static class ParallelRangedDownloader
         }
     }
 
+    private static bool IsEntityChanged(Exception exception) => exception switch
+    {
+        EntityChangedException => true,
+        AggregateException aggregate => aggregate.Flatten().InnerExceptions.Any(inner => inner is EntityChangedException),
+        _ => false
+    };
+
+    private static async Task<Result<Unit, NetworkError>> AttemptDownloadAsync(HttpRangeTransfer transfer,
+        string sourceUrl,
+        string destinationPath,
+        IProgress<DownloadProgress>? progress,
+        Options options,
+        CancellationToken cancellationToken
+    )
+    {
+        // The destination is written directly, so never leave an older file in place.
+        File.Delete(destinationPath);
+        using var probeResponse = await transfer.ProbeAsync(cancellationToken);
+        var resolvedSourceUrl = probeResponse.RequestMessage?.RequestUri?.AbsoluteUri ?? sourceUrl;
+        progress?.Report(new DownloadProgress(0, null, resolvedSourceUrl));
+
+        switch (probeResponse.StatusCode)
+        {
+            case HttpStatusCode.OK:
+                // The server ignored Range and returned the complete body; keep reading it.
+                await transfer.DownloadSequentialAsync(probeResponse, destinationPath, progress, cancellationToken);
+                return new Result<Unit, NetworkError>.Success(Unit.Value);
+
+            case HttpStatusCode.PartialContent
+                when RangeDownloadPlan.TryCreate(probeResponse, options.ChunkSize, out var plan):
+                await DownloadRangesAsync(transfer, plan, destinationPath, progress, options, cancellationToken);
+                return new Result<Unit, NetworkError>.Success(Unit.Value);
+
+            case HttpStatusCode.PartialContent:
+                // Parallel requests need a stable validator and a complete Content-Range.
+                // Start a normal request when the probe cannot guarantee both.
+                await transfer.DownloadSequentialAsync(null, destinationPath, progress, cancellationToken);
+                return new Result<Unit, NetworkError>.Success(Unit.Value);
+
+            default:
+                var responseBody = await probeResponse.Content.ReadAsStringAsync(cancellationToken);
+                return new Result<Unit, NetworkError>.Failure(
+                    new NetworkError.RequestFailure(sourceUrl, probeResponse.StatusCode, responseBody));
+        }
+    }
+
     private static async Task DownloadRangesAsync(HttpRangeTransfer transfer,
         RangeDownloadPlan plan,
         string destinationPath,
@@ -117,6 +152,8 @@ internal static class ParallelRangedDownloader
             },
             async (chunk, token) => await transfer.DownloadRangeAsync(
                 chunk, plan.TotalBytes, plan.Validator, handle, downloadProgress, token));
+
+        downloadProgress.ReportCompleted();
     }
 
     private static void ValidateOptions(Options options)
@@ -131,9 +168,9 @@ internal static class ParallelRangedDownloader
 
     internal sealed record Options
     {
-        // Fixed defaults keep resource use predictable while still overlapping network reads. The chunk size was
-        // chosen by measurement: it is deliberately small enough that a typical release archive yields several
-        // chunks per worker, so the pool stays saturated instead of idling on a handful of large ranges.
+        // Fixed defaults keep resource use predictable while still overlapping network reads.
+        // The chunk size was chosen by measurement: it is small enough that a typical release
+        // archive yields several chunks per worker in order to stay saturated.
         public long ChunkSize { get; init; } = 8L * ByteSize.Mebibyte;
         public int WorkerCount { get; init; } = 8;
         // Probe and sequential retries make no durable progress. Ranged recovery resets this

@@ -6,6 +6,12 @@ using Microsoft.Win32.SafeHandles;
 namespace Fgvm.Godot.Download;
 
 /// <summary>
+///     Raised when the source's entity changes mid-download. Distinct from a transient failure: retrying
+///     the range cannot help, only restarting the whole download can.
+/// </summary>
+internal sealed class EntityChangedException(string message) : IOException(message);
+
+/// <summary>
 ///     Owns HTTP validation, timeouts, retries, and writing response bytes to disk.
 /// </summary>
 internal sealed class HttpRangeTransfer(
@@ -175,6 +181,14 @@ internal sealed class HttpRangeTransfer(
             {
                 throw new TransientDownloadException(
                     $"Range {chunk.Start}-{chunk.End} returned {response.StatusCode.Describe()}.");
+            }
+
+            // The probe proved this source honours Range, so a 200 here means the If-Range validator stopped
+            // matching and the bytes already on disk belong to an entity that no longer exists.
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                throw new EntityChangedException(
+                    $"The file changed while downloading; range {chunk.Start}-{chunk.End} returned the whole file.");
             }
 
             throw new IOException(

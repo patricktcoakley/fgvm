@@ -249,7 +249,7 @@ public sealed class TemplateCommandTests
     {
         var hostSystem = new HostSystem(new SystemInfo(), pathService, NullLogger<HostSystem>.Instance);
         return new RemovalService(
-            new DirectoryRemoval(hostSystem, NullLogger<DirectoryRemoval>.Instance),
+            new DirectoryRemoval(hostSystem, NullLogger<DirectoryRemoval>.Instance, TimeProvider.System),
             hostSystem,
             pathService,
             godotPathService,

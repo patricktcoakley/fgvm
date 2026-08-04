@@ -193,7 +193,7 @@ public class InstallationService(
                         $"Unable to create installation directory `{installationDirectory}`: {installDirError}"));
             }
 
-            stagingPath = Path.Combine(installationDirectory, $".fgvm-staging-{Guid.NewGuid():N}");
+            stagingPath = StagedDirectoryNames.CreateInstallStagingPath(installationDirectory);
             await ZipArchiveExtensions.ExtractWithFlatteningSupportAsync(
                 archivePath,
                 stagingPath,

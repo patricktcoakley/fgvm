@@ -158,6 +158,12 @@ public sealed class TemplateOrchestrator(
         }
         else
         {
+            if (!console.Profile.Capabilities.Interactive)
+            {
+                throw new ArgumentException(Messages.AmbiguousQueryInNonInteractiveShell(
+                    "fgvm template remove", string.Join(' ', query), filtered));
+            }
+
             releasesToRemove = await Remove.ShowVersionRemovalPrompt(filtered, console, cancellationToken);
         }
 
