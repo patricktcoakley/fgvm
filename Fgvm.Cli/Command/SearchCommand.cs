@@ -31,11 +31,11 @@ public sealed class SearchCommand(
     [Command("search|s")]
     public async Task Search(bool json = false,
         bool noCache = false,
-        [Argument] string[]? query = null,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        [Argument] params string[] query
     )
     {
-        var searchQuery = query ?? [];
+        var searchQuery = query;
         var fetchMode = noCache ? ReleaseFetchMode.ForceRemote : ReleaseFetchMode.UseCache;
 
         Task<Result<IEnumerable<string>, NetworkError>> SearchAsync() =>
