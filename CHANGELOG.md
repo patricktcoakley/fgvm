@@ -1,5 +1,21 @@
 # Changelog
 
+<a name="2.4.0"></a>
+## [2.4.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.4.0) (2026-08-05)
+
+### ✨ Features
+
+* Add a verbose flag to commands doing HTTP operations. ([2f722c1](https://github.com/patricktcoakley/fgvm/commit/2f722c17c99794440fcf63a3fbb6203d083cac79))
+* Enhance HTTP performance signficantly by improving recovery and changing worker defaults. ([20e2a9d](https://github.com/patricktcoakley/fgvm/commit/20e2a9d4f1d3d3b755e457b6702eee420b5685b8))
+* Introduce a more robust downloader that uses response ranges to improve performance and have better recovery. ([cd71bc0](https://github.com/patricktcoakley/fgvm/commit/cd71bc0f1a8f65a041f8c35054a5666d874503d5))
+* Signficantly improve ZIP file handling performance; add a safer way to rollback failed extractions. ([f2599a3](https://github.com/patricktcoakley/fgvm/commit/f2599a3bce503c42633c11896dd6b8f99199fa43))
+
+### 🐛 Bug Fixes
+
+* Retry logic in HTTP client code. ([bde56db](https://github.com/patricktcoakley/fgvm/commit/bde56db24377d4821bd44e5711fdfb29739360a3))
+* Search queries properly migrated to multi-part. ([a4f1f28](https://github.com/patricktcoakley/fgvm/commit/a4f1f28edc519a0b2030440768ce61d6ddee765c))
+* Sweep staging and backup directories left by an interrupted install. ([05fe920](https://github.com/patricktcoakley/fgvm/commit/05fe920e83968bf6a7ce1a48b03136590a9cfdf4))
+
 <a name="2.3.0"></a>
 ## [2.3.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.3.0) (2026-06-30)
 
