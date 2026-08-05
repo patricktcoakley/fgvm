@@ -53,6 +53,45 @@ public sealed class SearchCommandTests
     }
 
     [Fact]
+    public async Task SearchCommand_ForwardsEveryQueryWordToTheReleaseManager()
+    {
+        var query = new[] { "4.6", "rc" };
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.SearchRemoteReleases(query, ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.6.2-rc2"]));
+
+        var command = CreateCommand(releaseManager.Object, out _);
+
+        await command.Search(cancellationToken: CancellationToken.None, query: query);
+
+        releaseManager.Verify(
+            x => x.SearchRemoteReleases(query, ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SearchCommand_ForwardsQueryAlongsideItsOptions()
+    {
+        var query = new[] { "4.6", "rc" };
+        var releaseManager = new Mock<IReleaseManager>();
+        releaseManager.Setup(x => x.SearchRemoteReleases(query, ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Success(["4.6.2-rc2"]));
+
+        var command = CreateCommand(releaseManager.Object, out var console);
+
+        await command.Search(true, true, CancellationToken.None, query);
+
+        releaseManager.Verify(
+            x => x.SearchRemoteReleases(query, ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        var entries = JsonSerializer.Deserialize<List<RemoteReleaseView>>(console.Output.Trim(), SerializerOptions);
+        Assert.NotNull(entries);
+        var entry = Assert.Single(entries);
+        Assert.Equal("4.6.2-rc2", entry.Name);
+    }
+
+    [Fact]
     public async Task SearchCommand_NoCache_ForcesRemoteFetch()
     {
         var releaseManager = new Mock<IReleaseManager>();

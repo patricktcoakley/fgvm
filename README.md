@@ -84,6 +84,38 @@ scoop bucket add patricktcoakley https://github.com/patricktcoakley/scoop-bucket
 scoop install patricktcoakley/fgvm
 ```
 
+#### Container Images
+
+Each release publishes two multi-architecture images (`linux/amd64` and `linux/arm64`) to the GitHub Container Registry:
+
+| Image | Contents | Use it when |
+| --- | --- | --- |
+| `ghcr.io/patricktcoakley/fgvm` | fgvm on a minimal chiselled base | You only need to manage installations, such as downloading a Godot version to hand off to another stage. |
+| `ghcr.io/patricktcoakley/fgvm-godot` | fgvm plus Godot's Linux runtime libraries and `xvfb` | You need to actually run Godot in the container, such as headless exports or CI test runs. |
+
+> **Note:** The slim `fgvm` image omits Godot's runtime dependencies, so an installed editor will not launch there. Use `fgvm-godot` whenever you intend to run Godot rather than just install it.
+
+Both images set `ENTRYPOINT` to `fgvm`, so pass commands directly:
+
+```shell
+docker run --rm ghcr.io/patricktcoakley/fgvm search 4.4
+```
+
+Both also run as UID 1654 with `FGVM_HOME=/fgvm` and a working directory of `/workspace`. Installations live under `FGVM_HOME`, which is lost when the container exits, so mount a volume to keep them
+across runs and mount your project at `/workspace`:
+
+```shell
+docker run --rm -v fgvm-home:/fgvm ghcr.io/patricktcoakley/fgvm-godot install --default latest
+docker run --rm -v fgvm-home:/fgvm -v "$PWD":/workspace ghcr.io/patricktcoakley/fgvm-godot godot -P --args "--headless --export-release Linux/X11 build/game"
+```
+
+Images are tagged `latest`, the full version, `<major>.<minor>`, and `<major>`, so pin to whichever width suits you:
+
+```shell
+docker pull ghcr.io/patricktcoakley/fgvm:2.3.0  # Exact release.
+docker pull ghcr.io/patricktcoakley/fgvm:2      # Latest 2.x.
+```
+
 ### Install Scripts
 
 If you do not want to use a package manager, the install scripts download the latest release, verify its SHA-256 checksum, install `fgvm`, and update your user environment.
@@ -287,14 +319,15 @@ but here is a detailed summary of the available commands:
 
 > **Note:** Many commands support short-form aliases for faster usage (e.g., `fgvm i` for `fgvm install`, `fgvm g` for `fgvm godot`).
 
-> **Note:** Commands that take a `[<...strings>]` query read every remaining word as part of that query, so options must come before it: `fgvm install --default 4.4.1`, not
-> `fgvm install 4.4.1 --default`. An option placed after the query is treated as another query word rather than an option.
+> **Note:** Due to earlier dependency choices and not wanting to break the API if possible, options come before the query on every command that takes a `[<...strings>]` query, so `fgvm install --default 4.4.1` rather than `fgvm install 4.4.1 --default`.
+> Everything after the query starts is read as another query word, so a trailing option never takes effect: some commands reject it as an invalid query word, and others ignore it and exit `0`.
 
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
-- `fgvm install` or `fgvm i` `[<...strings>]` [`-D|--default`] [`--with-templates`] will prompt the user to install a version if no arguments are supplied, or will
+- `fgvm install` or `fgvm i` `[<...strings>]` [`-D|--default`] [`--with-templates`] [`-V|--verbose`] will prompt the user to install a version if no arguments are supplied, or will
   try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
   Use `--with-templates` to install the matching official export template package after editor installation succeeds. If template installation fails, fgvm keeps the editor installation and prints a warning.
+  Use `--verbose` (or `-V`) to show each download source as it is tried, which is useful when diagnosing a slow or failing download.
     - Queries:
         - `latest` or `latest standard` will install the latest stable, and `latest mono` will install the latest .NET stable.
         - `4 mono` will grab the latest stable 4.x .NET release, `3.3 rc` will grab the latest rc of 3.3 standard, `1` would take the last stable version `1`, and so on.
@@ -320,10 +353,12 @@ but here is a detailed summary of the available commands:
   exists and no arguments are provided, it will automatically detect the project version from `project.godot` and install the most recent compatible version if not already installed.
     - If a list of arguments are provided, it will find the best matching version based on the query (including runtime preferences like `mono` or `standard`) and install it if necessary.
 - `fgvm which` `[<...strings>]` displays the executable path for the effective Godot installation in the current directory: `.fgvm-version` first, then the global default. If query arguments are supplied, it resolves them against installed versions instead. The command prints only the executable path on success and exits non-zero when no version can be resolved.
-- `fgvm remove` or `fgvm r` `[<...strings>]` prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
+- `fgvm remove` or `fgvm r` `[<...strings>]` [`--with-templates`] prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if you remove a specific version, like
       `4.4.1-stable-mono`, it will just delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
+    - Use `--with-templates` to also remove the export templates matching each removed editor, such as `fgvm remove --with-templates 4.4.1`. Without it, removing an editor leaves its export
+      templates in place, and you would need `fgvm template remove` to clean them up separately.
 - `fgvm logs` [`--json`] [`-l|--level <string>`] [`-m|--message <string>`] displays all of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
 - `fgvm search` or `fgvm s` `[<...strings>]` [`-j|--json`] [`-F|--no-cache`] takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
   and `--no-cache` or `-F` to force a remote refresh instead of using the local release cache.
@@ -331,7 +366,7 @@ but here is a detailed summary of the available commands:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
         - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2-rc3`
 - `fgvm template` or `fgvm t` manages Godot export templates.
-    - `fgvm template install` or `fgvm template i` `[<...strings>]` [`--force`] installs the official export template package for an installed Godot version. With no query, fgvm prompts from local Godot installations. With a query, it resolves against local Godot installations only, such as `fgvm template install 4.4.1` or `fgvm template install 4.4.1 mono`.
+    - `fgvm template install` or `fgvm template i` `[<...strings>]` [`--force`] [`-V|--verbose`] installs the official export template package for an installed Godot version. With no query, fgvm prompts from local Godot installations. With a query, it resolves against local Godot installations only, such as `fgvm template install 4.4.1` or `fgvm template install 4.4.1 mono`. Use `--force` to replace export templates that are already installed for the selected version, and `--verbose` (or `-V`) to show each download source as it is tried.
     - `fgvm template list` or `fgvm template l` [`-j|--json`] lists installed export template directories.
     - `fgvm template remove` or `fgvm template r` `[<...strings>]` removes installed export template directories. With no query, fgvm prompts from installed export templates. With a query, it removes the exact match directly or prompts when multiple installed templates match.
     - Template commands manage full official TPZ packages. They do not install or remove individual export target files inside a package.
