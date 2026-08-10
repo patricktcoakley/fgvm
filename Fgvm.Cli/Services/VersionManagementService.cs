@@ -293,12 +293,7 @@ public class VersionManagementService(
                 return CreateQuietVersionResolution(exactInstalledMatch, false);
             }
 
-            var installedReleaseNames = installed
-                .Select(version => releaseManager.CreateRelease(version))
-                .OfType<Result<Release, ReleaseParseError>.Success>()
-                .Select(success => success.Value.ReleaseName)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            var installedReleaseNames = GetInstalledReleaseNames(installed);
             return releaseManager.ResolveReleaseQuery(query, installedReleaseNames) switch
             {
                 Result<Release, QueryError>.Success(var release) when installed.Contains(
@@ -927,11 +922,13 @@ public class VersionManagementService(
 
     private async Task<string> HandleQueryModeAsync(string[] query, string[] installed, CancellationToken cancellationToken)
     {
-        // Use query to find version - try to find exact match first
-        switch (releaseManager.ResolveReleaseQuery(query, installed))
+        // Installed registry entries include runtime suffixes, while release queries resolve from runtime-neutral release names.
+        var installedReleaseNames = GetInstalledReleaseNames(installed);
+        switch (releaseManager.ResolveReleaseQuery(query, installedReleaseNames))
         {
-            case Result<Release, QueryError>.Success(var release):
+            case Result<Release, QueryError>.Success(var release) when IsInstalled(release, installed):
                 return release.ReleaseNameWithRuntime;
+            case Result<Release, QueryError>.Success:
             case Result<Release, QueryError>.Failure(QueryError.NotFound):
                 break;
             case Result<Release, QueryError>.Failure(var error):
@@ -972,11 +969,14 @@ public class VersionManagementService(
                 throw new InvalidOperationException("Unexpected Result type");
         }
 
-        // Re-check installed versions after installation
+        // Re-check installed versions after installation.
         var updatedInstalled = ListInstallations().ToArray();
-        var foundVersion = releaseManager.ResolveReleaseQuery(query, updatedInstalled) switch
+        var updatedReleaseNames = GetInstalledReleaseNames(updatedInstalled);
+        var foundVersion = releaseManager.ResolveReleaseQuery(query, updatedReleaseNames) switch
         {
-            Result<Release, QueryError>.Success(var release) => release.ReleaseNameWithRuntime,
+            Result<Release, QueryError>.Success(var release) when IsInstalled(release, updatedInstalled) =>
+                release.ReleaseNameWithRuntime,
+            Result<Release, QueryError>.Success => null,
             Result<Release, QueryError>.Failure(QueryError.NotFound) => null,
             Result<Release, QueryError>.Failure(var error) => throw new ArgumentException(GetQueryErrorMessage(error, query)),
             _ => throw new InvalidOperationException("Unexpected Result type")
@@ -998,6 +998,24 @@ public class VersionManagementService(
         console.MarkupLine(Messages.SuccessfullyInstalled(releaseNameWithRuntime));
         return foundVersion;
     }
+
+    private static string[] GetInstalledReleaseNames(IEnumerable<string> installedVersions) =>
+        installedVersions
+            .Select(RemoveRuntimeSuffix)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static string RemoveRuntimeSuffix(string releaseNameWithRuntime) => releaseNameWithRuntime switch
+    {
+        _ when releaseNameWithRuntime.EndsWith("-mono", StringComparison.OrdinalIgnoreCase) => releaseNameWithRuntime[..^5],
+        _ when releaseNameWithRuntime.EndsWith("-standard", StringComparison.OrdinalIgnoreCase) => releaseNameWithRuntime[..^9],
+        _ => releaseNameWithRuntime
+    };
+
+    private static bool IsInstalled(Release release, IEnumerable<string> installedVersions) =>
+        installedVersions.Contains(release.ReleaseNameWithRuntime, StringComparer.OrdinalIgnoreCase) ||
+        release.RuntimeEnvironment == RuntimeEnvironment.Standard &&
+        installedVersions.Contains(release.ReleaseName, StringComparer.OrdinalIgnoreCase);
 
     private static string GetQueryErrorMessage(QueryError error, string[] query) => error switch
     {

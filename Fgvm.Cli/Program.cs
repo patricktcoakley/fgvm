@@ -92,6 +92,7 @@ public class Program
         services.AddSingleton<IInstallationService, InstallationService>();
         services.AddSingleton<ITemplateInstallationService, TemplateInstallationService>();
         services.AddSingleton<IProjectManager, ProjectManager>();
+        services.AddSingleton<IExportPresetCatalog, ExportPresetCatalog>();
         services.AddSingleton<IInstallationOrchestrator, InstallationOrchestrator>();
         services.AddSingleton<ITemplateOrchestrator, TemplateOrchestrator>();
         services.AddSingleton(TimeProvider.System);

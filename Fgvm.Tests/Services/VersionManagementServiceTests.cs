@@ -455,6 +455,35 @@ public class VersionManagementServiceTests
     }
 
     [Fact]
+    public async Task SetLocalVersionAsync_WithBothRuntimes_HonorsExplicitStandardQuery()
+    {
+        var query = new[] { "4.6", "standard" };
+        const string standardVersion = "4.6.2-stable-standard";
+        var installedVersions = new[] { standardVersion, "4.6.2-stable-mono" };
+        var installedReleaseNames = new[] { "4.6.2-stable" };
+        var standardRelease = CreateMockRelease(standardVersion);
+
+        SetupInstallations(installedVersions);
+        SetupReleaseParsing(installedVersions);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(
+                query,
+                It.Is<string[]>(versions => versions.SequenceEqual(installedReleaseNames))))
+            .Returns(standardRelease);
+
+        var result = await _service.SetLocalVersionAsync(query);
+
+        Assert.Equal(standardRelease, result);
+        _mockInstallationService.Verify(
+            x => x.InstallByQueryAsync(
+                It.IsAny<string[]>(),
+                It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                It.IsAny<bool>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task SetLocalVersionAsync_VersionNotInstalled_AttemptsInstallation()
     {
         const string queryVersion = "4.3.0";

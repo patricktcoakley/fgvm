@@ -24,8 +24,8 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
         }
         catch (ConfigurationException ex)
         {
-            AnsiConsole.MarkupLine(Messages.ConfigurationError(ex.Message));
             exitCode = ExitCodes.ConfigurationError;
+            Report(Messages.ConfigurationError(ex.Message));
         }
         catch (ProcessExitCodeException ex)
         {
@@ -36,8 +36,8 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
                                       or ArgumentException
                                       or ArgumentParseFailedException)
         {
-            AnsiConsole.MarkupLine(Messages.ExceptionMessage(string.IsNullOrWhiteSpace(e.Message) ? "Invalid arguments" : e.Message));
             exitCode = ExitCodes.ArgumentError;
+            Report(Messages.ExceptionMessage(string.IsNullOrWhiteSpace(e.Message) ? "Invalid arguments" : e.Message));
         }
         catch (Exception)
         {
@@ -46,6 +46,29 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
         finally
         {
             System.Environment.Exit(exitCode);
+        }
+    }
+
+    /// <summary>
+    ///     Renders a failure without wrapping so a path or query stays on one line and remains
+    ///     greppable. Callers assign the exit code first, so a rendering fault can only degrade the
+    ///     message, never turn the failure into a success.
+    /// </summary>
+    private static void Report(string markup)
+    {
+        var width = AnsiConsole.Profile.Width;
+        try
+        {
+            AnsiConsole.Profile.Width = int.MaxValue;
+            AnsiConsole.MarkupLine(markup);
+        }
+        catch (Exception)
+        {
+            Console.Error.WriteLine(markup);
+        }
+        finally
+        {
+            AnsiConsole.Profile.Width = width;
         }
     }
 }

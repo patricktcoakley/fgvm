@@ -21,8 +21,8 @@ either by putting it somewhere on your `PATH` or, preferably, using a [package m
 - **Hybrid CLI/TUI Interface**: Simple command-line interface with interactive TUI prompts for easy navigation and selection when you don't specify arguments.
 - **Flexible Query System**: Powerful query system for finding and installing versions using keywords like `latest`, `4 mono`, `3.3 rc`, etc.
 - **Project Aware**: Lock a project to a specific Godot version using a `.fgvm-version` file in the project directory. `fgvm local` can automatically detect a compatible version from `project.godot`
-  or let you manually choose one, and will prompt to install missing versions when needed. `fgvm godot` uses `.fgvm-version` when present, otherwise falls back to the global default, and can launch the
-  current project directly from the terminal.
+  or let you manually choose one, will install missing versions when needed, and installs the matching full export-template package when `export_presets.cfg` contains a configured preset. `fgvm godot` uses
+  `.fgvm-version` when present, otherwise falls back to the global default, and can launch the current project directly from the terminal.
 - **Smart Argument Handling**: Detection of arguments passed to Godot that contextually switch to an attached mode when necessary to display terminal output.
 - **CI-Ready**: Suitable for remote installations, CI/CD pipelines, WSL, and containerized environments with its single self-contained native executable.
 
@@ -349,9 +349,13 @@ but here is a detailed summary of the available commands:
     - The command will only read existing `.fgvm-version` files for version selection, and does not create or modify version files. Use `fgvm local` to manage `.fgvm-version` files.
 - `fgvm set [<...strings>]` prompts the user to set an installed version of Godot if no arguments are supplied, or will
   try to find the closest matching version based on the query, including release type (`stable`) and version (`4`, `4.4`), or an exact match (`4.4.1-stable-mono`).
-- `fgvm local [<...strings>]` sets the Godot version for the current project by creating or updating a `.fgvm-version` file in the current directory. If no `.fgvm-version` file
+- `fgvm local [<...strings>]` prepares the Godot toolchain for the current project by creating or updating a `.fgvm-version` file in the current directory. If no `.fgvm-version` file
   exists and no arguments are provided, it will automatically detect the project version from `project.godot` and install the most recent compatible version if not already installed.
     - If a list of arguments are provided, it will find the best matching version based on the query (including runtime preferences like `mono` or `standard`) and install it if necessary.
+    - If `export_presets.cfg` contains at least one preset with a name, platform, and export path, it also installs the complete official export-template package matching the selected editor. Projects without
+      configured export presets retain the version-only behavior.
+    - fgvm validates the preset metadata it uses before the editor or `.fgvm-version` is changed. An unreadable file or malformed relevant field stops `local` with a configuration error containing the file and line when available; target-specific option values remain Godot's responsibility.
+    - If editor preparation succeeds but template installation fails or is cancelled, `local` exits non-zero and explicitly reports that the selected editor and `.fgvm-version` remain in place for a retry.
 - `fgvm which` `[<...strings>]` displays the executable path for the effective Godot installation in the current directory: `.fgvm-version` first, then the global default. If query arguments are supplied, it resolves them against installed versions instead. The command prints only the executable path on success and exits non-zero when no version can be resolved.
 - `fgvm remove` or `fgvm r` `[<...strings>]` [`--with-templates`] prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
@@ -410,10 +414,10 @@ fgvm supports project-specific version management through `.fgvm-version` files.
 cd my-godot-project
 
 # Option 1: Auto-detect version from project.godot
-fgvm local                    # Detects version from project.godot, creates .fgvm-version
+fgvm local                    # Detects the version and prepares templates when export presets are configured
 
 # Option 2: Explicitly set a version
-fgvm local 4.3 mono          # Creates .fgvm-version with 4.3-stable-mono
+fgvm local 4.3 mono          # Creates .fgvm-version and prepares matching Mono templates when needed
 ```
 
 #### Using project versions:

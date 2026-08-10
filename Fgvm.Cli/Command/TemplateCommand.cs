@@ -1,4 +1,3 @@
-using System.Security;
 using System.Text.Json.Serialization;
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
@@ -37,22 +36,8 @@ public sealed class TemplateCommand(
     {
         try
         {
-            switch (await templateOrchestrator.InstallAsync(query, force, verbose, cancellationToken))
-            {
-                case Result<TemplateInstallationOutcome, TemplateInstallationError>.Success:
-                    return;
-                case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.InvalidQuery invalid):
-                    throw new ArgumentException(invalid.Message);
-                case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.NotFound notFound):
-                    throw new ArgumentException(Messages.TemplateInstallationNotFound(notFound.Version));
-                case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.ChecksumMismatch
-                    mismatch):
-                    throw new SecurityException(Messages.ChecksumMismatch(mismatch.FileName, mismatch.Expected, mismatch.Actual));
-                case Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.Failed failed):
-                    throw new InvalidOperationException(Messages.TemplateInstallationFailed(failed.Reason));
-                default:
-                    throw new InvalidOperationException("Unknown template installation result type.");
-            }
+            TemplateInstallationResult.EnsureSuccess(
+                await templateOrchestrator.InstallAsync(query, force, verbose, cancellationToken));
         }
         catch (OperationCanceledException)
         {
