@@ -67,6 +67,9 @@ public sealed class TestFixture : IAsyncLifetime
     public async Task<CommandResult> ExecuteCommand(string[] args) =>
         await ExecuteProcess(FgvmPath, args, null, null);
 
+    public async Task<CommandResult> ExecuteCommandInDirectory(string[] args, string workingDirectory) =>
+        await ExecuteProcess(FgvmPath, args, workingDirectory, null);
+
     public async Task<CommandResult> ExecuteCommandWithEnvironment(string[] args, IReadOnlyDictionary<string, string> environment) =>
         await ExecuteProcess(FgvmPath, args, null, environment);
 

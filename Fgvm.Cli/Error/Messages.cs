@@ -1,4 +1,5 @@
 using Fgvm.Environment;
+using Spectre.Console;
 
 namespace Fgvm.Cli.Error;
 
@@ -68,7 +69,7 @@ public static class Messages
 
     public static string CurrentVersionSetTo(string symlinkPath) => $"[green]Current version set to:[/] {symlinkPath}";
     public static string CurrentMacOSAppSetTo(string macAppSymlinkPath) => $"\n[green]Current macOS App set to:[/] {macAppSymlinkPath}";
-    public static string ConfigurationError(string message) => $"[red]Configuration error: {message}[/]";
+    public static string ConfigurationError(string message) => $"[red]Configuration error: {Markup.Escape(message)}[/]";
     public static string ExceptionMessage(string message)
     {
         var trimmed = message.Trim();
@@ -79,7 +80,8 @@ public static class Messages
         }
 
         var punctuation = punctuationProbe.EndsWith('.') || punctuationProbe.EndsWith('!') || punctuationProbe.EndsWith('?');
-        return punctuation ? $"[red]{trimmed}[/]" : $"[red]{trimmed}.[/]";
+        var escaped = Markup.Escape(trimmed);
+        return punctuation ? $"[red]{escaped}[/]" : $"[red]{escaped}.[/]";
     }
 
     public static string SelectAVersionTo(string what) => $"[green]Select a version to {what}[/]\n[hotpink_1](Press CTRL+C to cancel)[/]";
@@ -198,14 +200,18 @@ public static class Messages
     public static string NoTemplatesInstalled => "[yellow]No Godot export templates installed.[/]";
     public static string NoTemplatesToRemove => "[orange1] No export templates available to remove. [/]";
     public static string TemplateAlreadyInstalled(string templateVersion, string path) =>
-        $"[yellow]Export templates {templateVersion} are already installed at {path}[/]";
+        $"[yellow]Export templates {Markup.Escape(templateVersion)} are already installed at {Markup.Escape(path)}[/]";
     public static string TemplateInstallationSuccess(string templateVersion, string path) =>
-        $"[green]Finished installing export templates {templateVersion} to {path}![/]";
+        $"[green]Finished installing export templates {Markup.Escape(templateVersion)} to {Markup.Escape(path)}![/]";
     public static string TemplateChecksumUnavailable(string templateVersion) =>
-        $"[orange1]Warning: Checksum unavailable for export templates {templateVersion}. Installation continued without verification.[/]";
+        $"[orange1]Warning: Checksum unavailable for export templates {Markup.Escape(templateVersion)}. Installation continued without verification.[/]";
     public static string TemplateInstallationNotFound(string version) =>
         $"[red]Export templates for {version} could not be found.[/]";
     public static string TemplateInstallationFailed(string reason) => $"[red]Export template installation failed: {reason}[/]";
+    public static string LocalTemplateInstallationFailed(string releaseNameWithRuntime, string reason) =>
+        $"[red]Set local version to {Markup.Escape(releaseNameWithRuntime)}, but export template installation failed: {Markup.Escape(reason)}[/]";
+    public static string LocalTemplateInstallationCancelled(string releaseNameWithRuntime) =>
+        $"[orange1]Set local version to {Markup.Escape(releaseNameWithRuntime)}, but export template installation was cancelled.[/]";
     public static string OptionalTemplateInstallationFailed(string releaseNameWithRuntime, string reason) =>
         $"[orange1]Godot {releaseNameWithRuntime} is installed, but export template installation failed: {reason}[/]";
     public static string OptionalTemplateInstallationCancelled(string releaseNameWithRuntime) =>

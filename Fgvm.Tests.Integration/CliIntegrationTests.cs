@@ -170,6 +170,32 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     }
 
     [Fact]
+    public async Task LocalRejectsMalformedExportPresetsBeforeChangingProjectState()
+    {
+        var project = NewTempPath("fgvm-local-[invalid]-presets");
+
+        try
+        {
+            await fixture.WriteFile(Path.Combine(project, "export_presets.cfg"),
+                "[preset.0]\nname=\"Web\"\nrunnable=perhaps\n");
+
+            var result = await fixture.ExecuteCommandInDirectory(["local", StableRelease], project);
+
+            Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
+            Assert.Contains("Configuration error", result.Stdout);
+            Assert.Contains("export_presets.cfg", result.Stdout);
+            Assert.Contains("line 3", result.Stdout);
+            Assert.Contains("runnable", result.Stdout);
+            Assert.DoesNotContain("Something went wrong", result.Stdout);
+            Assert.False(await fixture.FileExists(Path.Combine(project, ".fgvm-version")));
+        }
+        finally
+        {
+            await fixture.DeletePath(project);
+        }
+    }
+
+    [Fact]
     public async Task InvalidVersionFailuresUseExpectedExitCodes()
     {
         var install = await fixture.ExecuteCommand(["install", "nonexistent-version-999"]);

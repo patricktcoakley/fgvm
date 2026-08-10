@@ -21,16 +21,81 @@ Suite "project versions" {
         Assert.Equal "4.5-stable-standard" (File.Read $versionPath).Trim()
     }
 
-    Test "selects a mono local version" {
+    Test "installs matching standard export templates when both runtimes are installed" {
+        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        Add-FixtureInstallation "4.6.2-stable" "mono" | Out-Null
+        $projectPath = Join-Path $Context.WorkPath "export-project"
+        New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $projectPath "export_presets.cfg") -Value @'
+[preset.0]
+name="Web"
+platform="Web"
+runnable=false
+export_path="build/web/index.html"
+'@ -NoNewline
+
+        $templatesRoot = Join-Path $Context.RootPath "godot-[export-templates"
+        $environment = @{ FGVM_GODOT_EXPORT_TEMPLATES_DIR = $templatesRoot }
+        $templatePayload = Join-Path $templatesRoot "4.6.2.stable" "mock-template.txt"
+
+        $local = Run -Cwd $projectPath -Environment $environment -Arguments @("local", "4.6", "standard")
+
+        Assert.ExitCode 0 $local "fgvm local 4.6 standard with export presets"
+        Assert.Contains "Finished installing export templates" $local.Stdout
+        Assert.Equal "4.6.2-stable-standard" (File.Read (Join-Path $projectPath ".fgvm-version")).Trim()
+        Assert.True (Test-Path -LiteralPath $templatePayload -PathType Leaf) "Local should install the full matching template package."
+        Assert.Equal "mock export template for 4.6.2-stable standard" (File.Read $templatePayload)
+    }
+
+    Test "retains the local version when export template installation fails" {
+        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        $projectPath = Join-Path $Context.WorkPath "failing-template-project"
+        New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $projectPath "export_presets.cfg") -Value @'
+[preset.0]
+name="Web"
+platform="Web"
+runnable=false
+export_path="build/web/index.html"
+'@ -NoNewline
+
+        $versionPath = Join-Path $projectPath ".fgvm-version"
+        $environment = @{
+            FGVM_GODOT_EXPORT_TEMPLATES_DIR    = Join-Path $Context.RootPath "failed-export-templates"
+            FGVM_INTEGRATION_FIXTURE_MANIFEST = Join-Path $Context.WorkPath "missing-fixture-manifest.json"
+        }
+
+        $local = Run -Cwd $projectPath -Environment $environment -Arguments @("local", "4.6")
+
+        Assert.ExitCode 1 $local "fgvm local 4.6 with unavailable export templates"
+        Assert.Contains "Set local version to 4.6.2-stable-standard" $local.Stdout
+        Assert.Contains "but export template installation" $local.Stdout
+        Assert.Contains "Release catalog hydration failed" $local.Stdout
+        Assert.NotContains "Finished installing export templates" $local.Stdout
+        Assert.Equal "4.6.2-stable-standard" (File.Read $versionPath).Trim()
+    }
+
+    Test "selects a mono local version and matching templates" {
         Add-FixtureInstallation "4.6.2-stable" | Out-Null
         Add-FixtureInstallation "4.6.2-stable" "mono" | Out-Null
         $projectPath = Join-Path $Context.WorkPath "mono-project"
         New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $projectPath "export_presets.cfg") -Value @'
+[preset.0]
+name="Linux"
+platform="Linux/X11"
+runnable=true
+export_path="build/linux/game.x86_64"
+'@ -NoNewline
+        $templatesRoot = Join-Path $Context.RootPath "godot-export-templates"
+        $environment = @{ FGVM_GODOT_EXPORT_TEMPLATES_DIR = $templatesRoot }
+        $templatePayload = Join-Path $templatesRoot "4.6.2.stable.mono" "mock-template.txt"
 
-        $local = Run -Cwd $projectPath "local" "4.6" "mono"
+        $local = Run -Cwd $projectPath -Environment $environment -Arguments @("local", "4.6", "mono")
 
         Assert.ExitCode 0 $local "fgvm local 4.6 mono"
         Assert.Equal "4.6.2-stable-mono" (File.Read (Join-Path $projectPath ".fgvm-version")).Trim()
+        Assert.Equal "mock export template for 4.6.2-stable mono" (File.Read $templatePayload)
     }
 
     Test "detects an installed version from project godot" {

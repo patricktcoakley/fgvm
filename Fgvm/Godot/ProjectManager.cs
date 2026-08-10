@@ -50,6 +50,8 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
 {
     private const string VersionFile = ".fgvm-version";
     private const string ProjectFile = "project.godot";
+    private const string FeaturesKey = "config/features";
+    private const string DotNetSection = "dotnet";
 
     /// <inheritdoc />
     public Result<ProjectLookup<Release>, ProjectError> FindProjectInfo(string? directory = null) =>
@@ -213,29 +215,39 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
                 throw new InvalidOperationException("Unexpected Result type");
         }
 
-        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-
         string? version = null;
         var runtime = RuntimeEnvironment.Standard;
         var foundFeaturesLine = false;
         var malformedFeaturesLine = false;
 
-        foreach (var line in lines)
+        foreach (var entry in new ConfigScanner(content))
         {
-            var trimmedLine = line.Trim();
-
-            // Extract version from config/features
-            if (trimmedLine.StartsWith("config/features=PackedStringArray("))
+            switch (entry)
             {
-                foundFeaturesLine = true;
-                malformedFeaturesLine = trimmedLine.LastIndexOf(')') <= trimmedLine.IndexOf('(');
-                version = ExtractVersionFromFeatures(trimmedLine);
-            }
+                case ConfigEntry.Section(DotNetSection, _):
+                    runtime = RuntimeEnvironment.Mono;
+                    break;
 
-            // Check for .NET section
-            if (trimmedLine == "[dotnet]")
-            {
-                runtime = RuntimeEnvironment.Mono;
+                // A complete assignment has balanced brackets, so the array always closes.
+                case ConfigEntry.Assignment(_, FeaturesKey, var value, _) when IsFeaturesArray(value):
+                    foundFeaturesLine = true;
+                    malformedFeaturesLine = false;
+                    version = ExtractVersionFromFeatures(value);
+                    break;
+
+                // Godot never writes a features array across lines; one that spans is malformed.
+                case ConfigEntry.Multiline(_, FeaturesKey, var multiline, _) when IsFeaturesArray(multiline):
+                    foundFeaturesLine = true;
+                    malformedFeaturesLine = true;
+                    version = null;
+                    break;
+
+                // A value still open at end of file is malformed, and Godot cannot load the project
+                // either. Continuing would silently ignore everything the runaway value swallowed,
+                // including a [dotnet] section, and resolve a .NET project as standard.
+                case ConfigEntry.UnterminatedValue:
+                    return new Result<ProjectLookup<Release>, ProjectError>.Failure(
+                        new ProjectError.InvalidProjectFile(projectFilePath));
             }
         }
 
@@ -290,23 +302,26 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
         _ => new ProjectError.WriteFailed(error.Path)
     };
 
+    private static bool IsFeaturesArray(string value) =>
+        value.StartsWith("PackedStringArray(", StringComparison.Ordinal);
+
     /// <summary>
-    ///     Extracts the Godot version from a config/features line.
+    ///     Extracts the Godot version from a config/features value.
     /// </summary>
-    /// <param name="featuresLine">The line containing config/features=PackedStringArray(...)</param>
+    /// <param name="featuresValue">The value of config/features, such as PackedStringArray(...)</param>
     /// <returns>The version string if found, null otherwise.</returns>
-    private static string? ExtractVersionFromFeatures(string featuresLine)
+    private static string? ExtractVersionFromFeatures(string featuresValue)
     {
-        // Example: config/features=PackedStringArray("4.4", "Forward Plus")
-        var startIndex = featuresLine.IndexOf('(');
-        var endIndex = featuresLine.LastIndexOf(')');
+        // Example: PackedStringArray("4.4", "Forward Plus")
+        var startIndex = featuresValue.IndexOf('(');
+        var endIndex = featuresValue.LastIndexOf(')');
 
         if (startIndex == -1 || endIndex == -1 || endIndex <= startIndex)
         {
             return null;
         }
 
-        var featuresContent = featuresLine.Substring(startIndex + 1, endIndex - startIndex - 1);
+        var featuresContent = featuresValue.Substring(startIndex + 1, endIndex - startIndex - 1);
 
         // Split by comma and look for version-like strings
         var features = featuresContent.Split(',')

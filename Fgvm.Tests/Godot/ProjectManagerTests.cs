@@ -184,6 +184,50 @@ public sealed class ProjectManagerTests : IDisposable
     }
 
     [Fact]
+    public void FindProjectInfo_WithUnterminatedValue_FailsInsteadOfHidingTheDotNetSection()
+    {
+        var projectFilePath = Path.Combine(_tempDirectory, "project.godot");
+        const string projectContent = """
+                                      [application]
+                                      config/features=PackedStringArray("4.3", "C#")
+                                      config/description="oops
+                                      run/main_scene="res://main.tscn"
+
+                                      [dotnet]
+                                      project/assembly_name="TestProject"
+                                      """;
+
+        File.WriteAllText(projectFilePath, projectContent);
+
+        var result = _projectManager.FindProjectInfo(_tempDirectory);
+
+        var failure = Assert.IsType<Result<ProjectLookup<Release>, ProjectError>.Failure>(result);
+        Assert.IsType<ProjectError.InvalidProjectFile>(failure.Error);
+    }
+
+    [Fact]
+    public void FindProjectInfo_WithDotNetSectionInsideMultilineValue_RemainsStandard()
+    {
+        var projectFilePath = Path.Combine(_tempDirectory, "project.godot");
+        const string projectContent = """
+                                      [application]
+                                      config/name="Test Project"
+                                      config/features=PackedStringArray("4.3", "Forward Plus")
+                                      config/description="line one
+                                      [dotnet]
+                                      line three"
+                                      """;
+
+        File.WriteAllText(projectFilePath, projectContent);
+
+        var result = FindProjectInfoValue(_tempDirectory);
+
+        Assert.NotNull(result);
+        Assert.Equal("4.3-stable-standard", result.ReleaseNameWithRuntime);
+        Assert.False(result.IsDotNet);
+    }
+
+    [Fact]
     public void FindProjectInfo_WithProjectGodotStandardProject_ReturnsProjectInfoWithoutDotNet()
     {
         var projectFilePath = Path.Combine(_tempDirectory, "project.godot");
