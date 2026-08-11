@@ -1,6 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fgvm.dev/schemas/fgvm-export-manifest-v1.schema.json",
   "title": "fgvm export manifest v1",
   "type": "object",
   "required": [
