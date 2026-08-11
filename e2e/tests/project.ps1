@@ -66,12 +66,13 @@ export_path="build/web/index.html"
         }
 
         $local = Run -Cwd $projectPath -Environment $environment -Arguments @("local", "4.6")
+        $output = ($local.Stdout -replace "\s+", " ").Trim()
 
         Assert.ExitCode 1 $local "fgvm local 4.6 with unavailable export templates"
-        Assert.Contains "Set local version to 4.6.2-stable-standard" $local.Stdout
-        Assert.Contains "but export template installation" $local.Stdout
-        Assert.Contains "Release catalog hydration failed" $local.Stdout
-        Assert.NotContains "Finished installing export templates" $local.Stdout
+        Assert.Contains "Set local version to 4.6.2-stable-standard" $output
+        Assert.Contains "but export template installation" $output
+        Assert.Contains "Release catalog hydration failed" $output
+        Assert.NotContains "Finished installing export templates" $output
         Assert.Equal "4.6.2-stable-standard" (File.Read $versionPath).Trim()
     }
 
