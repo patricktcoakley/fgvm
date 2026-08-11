@@ -5,7 +5,7 @@ using Spectre.Console;
 
 namespace Fgvm.Cli.Filter;
 
-internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(next)
+internal sealed class ExitCodeFilter(IAnsiConsole console, ConsoleAppFilter next) : ConsoleAppFilter(next)
 {
     public override async Task InvokeAsync(ConsoleAppContext context, CancellationToken cancellationToken)
     {
@@ -54,13 +54,13 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
     ///     greppable. Callers assign the exit code first, so a rendering fault can only degrade the
     ///     message, never turn the failure into a success.
     /// </summary>
-    private static void Report(string markup)
+    private void Report(string markup)
     {
-        var width = AnsiConsole.Profile.Width;
+        var width = console.Profile.Width;
         try
         {
-            AnsiConsole.Profile.Width = int.MaxValue;
-            AnsiConsole.MarkupLine(markup);
+            console.Profile.Width = int.MaxValue;
+            console.MarkupLine(markup);
         }
         catch (Exception)
         {
@@ -68,7 +68,7 @@ internal sealed class ExitCodeFilter(ConsoleAppFilter next) : ConsoleAppFilter(n
         }
         finally
         {
-            AnsiConsole.Profile.Width = width;
+            console.Profile.Width = width;
         }
     }
 }

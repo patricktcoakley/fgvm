@@ -143,7 +143,7 @@ public sealed class GodotCommand(
 
             var request = new GodotLaunchRequest(
                 launchTarget,
-                argumentString,
+                GodotLauncher.ParseArguments(argumentString),
                 useAttachedMode ? GodotLaunchMode.Attached : GodotLaunchMode.Detached);
 
             var launchResult = await godotLauncher.LaunchAsync(

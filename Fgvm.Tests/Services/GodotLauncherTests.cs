@@ -103,7 +103,7 @@ public sealed class GodotLauncherTests
                 "4.6-stable-standard",
                 executable,
                 Path.GetTempPath()),
-            arguments,
+            GodotLauncher.ParseArguments(arguments),
             mode);
 
     private static (string Executable, string Arguments) ShellCommand(string unixCommand, string windowsCommand)

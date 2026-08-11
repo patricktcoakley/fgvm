@@ -55,7 +55,7 @@ public sealed class GodotCommandTests
 
         Assert.NotNull(captured);
         Assert.Equal(GodotLaunchMode.Detached, captured.Mode);
-        Assert.Equal("--windowed", captured.Arguments);
+        Assert.Equal(["--windowed"], captured.Arguments);
         Assert.Equal(_resolution.ExecutablePath, captured.Target.ExecutablePath);
         Assert.Equal(_resolution.WorkingDirectory, captured.Target.WorkingDirectory);
         Assert.Equal(InstallationKey, captured.Target.InstallationKey);
@@ -101,7 +101,7 @@ public sealed class GodotCommandTests
         await CreateCommand(projectFilePath).Launch(attached: true, project: true, args: "--dump-extension-api --quit");
 
         Assert.NotNull(captured);
-        Assert.Equal($"--path \"{projectDirectory}\" --dump-extension-api --quit", captured.Arguments);
+        Assert.Equal(["--path", projectDirectory, "--dump-extension-api", "--quit"], captured.Arguments);
         Assert.Contains("Auto-detected project file", _console.Output);
         _registry.Verify(x => x.RecordLaunch(InstallationKey, null), Times.Once);
     }
@@ -147,7 +147,7 @@ public sealed class GodotCommandTests
         await CreateCommand().Launch(attached: true, args: "--headless --quit", query: "4.5-stable-standard");
 
         Assert.NotNull(captured);
-        Assert.Equal("--headless --quit", captured.Arguments);
+        Assert.Equal(["--headless", "--quit"], captured.Arguments);
         Assert.Equal("4.5-stable-standard", captured.Target.VersionName);
         Assert.Equal(queriedResolution.ExecutablePath, captured.Target.ExecutablePath);
         Assert.Equal(queriedResolution.WorkingDirectory, captured.Target.WorkingDirectory);

@@ -26,6 +26,7 @@ public static class StagedDirectoryNames
     private const string BackupPrefix = ".backup-";
     private const string InstallStagingPrefix = ".fgvm-staging-";
     private const string TemplateStagingPrefix = ".fgvm-template-staging-";
+    private const string ExportStagingPrefix = ".fgvm-export-staging-";
     private const int GuidLength = 32;
 
     public static string CreateTombstonePath(string directoryPath) =>
@@ -40,6 +41,9 @@ public static class StagedDirectoryNames
     public static string CreateTemplateStagingPath(string parentPath) =>
         Path.Combine(parentPath, $"{TemplateStagingPrefix}{Guid.NewGuid():N}");
 
+    public static string CreateExportStagingPath(string parentPath) =>
+        Path.Combine(parentPath, $"{ExportStagingPrefix}{Guid.NewGuid():N}");
+
     /// <summary>
     ///     Recognises a marker directory by name. Matching is strict so a directory that merely starts with one of
     ///     the prefixes, such as a user's own `.backup-notes`, is never mistaken for one of ours.
@@ -49,7 +53,9 @@ public static class StagedDirectoryNames
     /// <returns>Whether the name is a marker fgvm created.</returns>
     public static bool TryClassify(string directoryName, out StagedDirectoryKind kind)
     {
-        if (HasGuidSuffix(directoryName, TemplateStagingPrefix) || HasGuidSuffix(directoryName, InstallStagingPrefix))
+        if (HasGuidSuffix(directoryName, TemplateStagingPrefix) ||
+            HasGuidSuffix(directoryName, InstallStagingPrefix) ||
+            HasGuidSuffix(directoryName, ExportStagingPrefix))
         {
             kind = StagedDirectoryKind.Staging;
             return true;

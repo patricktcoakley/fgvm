@@ -170,6 +170,79 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     }
 
     [Fact]
+    public async Task ExportRejectsAProjectWithoutGodotFilesBeforeChangingState()
+    {
+        var project = NewTempPath("fgvm-export-[no]-project");
+
+        try
+        {
+            await fixture.WriteFile(Path.Combine(project, "placeholder.txt"), "not a Godot project");
+
+            var result = await fixture.ExecuteCommandInDirectory(["export", StableRelease], project);
+
+            Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
+            Assert.Contains("project.godot", result.Stdout);
+            Assert.DoesNotContain("Something went wrong", result.Stdout);
+            Assert.False(await fixture.FileExists(Path.Combine(project, ".fgvm-version")));
+        }
+        finally
+        {
+            await fixture.DeletePath(project);
+        }
+    }
+
+    [Fact]
+    public async Task ExportRejectsAManifestThatWouldOverwriteAnArtifactBeforeChangingState()
+    {
+        var project = NewTempPath("fgvm-export-manifest-collision");
+
+        try
+        {
+            await fixture.WriteFile(Path.Combine(project, "project.godot"),
+                "[application]\n\nconfig/features=PackedStringArray(\"4.6\")\n");
+            await fixture.WriteFile(Path.Combine(project, "export_presets.cfg"),
+                "[preset.0]\nname=\"Web\"\nplatform=\"Web\"\nexport_path=\"build/game.zip\"\n");
+
+            var result = await fixture.ExecuteCommandInDirectory(
+                ["export", "--manifest", "build/game.zip", StableRelease], project);
+
+            Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
+            Assert.Contains("conflicts", result.Stdout);
+            Assert.False(await fixture.FileExists(Path.Combine(project, ".fgvm-version")));
+        }
+        finally
+        {
+            await fixture.DeletePath(project);
+        }
+    }
+
+    [Fact]
+    public async Task ExportJsonModeKeepsDiagnosticsOffStandardOutput()
+    {
+        // Native AOT publication is the only place the real serializer and the real console meet, so
+        // stdout purity under --json is verified against the published binary rather than a mock.
+        var project = NewTempPath("fgvm-export-[json]-purity");
+
+        try
+        {
+            await fixture.WriteFile(Path.Combine(project, "project.godot"),
+                "[application]\n\nconfig/features=PackedStringArray(\"4.6\")\n");
+            await fixture.WriteFile(Path.Combine(project, "export_presets.cfg"),
+                "[preset.0]\nname=\"Console\"\nplatform=\"Custom Console\"\nexport_path=\"\"\n");
+
+            var result = await fixture.ExecuteCommandInDirectory(["export", "--json", StableRelease], project);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Empty(result.Stdout.Trim());
+            Assert.Contains("Console", result.Stderr);
+        }
+        finally
+        {
+            await fixture.DeletePath(project);
+        }
+    }
+
+    [Fact]
     public async Task LocalRejectsMalformedExportPresetsBeforeChangingProjectState()
     {
         var project = NewTempPath("fgvm-local-[invalid]-presets");

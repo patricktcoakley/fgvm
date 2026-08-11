@@ -10,6 +10,7 @@ namespace Fgvm.Cli.ViewModels;
 [JsonSerializable(typeof(List<RemoteReleaseView>))]
 [JsonSerializable(typeof(LogEntryView))]
 [JsonSerializable(typeof(List<LogEntryView>))]
+[JsonSerializable(typeof(ExportManifestView))]
 [JsonSerializable(typeof(TemplateListView))]
 [JsonSerializable(typeof(List<TemplateListView>))]
 internal partial class JsonViewSerializerContext : JsonSerializerContext;

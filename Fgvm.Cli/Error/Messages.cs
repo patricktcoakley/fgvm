@@ -196,6 +196,15 @@ public static class Messages
     public static string ChecksumMismatch(string fileName, string expected, string actual) =>
         $"[red]Checksum mismatch for {fileName}![/]\n[red]Expected: {expected}[/]\n[red]Actual:   {actual}[/]\n[red]This could indicate a corrupted download or security issue.[/]";
 
+    // Export
+    public static string ExportingTarget(string preset) => $"[dim]Exporting {Markup.Escape(preset)}...[/]";
+    public static string ExportedTarget(string preset, string path) =>
+        $"[green]Exported {Markup.Escape(preset)} to {Markup.Escape(path)}[/]";
+    public static string ExportManifestWritten(string path) =>
+        $"[dim]Manifest: {Markup.Escape(path)}[/]";
+    public static string ExportPhaseFailed(string phase, string reason) =>
+        $"[red]{Markup.Escape(phase)} failed: {Markup.Escape(reason)}[/]";
+
     // Export templates
     public static string NoTemplatesInstalled => "[yellow]No Godot export templates installed.[/]";
     public static string NoTemplatesToRemove => "[orange1] No export templates available to remove. [/]";

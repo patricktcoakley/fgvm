@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
+using System.Text;
 using Fgvm.Types;
+using Microsoft.Win32.SafeHandles;
 
 namespace Fgvm.Cli.Services;
 
@@ -39,7 +40,7 @@ public sealed record GodotLaunchTarget(
 
 public sealed record GodotLaunchRequest(
     GodotLaunchTarget Target,
-    string Arguments,
+    IReadOnlyList<string> Arguments,
     GodotLaunchMode Mode
 );
 
@@ -82,7 +83,7 @@ public sealed class GodotLauncher : IGodotLauncher
     private const int GetFileDescriptorFlags = 1;
     private const int SetFileDescriptorFlags = 2;
     private const uint HandleFlagInherit = 1;
-    private static readonly object DetachedStartLock = new();
+    private static readonly Lock DetachedStartLock = new();
 
     public async Task<Result<GodotLaunchOutcome, GodotLaunchError>> LaunchAsync(GodotLaunchRequest request,
         Action<GodotLaunchOutput>? onOutput = null,
@@ -177,7 +178,7 @@ public sealed class GodotLauncher : IGodotLauncher
             startInfo.ArgumentList.Add("fgvm-godot-launch");
             startInfo.ArgumentList.Add(request.Target.ExecutablePath);
 
-            foreach (var argument in ParseArguments(request.Arguments))
+            foreach (var argument in request.Arguments)
             {
                 startInfo.ArgumentList.Add(argument);
             }
@@ -185,9 +186,8 @@ public sealed class GodotLauncher : IGodotLauncher
             return startInfo;
         }
 
-        return new ProcessStartInfo
+        var attachedStartInfo = new ProcessStartInfo
         {
-            Arguments = request.Arguments,
             FileName = request.Target.ExecutablePath,
             UseShellExecute = false,
             CreateNoWindow = attached,
@@ -196,6 +196,13 @@ public sealed class GodotLauncher : IGodotLauncher
             RedirectStandardError = attached,
             WorkingDirectory = request.Target.WorkingDirectory
         };
+
+        foreach (var argument in request.Arguments)
+        {
+            attachedStartInfo.ArgumentList.Add(argument);
+        }
+
+        return attachedStartInfo;
     }
 
     private static bool StartProcess(Process process, GodotLaunchMode mode)
@@ -329,7 +336,7 @@ public sealed class GodotLauncher : IGodotLauncher
         }
     }
 
-    private static IReadOnlyList<string> ParseArguments(string arguments)
+    internal static IReadOnlyList<string> ParseArguments(string arguments)
     {
         var parsed = new List<string>();
 
@@ -353,7 +360,7 @@ public sealed class GodotLauncher : IGodotLauncher
 
     private static string ParseNextArgument(string arguments, ref int index)
     {
-        var argument = new System.Text.StringBuilder();
+        var argument = new StringBuilder();
         var inQuotes = false;
 
         while (index < arguments.Length)
@@ -467,7 +474,8 @@ public sealed class GodotLauncher : IGodotLauncher
         }
     }
 
-#pragma warning disable SYSLIB1054
+    // Detached launches use native descriptor/handle APIs so Godot cannot retain fgvm's console or redirected pipes.
+#pragma warning disable SYSLIB1054 // LibraryImport would require enabling unsafe generated code for these six calls.
     [DllImport("libc", EntryPoint = "fcntl", SetLastError = true)]
     private static extern int Fcntl(int descriptor, int command, int argument);
 

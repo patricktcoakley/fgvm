@@ -77,6 +77,12 @@ public sealed class HostSystemContractTests : IDisposable
     }
 
     [Fact]
+    public void DeleteFileIfExists_ReturnsSuccess_WhenTheParentDirectoryIsMissing()
+    {
+        AssertSuccess(_hostSystem.DeleteFileIfExists(Path.Combine(_root, "not-there", "file.txt")));
+    }
+
+    [Fact]
     public void DeleteDirectoryIfExists_RemovesAPopulatedTree_WhenRecursive()
     {
         var directory = CreateDirectory("populated", "file.txt", "contents");
