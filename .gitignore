@@ -97,4 +97,5 @@ e2e/.cli/
 e2e/.fixtures/
 .fgvm-*-cli/
 .fgvm-*-fixtures/
+.fgvm-export.json
 .bin

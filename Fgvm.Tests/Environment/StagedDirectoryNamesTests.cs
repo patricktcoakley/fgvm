@@ -41,6 +41,15 @@ public sealed class StagedDirectoryNamesTests
     }
 
     [Fact]
+    public void CreateExportStagingPath_IsRecognisedAsStaging()
+    {
+        var path = StagedDirectoryNames.CreateExportStagingPath("root");
+
+        Assert.True(StagedDirectoryNames.TryClassify(Path.GetFileName(path), out var kind));
+        Assert.Equal(StagedDirectoryKind.Staging, kind);
+    }
+
+    [Fact]
     public void CreatedPathsStayBesideTheirTarget()
     {
         var target = Path.Combine("root", "installations", "4.3-stable");
@@ -66,6 +75,7 @@ public sealed class StagedDirectoryNamesTests
     [InlineData(".fgvm-removing-")]
     [InlineData(".fgvm-staging-")]
     [InlineData(".fgvm-staging-not-a-guid")]
+    [InlineData(".fgvm-export-staging-not-a-guid")]
     [InlineData(".backup-0123456789abcdef-short")]
     [InlineData(".fgvm-removing-0123456789abcdef0123456789abcdef")]
     [InlineData("backup-0123456789abcdef0123456789abcdef-editor")]

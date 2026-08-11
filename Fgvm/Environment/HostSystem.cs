@@ -436,11 +436,11 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
         }
         catch (FileNotFoundException)
         {
-            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.NotFound(path));
+            return new Result<Unit, FileOperationError>.Success(Unit.Value);
         }
         catch (DirectoryNotFoundException)
         {
-            return new Result<Unit, FileOperationError>.Failure(new FileOperationError.NotFound(path));
+            return new Result<Unit, FileOperationError>.Success(Unit.Value);
         }
         catch (PathTooLongException)
         {

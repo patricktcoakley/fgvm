@@ -101,7 +101,12 @@ public class Program
         services.AddSingleton<IVersionManagementService, VersionManagementService>();
         services.AddSingleton<IGodotArgumentService, GodotArgumentService>();
         services.AddSingleton<IGodotLauncher, GodotLauncher>();
-        services.AddSingleton<IAnsiConsole>(_ => AnsiConsole.Console);
+        services.AddSingleton<IExportRunner, ExportRunner>();
+        var commandConsole = IsJsonExport(args)
+            ? AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(Console.Error) })
+            : AnsiConsole.Console;
+        services.AddSingleton<IAnsiConsole>(commandConsole);
+        services.AddSingleton<TextWriter>(_ => Console.Out);
 
         // Progress handling
         services.AddSingleton<IProgressHandler, SpectreProgressHandler>();
@@ -131,6 +136,7 @@ public class Program
         app.Add<LogsCommand>();
         app.Add<SearchCommand>();
         app.Add<LocalCommand>();
+        app.Add<ExportCommand>();
         app.Add<TemplateHelpCommand>();
         app.Add<TemplateCommand>("template");
         app.Add<TemplateCommand>("t");
@@ -165,6 +171,10 @@ public class Program
 
         return new SystemInfo(systemInfo.CurrentOS, architecture);
     }
+
+    private static bool IsJsonExport(string[] args) =>
+        args is ["export", ..] &&
+        (args.Contains("--json", StringComparer.Ordinal) || args.Contains("-j", StringComparer.Ordinal));
 }
 
 public class SlogFormatter : ITextFormatter

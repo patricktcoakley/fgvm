@@ -1,6 +1,7 @@
 #:property TargetFramework=net10.0
 #:property LangVersion=14
 
+using System.IO.Compression;
 using System.Reflection;
 using System.Text.Json;
 
@@ -74,6 +75,50 @@ if (args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("
     Console.WriteLine("Mock Godot");
     Console.WriteLine("Usage: godot [options]");
     return 0;
+}
+
+var exportIndex = Array.FindIndex(
+    args,
+    argument => argument is "--export-release" or "--export-pack");
+if (exportIndex >= 0)
+{
+    if (exportIndex + 2 >= args.Length)
+    {
+        Console.Error.WriteLine("Mock Godot export requires a preset and destination.");
+        return 2;
+    }
+
+    var preset = args[exportIndex + 1];
+    var destination = Path.GetFullPath(args[exportIndex + 2]);
+    var destinationDirectory = Path.GetDirectoryName(destination)
+                               ?? throw new InvalidOperationException("Mock export destination has no parent directory.");
+    Directory.CreateDirectory(destinationDirectory);
+
+    var extension = Path.GetExtension(destination).ToLowerInvariant();
+    switch (extension)
+    {
+        case ".app":
+            Directory.CreateDirectory(destination);
+            File.WriteAllText(Path.Combine(destination, "mock-game"), preset);
+            break;
+        case ".zip":
+            using (var archive = ZipFile.Open(destination, ZipArchiveMode.Create))
+            {
+                var entry = archive.CreateEntry("mock-game.txt");
+                using var writer = new StreamWriter(entry.Open());
+                writer.Write(preset);
+            }
+
+            break;
+        default:
+            File.WriteAllText(destination, preset);
+            if (extension is ".html")
+            {
+                File.WriteAllText(Path.ChangeExtension(destination, ".wasm"), "wasm");
+            }
+
+            break;
+    }
 }
 
 Console.WriteLine(args.Length == 0

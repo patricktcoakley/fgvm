@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fgvm.dev/schemas/fgvm-release-catalog-v1.schema.json",
+  "title": "fgvm release catalog v1",
+  "type": "object",
+  "required": [
+    "lastUpdated",
+    "releases"
+  ],
+  "properties": {
+    "lastUpdated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "releases": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/version"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "version": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/release"
+      }
+    },
+    "release": {
+      "type": "object",
+      "required": [
+        "releaseDate",
+        "gitReference",
+        "targets",
+        "files"
+      ],
+      "properties": {
+        "releaseDate": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "gitReference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/target"
+          }
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "filename",
+        "sha512"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha512": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{128}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
