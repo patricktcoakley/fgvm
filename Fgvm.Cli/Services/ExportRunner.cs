@@ -123,7 +123,11 @@ internal sealed class ExportRunner(
 
             return new StagedExportTarget(
                 stagingPath,
-                new StagedExportArtifact(stagedArtifact, target.ArtifactPath, ExportArtifactKind.Directory));
+                new StagedExportArtifact(
+                    stagedArtifact,
+                    target.ArtifactPath,
+                    ExportArtifactKind.Directory,
+                    target.OwnsArtifactPath));
         }
         catch
         {
@@ -146,7 +150,11 @@ internal sealed class ExportRunner(
 
             return new StagedExportTarget(
                 stagingPath,
-                new StagedExportArtifact(stagingDestination, target.ArtifactPath, ExportArtifactKind.File));
+                new StagedExportArtifact(
+                    stagingDestination,
+                    target.ArtifactPath,
+                    ExportArtifactKind.File,
+                    target.OwnsArtifactPath));
         }
         catch
         {
@@ -297,7 +305,7 @@ internal sealed class ExportRunner(
 
         return new StagedExportTarget(
             stagingPath,
-            new StagedExportArtifact(stagedManifest, path, ExportArtifactKind.File));
+            new StagedExportArtifact(stagedManifest, path, ExportArtifactKind.File, true));
     }
 
     private ExportManifestView BuildManifest(string projectRoot,

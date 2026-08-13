@@ -57,11 +57,11 @@ internal sealed class ExportCommand(
             var manifestPath = ResolveManifestPath(projectRoot, manifest ?? DefaultManifestPath, targets);
             InvalidateManifest(manifestPath);
 
-            var release = await versionManagementService.SetLocalVersionAsync(
+            var release = await versionManagementService.PrepareLocalVersionAsync(
                 query is [] ? null : query,
                 cancellationToken: cancellationToken);
             await InstallTemplatesAsync(release, cancellationToken);
-            var launchTarget = await ResolveLaunchTargetAsync(cancellationToken);
+            var launchTarget = await ResolveLaunchTargetAsync(release, cancellationToken);
 
             var run = await exportRunner.RunAsync(
                 projectRoot,
@@ -175,8 +175,8 @@ internal sealed class ExportCommand(
         }
     }
 
-    private async Task<GodotLaunchTarget> ResolveLaunchTargetAsync(CancellationToken cancellationToken) =>
-        await versionManagementService.ResolveEffectiveVersionAsync(cancellationToken) switch
+    private async Task<GodotLaunchTarget> ResolveLaunchTargetAsync(Release release, CancellationToken cancellationToken) =>
+        await versionManagementService.ResolveInstalledVersionAsync([release.ReleaseNameWithRuntime], cancellationToken) switch
         {
             Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(var found) =>
                 GodotLaunchTarget.FromResolution(found),
@@ -201,7 +201,7 @@ internal sealed class ExportCommand(
 
         foreach (var target in targets)
         {
-            if (PathsOverlap(resolved, target.ArtifactPath, comparison))
+            if (target.OwnsArtifactPath && PathsOverlap(resolved, target.ArtifactPath, comparison))
             {
                 throw new ConfigurationException(
                     $"Manifest path '{resolved}' conflicts with export preset '{target.Preset}'. Choose another manifest path.");

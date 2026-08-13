@@ -30,7 +30,8 @@ internal sealed record PlannedExportTarget(
     string ArtifactPath,
     ExportArtifactKind Kind,
     ExportDestinationKind DestinationKind,
-    GodotExportKind ExportKind
+    GodotExportKind ExportKind,
+    bool OwnsArtifactPath
 );
 
 internal abstract record ExportPlanError
@@ -121,10 +122,10 @@ internal static class ExportPlanner
                 return Failed(new ExportPlanError.InvalidDestination(preset.Name!, exception.Message));
             }
 
-            if (!TryClaim(claimedOutputs, target.ArtifactPath, target.Preset, comparison, out var conflict))
+            var claimed = target.OwnsArtifactPath ? target.ArtifactPath : target.Destination;
+            if (!TryClaim(claimedOutputs, claimed, target.Preset, comparison, out var conflict))
             {
-                return Failed(new ExportPlanError.DuplicateDestination(
-                    conflict!, target.Preset, target.ArtifactPath));
+                return Failed(new ExportPlanError.DuplicateDestination(conflict!, target.Preset, claimed));
             }
 
             targets.Add(target);
@@ -161,7 +162,8 @@ internal static class ExportPlanner
                 archivePath,
                 ExportArtifactKind.File,
                 ExportDestinationKind.File,
-                GodotExportKind.Pack);
+                GodotExportKind.Pack,
+                true);
         }
 
         var fileName = isolated ? ExportPlatform.DefaultFileName(platform, slug) : null;
@@ -200,7 +202,8 @@ internal static class ExportPlanner
             artifactPath,
             kind,
             ExportPlatform.ExpectedDestinationKind(platform, destination),
-            GodotExportKind.Release);
+            GodotExportKind.Release,
+            isolated || shape is not ExportPlatformShape.ContainingDirectory);
     }
 
     private static bool TryClaim(List<(string Path, string Preset)> claimed,

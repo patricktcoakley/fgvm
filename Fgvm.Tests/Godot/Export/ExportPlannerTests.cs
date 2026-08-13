@@ -152,16 +152,28 @@ public sealed class ExportPlannerTests
     }
 
     [Fact]
-    public void Plan_WithDistinctFilesInTheSameConfiguredDirectory_FailsBecauseTheArtifactIsShared()
+    public void Plan_WithDistinctFilesInTheSameConfiguredDirectory_PlansBoth()
+    {
+        var targets = Succeeded(Plan(
+        [
+            Preset(0, "Windows", "Windows Desktop", "build/game.exe"),
+            Preset(1, "Linux", "Linux", "build/game.x86_64")
+        ]));
+
+        Assert.Equal(["Windows", "Linux"], targets.Select(target => target.Preset));
+        Assert.All(targets, target => Assert.Equal(Path.Combine(ProjectRoot, "build"), target.ArtifactPath));
+    }
+
+    [Fact]
+    public void Plan_WithTwoPresetsWritingTheSameFile_Fails()
     {
         var result = Plan(
         [
             Preset(0, "Windows", "Windows Desktop", "build/game.exe"),
-            Preset(1, "Linux", "Linux", "build/game.x86_64")
+            Preset(1, "Windows Copy", "Windows Desktop", "build/game.exe")
         ]);
 
         Assert.Contains("Windows", Failed(result), StringComparison.Ordinal);
-        Assert.Contains("Linux", Failed(result), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -191,15 +203,15 @@ public sealed class ExportPlannerTests
     }
 
     [Fact]
-    public void Plan_OnLinux_RejectsCaseDistinctFilesThatShareAnArtifactDirectory()
+    public void Plan_OnLinux_AllowsCaseDistinctFilesInOneDirectory()
     {
-        var result = Plan(
+        var targets = Succeeded(Plan(
         [
             Preset(0, "Upper", "Linux", "build/Game"),
             Preset(1, "Lower", "Linux", "build/game")
-        ], hostOS: OS.Linux);
+        ], hostOS: OS.Linux));
 
-        Assert.NotEmpty(Failed(result));
+        Assert.Equal(["Upper", "Lower"], targets.Select(target => target.Preset));
     }
 
     [Fact]
@@ -225,6 +237,42 @@ public sealed class ExportPlannerTests
         ]));
 
         Assert.Equal(["Windows", "Linux", "Web"], targets.Select(target => target.Preset));
+    }
+
+    [Fact]
+    public void Plan_WithConfiguredExportPath_DoesNotClaimOwnershipOfTheDirectory()
+    {
+        var target = Single(Plan([Preset(0, "Windows Demo", "Windows Desktop", "build/windows/game.exe")]));
+
+        Assert.False(target.OwnsArtifactPath);
+    }
+
+    [Fact]
+    public void Plan_WithExportPathAtTheProjectRoot_DoesNotClaimTheProject()
+    {
+        var target = Single(Plan([Preset(0, "Windows Demo", "Windows Desktop", "game.exe")]));
+
+        Assert.Equal(Path.GetFullPath(ProjectRoot), Path.GetFullPath(target.ArtifactPath));
+        Assert.False(target.OwnsArtifactPath);
+    }
+
+    [Fact]
+    public void Plan_WithConfiguredMacApp_ClaimsOwnershipOfTheBundle()
+    {
+        var target = Single(Plan([Preset(0, "macOS", "macOS", "build/MyGame.app")]));
+
+        Assert.Equal(target.Destination, target.ArtifactPath);
+        Assert.True(target.OwnsArtifactPath);
+    }
+
+    [Fact]
+    public void Plan_WithIsolatedDirectories_ClaimsOwnership()
+    {
+        var fallback = Single(Plan([Preset(0, "Web", "Web", "")]));
+        var underOutputRoot = Single(Plan([Preset(0, "Web", "Web", "public/index.html")], OutputRoot));
+
+        Assert.True(fallback.OwnsArtifactPath);
+        Assert.True(underOutputRoot.OwnsArtifactPath);
     }
 
     private static ExportPreset Preset(int index, string? name, string? platform, string? exportPath) =>

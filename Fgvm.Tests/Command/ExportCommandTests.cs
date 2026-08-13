@@ -271,18 +271,16 @@ public sealed class ExportCommandTests
     }
 
     [Fact]
-    public async Task Export_RejectsDistinctConfiguredFilesWhoseArtifactDirectoryIsShared()
+    public async Task Export_AllowsDistinctConfiguredFilesInOneDirectory()
     {
         SetupPresets([
             Preset(0, "Windows", "Windows Desktop", "build/game.exe"),
             Preset(1, "Linux", "Linux", "build/game.x86_64")
         ]);
 
-        var exception = await Assert.ThrowsAsync<ConfigurationException>(() =>
-            CreateCommand(out _, out _).Export());
+        await CreateCommand(out _, out _).Export();
 
-        Assert.Contains("both write", exception.Message, StringComparison.Ordinal);
-        VerifyNothingWasPrepared();
+        Assert.Equal(["Windows", "Linux"], _invocations.Skip(1).Select(PresetOf));
     }
 
     [Fact]
@@ -323,7 +321,7 @@ public sealed class ExportCommandTests
 
     private void VerifyNothingWasPrepared()
     {
-        _versionManagementService.Verify(service => service.SetLocalVersionAsync(
+        _versionManagementService.Verify(service => service.PrepareLocalVersionAsync(
             It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Empty(_invocations);
     }
@@ -363,7 +361,7 @@ public sealed class ExportCommandTests
             .Returns(new Result<IReadOnlyList<ExportPreset>, ExportPresetCatalogError>.Success(presets));
 
     private void SetupLocalRelease(Release release) =>
-        _versionManagementService.Setup(service => service.SetLocalVersionAsync(
+        _versionManagementService.Setup(service => service.PrepareLocalVersionAsync(
                 It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(release);
 
@@ -374,7 +372,8 @@ public sealed class ExportCommandTests
                 new TemplateInstallationOutcome.AlreadyInstalled("4.6.2.stable", "/templates/4.6.2.stable")));
 
     private void SetupResolvedEditor(string version) =>
-        _versionManagementService.Setup(service => service.ResolveEffectiveVersionAsync(It.IsAny<CancellationToken>()))
+        _versionManagementService.Setup(service => service.ResolveInstalledVersionAsync(
+                It.IsAny<string[]>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<VersionResolutionOutcome.Found, VersionResolutionError>.Success(
                 new VersionResolutionOutcome.Found("/godot/godot", "/godot", version, true, version)));
 
@@ -398,6 +397,11 @@ public sealed class ExportCommandTests
             .Returns(new Result<bool, FileOperationError>.Success(false));
         _hostSystem.Setup(system => system.WriteAllText(It.IsAny<string>(), It.IsAny<string>()))
             .Returns(new Result<Unit, FileOperationError>.Success(Unit.Value));
+        _hostSystem.Setup(system => system.EnumerateEntries(It.IsAny<string>()))
+            .Returns((string path) => new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(
+                path.Contains(".fgvm-export-staging-", StringComparison.Ordinal)
+                    ? [new HostDirectoryEntry(Path.Combine(path, "game"), "game", FileAttributes.Normal, DateTimeOffset.UtcNow)]
+                    : []));
     }
 
     private void SetupGodotExit(int exitCode) =>

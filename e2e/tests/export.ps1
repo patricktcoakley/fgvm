@@ -70,6 +70,22 @@ export_path=""
             "Every successful export should leave the default handoff manifest."
     }
 
+    Test "does not pin the project version" {
+        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        $projectPath = New-ExportProject "export-no-pin" @'
+[preset.0]
+name="Linux"
+platform="Linux"
+export_path="build/linux/game"
+'@
+
+        $export = Run -Cwd $projectPath -Environment (Get-ExportEnvironment) -Arguments @("export", "4.6")
+
+        Assert.ExitCode 0 $export "fgvm export with an explicit query"
+        Assert.False (Test-Path -LiteralPath (Join-Path $projectPath ".fgvm-version") -PathType Leaf) `
+            "Exporting must not create a version pin; only fgvm local writes one."
+    }
+
     Test "passes the preset name to Godot as a single argument" {
         Add-FixtureInstallation "4.6.2-stable" | Out-Null
         $projectPath = New-ExportProject "export-arguments" @'
@@ -337,4 +353,57 @@ export_path="build/failing/game"
         Assert.False (Test-Path -LiteralPath (Join-Path $projectPath ".fgvm-export.json") -PathType Leaf) `
             "A failed run must not leave a stale success manifest."
     }
+
+    Test "leaves unrelated content in a configured export directory alone" {
+        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        $projectPath = New-ExportProject "export-shared-directory" @'
+[preset.0]
+name="Windows"
+platform="Windows Desktop"
+runnable=true
+export_path="build/game.exe"
+'@
+
+        $buildPath = Join-Path $projectPath "build"
+        New-Item -ItemType Directory -Path (Join-Path $buildPath "installer") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $buildPath "signing.config") -Value "secret" -NoNewline
+        Set-Content -LiteralPath (Join-Path $buildPath "installer" "setup.iss") -Value "installer script" -NoNewline
+
+        $export = Run -Cwd $projectPath -Environment (Get-ExportEnvironment) -Arguments @("export", "4.6")
+
+        Assert.ExitCode 0 $export "fgvm export into a shared directory"
+        Assert.True (Test-Path -LiteralPath (Join-Path $buildPath "game.exe") -PathType Leaf) `
+            "The export output should be produced."
+        Assert.Equal "secret" (File.Read (Join-Path $buildPath "signing.config")) `
+            "An unrelated file in the export directory must survive."
+        Assert.Equal "installer script" (File.Read (Join-Path $buildPath "installer" "setup.iss")) `
+            "An unrelated subdirectory in the export directory must survive."
+    }
+
+    Test "never replaces the project directory itself" {
+        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        $projectPath = New-ExportProject "export-project-root" @'
+[preset.0]
+name="Windows"
+platform="Windows Desktop"
+runnable=true
+export_path="game.exe"
+'@
+
+        New-Item -ItemType Directory -Path (Join-Path $projectPath "src") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $projectPath "src" "player.gd") -Value "extends Node" -NoNewline
+
+        $export = Run -Cwd $projectPath -Environment (Get-ExportEnvironment) -Arguments @("export", "4.6")
+
+        Assert.ExitCode 0 $export "fgvm export into the project root"
+        Assert.True (Test-Path -LiteralPath (Join-Path $projectPath "game.exe") -PathType Leaf) `
+            "The export output should be produced."
+        Assert.True (Test-Path -LiteralPath (Join-Path $projectPath "project.godot") -PathType Leaf) `
+            "project.godot must survive an export that targets the project root."
+        Assert.True (Test-Path -LiteralPath (Join-Path $projectPath "export_presets.cfg") -PathType Leaf) `
+            "export_presets.cfg must survive an export that targets the project root."
+        Assert.Equal "extends Node" (File.Read (Join-Path $projectPath "src" "player.gd")) `
+            "Project sources must survive an export that targets the project root."
+    }
+
 }

@@ -163,6 +163,27 @@ public sealed class HostSystemContractTests : IDisposable
     }
 
     [Fact]
+    public void EnumerateEntries_ReturnsBothKindsAndMarksDirectories()
+    {
+        CreateDirectory("child", "file.txt", "contents");
+        File.WriteAllText(Path.Combine(_root, "loose.txt"), "loose");
+
+        var entries = AssertSuccess(_hostSystem.EnumerateEntries(_root)).OrderBy(entry => entry.Name).ToArray();
+
+        Assert.Equal(["child", "loose.txt"], entries.Select(entry => entry.Name));
+        Assert.True(entries[0].Attributes.HasFlag(FileAttributes.Directory));
+        Assert.False(entries[1].Attributes.HasFlag(FileAttributes.Directory));
+    }
+
+    [Fact]
+    public void EnumerateEntries_ReturnsNotFound_WhenThePathIsMissing()
+    {
+        var error = AssertFailure(_hostSystem.EnumerateEntries(Path.Combine(_root, "not-there")));
+
+        Assert.IsType<FileOperationError.NotFound>(error);
+    }
+
+    [Fact]
     public void FileExists_DistinguishesFilesFromDirectoriesAndMissingPaths()
     {
         var directory = CreateDirectory("directory", "file.txt", "contents");
