@@ -89,6 +89,19 @@ public interface IVersionManagementService
     Result<VersionResolutionOutcome, VersionResolutionError> ResolveInteractiveVersion(string selection);
 
     /// <summary>
+    ///     Resolves the version a project should build with, installing it when necessary, without
+    ///     creating or updating the `.fgvm-version` file.
+    /// </summary>
+    /// <param name="query">Version query arguments, or null to detect from the project.</param>
+    /// <param name="forceInteractive">Force interactive selection.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The resolved release.</returns>
+    Task<Release> PrepareLocalVersionAsync(string[]? query = null,
+        bool forceInteractive = false,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     ///     Sets the local project version by managing the `.fgvm-version` file.
     ///     Handles project detection, installation if needed, and file creation/updates.
     /// </summary>
@@ -401,7 +414,7 @@ public class VersionManagementService(
     }
 
     /// <inheritdoc />
-    public async Task<Release> SetLocalVersionAsync(string[]? query = null,
+    public async Task<Release> PrepareLocalVersionAsync(string[]? query = null,
         bool forceInteractive = false,
         CancellationToken cancellationToken = default
     )
@@ -409,9 +422,24 @@ public class VersionManagementService(
         try
         {
             var installed = ListInstallations().ToArray();
-            var versionToSet = await DetermineVersionToSetAsync(query, forceInteractive, installed, cancellationToken);
+            return CreateRelease(await DetermineVersionToSetAsync(query, forceInteractive, installed, cancellationToken));
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "Error preparing the project version: {Message}", e.Message);
+            throw;
+        }
+    }
 
-            var godotRelease = CreateRelease(versionToSet);
+    /// <inheritdoc />
+    public async Task<Release> SetLocalVersionAsync(string[]? query = null,
+        bool forceInteractive = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            var godotRelease = await PrepareLocalVersionAsync(query, forceInteractive, cancellationToken);
 
             var versionFilePath = Path.Combine(Directory.GetCurrentDirectory(), ".fgvm-version");
             var fileExists = hostSystem.FileExists(versionFilePath) is Result<bool, FileOperationError>.Success { Value: true };

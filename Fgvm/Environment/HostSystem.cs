@@ -103,6 +103,11 @@ public interface IHostSystem
     Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError> EnumerateDirectories(string path);
 
     /// <summary>
+    ///     Enumerates immediate children of both kinds.
+    /// </summary>
+    Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError> EnumerateEntries(string path);
+
+    /// <summary>
     ///     Gets a directory's creation time in UTC.
     /// </summary>
     Result<DateTimeOffset, FileOperationError> GetDirectoryCreatedAtUtc(string path);
@@ -516,6 +521,48 @@ public sealed class HostSystem(SystemInfo systemInfo, IPathService pathService, 
                 .ToArray();
 
             return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(directories);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(new FileOperationError.PermissionDenied(path));
+        }
+        catch (FileNotFoundException)
+        {
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(new FileOperationError.NotFound(path));
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(new FileOperationError.NotFound(path));
+        }
+        catch (PathTooLongException)
+        {
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(new FileOperationError.InvalidPath(path));
+        }
+        catch (ArgumentException)
+        {
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(new FileOperationError.InvalidPath(path));
+        }
+        catch (NotSupportedException)
+        {
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(new FileOperationError.UnsupportedPath(path));
+        }
+        catch (IOException)
+        {
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(new FileOperationError.IoFailure(path));
+        }
+    }
+
+    /// <inheritdoc />
+    public Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError> EnumerateEntries(string path)
+    {
+        try
+        {
+            var entries = new DirectoryInfo(path)
+                .EnumerateFileSystemInfos()
+                .Select(info => new HostDirectoryEntry(info.FullName, info.Name, info.Attributes, info.LastWriteTimeUtc))
+                .ToArray();
+
+            return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(entries);
         }
         catch (UnauthorizedAccessException)
         {
