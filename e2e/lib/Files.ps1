@@ -233,7 +233,7 @@ function Get-DefaultFixtureTarget {
 .RETURNS
     pscustomobject with Release, Runtime, Target, Name (release-runtime),
     Key (release-runtime@target), RelativePath, InstallationPath,
-    ExecutablePath, and ShortcutTargetPath.
+    ExecutablePath, MockInvocationPath, and ShortcutTargetPath.
 #>
 function Add-FixtureInstallation {
     param(
@@ -336,6 +336,7 @@ function Add-FixtureInstallation {
         RelativePath       = $relativePath
         InstallationPath   = $installationPath
         ExecutablePath     = $executablePath
+        MockInvocationPath = Join-Path (Split-Path -Parent $executablePath) ".fgvm-mock-invocation.json"
         ShortcutTargetPath = $shortcutTargetPath
     }
 }

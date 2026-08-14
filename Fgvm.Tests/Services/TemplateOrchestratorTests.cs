@@ -1,3 +1,4 @@
+using Fgvm.Cli;
 using Fgvm.Cli.Services;
 using Fgvm.Godot;
 using Fgvm.Progress;

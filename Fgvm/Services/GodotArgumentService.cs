@@ -16,6 +16,7 @@ public sealed class GodotArgumentService : IGodotArgumentService
     {
         // General options
         "--help", "-h", "--version", "--verbose", "-v", "--quiet", "-q",
+        "--quit", "--quit-after",
         "--headless", "--no-header",
 
         // Debug and profiling options

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Fgvm.Environment;
@@ -112,8 +115,9 @@ public sealed class InstallationRegistry(
             Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document)
                 when document.Installations.TryGetValue(key, out var entry) =>
                 new Result<Installation, InstallationRegistryError>.Success(ToInstalledGodot(key, entry)),
-            Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document) =>
-                FindGeneratedInstallation(key, document),
+            Result<InstallationRegistryDocument, InstallationRegistryError>.Success =>
+                new Result<Installation, InstallationRegistryError>.Failure(
+                    new InstallationRegistryError.NotFound(releaseNameWithRuntime)),
             Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error) =>
                 new Result<Installation, InstallationRegistryError>.Failure(error),
             _ => throw new InvalidOperationException("Unexpected Result type")
@@ -137,22 +141,41 @@ public sealed class InstallationRegistry(
     /// <inheritdoc />
     public Result<Unit, InstallationRegistryError> UpsertInstalled(Release release, string relativePath, DateTimeOffset? installedAt = null)
     {
+        if (!IsSafeRelativePath(relativePath))
+        {
+            return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.InvalidPath(relativePath));
+        }
+
         var key = CreateKey(release.ReleaseNameWithRuntime, release.PlatformString);
         switch (LoadDocument())
         {
             case Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error):
                 return new Result<Unit, InstallationRegistryError>.Failure(error);
             case Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var document):
-                if (!IsSafeRelativePath(relativePath))
+                var normalizedPath = NormalizeRelativePath(relativePath);
+                if (!document.Installations.TryGetValue(key, out var scannedEntry) ||
+                    !string.Equals(scannedEntry.Path, normalizedPath, StringComparison.Ordinal))
                 {
-                    return new Result<Unit, InstallationRegistryError>.Failure(new InstallationRegistryError.InvalidPath(relativePath));
+                    switch (hostSystem.DirectoryExists(ResolvePath(normalizedPath)))
+                    {
+                        case Result<bool, FileOperationError>.Failure(var directoryError):
+                            return new Result<Unit, InstallationRegistryError>.Failure(
+                                new InstallationRegistryError.GenerationFailed(directoryError));
+                        case Result<bool, FileOperationError>.Success { Value: false }:
+                            return new Result<Unit, InstallationRegistryError>.Failure(
+                                new InstallationRegistryError.NotFound(normalizedPath));
+                        case Result<bool, FileOperationError>.Success:
+                            break;
+                        default:
+                            throw new InvalidOperationException("Unexpected Result type");
+                    }
                 }
 
                 var previous = document.Installations.GetValueOrDefault(key);
                 document.Installations[key] = new InstallationRegistryEntry
                 {
-                    Path = NormalizeRelativePath(relativePath),
-                    InstalledAt = previous?.InstalledAt ?? installedAt ?? DateTimeOffset.UtcNow,
+                    Path = normalizedPath,
+                    InstalledAt = installedAt ?? previous?.InstalledAt ?? DateTimeOffset.UtcNow,
                     LastLaunchedAt = previous?.LastLaunchedAt
                 };
 
@@ -233,19 +256,6 @@ public sealed class InstallationRegistry(
         }
     }
 
-    private Result<Installation, InstallationRegistryError> FindGeneratedInstallation(string key, InstallationRegistryDocument document) =>
-        GenerateFromFileSystem(document) switch
-        {
-            Result<InstallationRegistryDocument, InstallationRegistryError>.Success(var generated)
-                when generated.Installations.TryGetValue(key, out var entry) =>
-                new Result<Installation, InstallationRegistryError>.Success(ToInstalledGodot(key, entry)),
-            Result<InstallationRegistryDocument, InstallationRegistryError>.Success =>
-                new Result<Installation, InstallationRegistryError>.Failure(new InstallationRegistryError.NotFound(key)),
-            Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(var error) =>
-                new Result<Installation, InstallationRegistryError>.Failure(error),
-            _ => throw new InvalidOperationException("Unexpected Result type")
-        };
-
     private Result<InstallationRegistryDocument, InstallationRegistryError> LoadDocument()
     {
         switch (hostSystem.FileExists(pathService.InstallationsPath))
@@ -300,6 +310,45 @@ public sealed class InstallationRegistry(
                 return GenerateFromFileSystem(document);
             }
 
+            string currentLegacyLayoutDigest;
+            switch (ComputeLegacyLayoutDigest())
+            {
+                case Result<string, FileOperationError>.Failure(var legacyDigestError):
+                    return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
+                        new InstallationRegistryError.GenerationFailed(legacyDigestError));
+                case Result<string, FileOperationError>.Success(var digest):
+                    currentLegacyLayoutDigest = digest;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
+
+            string currentLayoutDigest;
+            switch (ComputeLayoutDigest())
+            {
+                case Result<string, FileOperationError>.Failure(var digestError):
+                    return new Result<InstallationRegistryDocument, InstallationRegistryError>.Failure(
+                        new InstallationRegistryError.GenerationFailed(digestError));
+                case Result<string, FileOperationError>.Success(var digest):
+                    currentLayoutDigest = digest;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
+
+            if (!string.Equals(
+                    registryValidation.Document.LastScanDigest,
+                    currentLayoutDigest,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    registryValidation.Document.LastLegacyScanDigest,
+                    currentLegacyLayoutDigest,
+                    StringComparison.Ordinal))
+            {
+                logger.LogInformation("The installations layout changed; rebuilding the installation registry");
+                return GenerateFromFileSystem(registryValidation.Document);
+            }
+
             if (!registryValidation.Changed)
             {
                 return new Result<InstallationRegistryDocument, InstallationRegistryError>.Success(registryValidation.Document);
@@ -323,7 +372,12 @@ public sealed class InstallationRegistry(
 
     private Result<RegistryValidation, FileOperationError> ValidateDocument(InstallationRegistryDocument document)
     {
-        var normalized = new InstallationRegistryDocument { Default = document.Default };
+        var normalized = new InstallationRegistryDocument
+        {
+            Default = document.Default,
+            LastScanDigest = document.LastScanDigest,
+            LastLegacyScanDigest = document.LastLegacyScanDigest
+        };
         var changed = false;
         var needsGeneration = false;
 
@@ -337,18 +391,21 @@ public sealed class InstallationRegistry(
                 continue;
             }
 
-            var fullPath = ResolvePath(entry.Path);
-            switch (hostSystem.DirectoryExists(fullPath))
+            var normalizedPath = NormalizeRelativePath(entry.Path);
+            if (!IsScanManagedInstallationPath(releaseName, target, normalizedPath))
             {
-                case Result<bool, FileOperationError>.Failure(var directoryError):
-                    return new Result<RegistryValidation, FileOperationError>.Failure(directoryError);
-                case Result<bool, FileOperationError>.Success { Value: false }:
-                    needsGeneration = true;
-                    break;
-                case Result<bool, FileOperationError>.Success:
-                    break;
-                default:
-                    throw new InvalidOperationException("Unexpected Result type");
+                switch (hostSystem.DirectoryExists(ResolvePath(normalizedPath)))
+                {
+                    case Result<bool, FileOperationError>.Failure(var directoryError):
+                        return new Result<RegistryValidation, FileOperationError>.Failure(directoryError);
+                    case Result<bool, FileOperationError>.Success { Value: false }:
+                        needsGeneration = true;
+                        break;
+                    case Result<bool, FileOperationError>.Success:
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unexpected Result type");
+                }
             }
 
             if (needsGeneration)
@@ -356,7 +413,6 @@ public sealed class InstallationRegistry(
                 break;
             }
 
-            var normalizedPath = NormalizeRelativePath(entry.Path);
             normalized.Installations[CreateKey(releaseName, target)] = new InstallationRegistryEntry
             {
                 Path = normalizedPath,
@@ -424,64 +480,65 @@ public sealed class InstallationRegistry(
 
         // LEGACY COMPATIBILITY: Remove this block with ScanLegacyInstallations when legacy <root>/<release>
         // installs are no longer supported.
-        IReadOnlyList<Installation> legacy;
+        LegacyInstallationScan legacy;
         switch (ScanLegacyInstallations(existingDocument))
         {
-            case Result<IReadOnlyList<Installation>, FileOperationError>.Failure(var legacyError):
+            case Result<LegacyInstallationScan, FileOperationError>.Failure(var legacyError):
                 return new Result<InstallationRegistryDocument, FileOperationError>.Failure(legacyError);
-            case Result<IReadOnlyList<Installation>, FileOperationError>.Success(var installations):
-                legacy = installations;
+            case Result<LegacyInstallationScan, FileOperationError>.Success(var scan):
+                legacy = scan;
                 break;
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
 
-        foreach (var installation in legacy)
+        foreach (var installation in legacy.Installations)
         {
             document.Installations[installation.Key] = ToEntry(installation);
         }
 
-        IReadOnlyList<Installation> targetAware;
+        TargetAwareInstallationScan targetAware;
         switch (ScanTargetAwareInstallations(existingDocument))
         {
-            case Result<IReadOnlyList<Installation>, FileOperationError>.Failure(var targetAwareError):
+            case Result<TargetAwareInstallationScan, FileOperationError>.Failure(var targetAwareError):
                 return new Result<InstallationRegistryDocument, FileOperationError>.Failure(targetAwareError);
-            case Result<IReadOnlyList<Installation>, FileOperationError>.Success(var installations):
-                targetAware = installations;
+            case Result<TargetAwareInstallationScan, FileOperationError>.Success(var scan):
+                targetAware = scan;
                 break;
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
 
-        foreach (var installation in targetAware)
+        foreach (var installation in targetAware.Installations)
         {
             document.Installations[installation.Key] = ToEntry(installation);
+        }
+
+        document.LastScanDigest = targetAware.LayoutDigest;
+        document.LastLegacyScanDigest = legacy.LayoutDigest;
+
+        switch (PreserveCustomInstallations(document, existingDocument))
+        {
+            case Result<Unit, FileOperationError>.Failure(var customError):
+                return new Result<InstallationRegistryDocument, FileOperationError>.Failure(customError);
+            case Result<Unit, FileOperationError>.Success:
+                break;
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
         }
 
         return new Result<InstallationRegistryDocument, FileOperationError>.Success(document);
     }
 
-    private Result<IReadOnlyList<Installation>, FileOperationError> ScanLegacyInstallations(InstallationRegistryDocument? existingDocument)
+    private Result<LegacyInstallationScan, FileOperationError> ScanLegacyInstallations(InstallationRegistryDocument? existingDocument)
     {
         // LEGACY COMPATIBILITY: This imports pre-registry installs from <root>/<release>.
         // Keep new installs target-aware; delete this method when dropping legacy layout support.
-        switch (hostSystem.DirectoryExists(pathService.RootPath))
-        {
-            case Result<bool, FileOperationError>.Failure(var rootError):
-                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(rootError);
-            case Result<bool, FileOperationError>.Success { Value: false }:
-                return new Result<IReadOnlyList<Installation>, FileOperationError>.Success([]);
-            case Result<bool, FileOperationError>.Success:
-                break;
-            default:
-                throw new InvalidOperationException("Unexpected Result type");
-        }
-
         IReadOnlyList<HostDirectoryEntry> directories;
-        switch (hostSystem.EnumerateDirectories(pathService.RootPath))
+        switch (ReadLegacyCandidateDirectories())
         {
             case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var directoriesError):
-                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(directoriesError);
+                return new Result<LegacyInstallationScan, FileOperationError>.Failure(directoriesError);
             case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var entries):
                 directories = entries;
                 break;
@@ -492,16 +549,6 @@ public sealed class InstallationRegistry(
         var installations = new List<Installation>();
         foreach (var info in directories)
         {
-            if (info.Attributes.HasFlag(FileAttributes.Hidden) ||
-                info.Name.StartsWith(".", StringComparison.Ordinal) ||
-                string.Equals(info.Name, "bin", StringComparison.Ordinal) ||
-                string.Equals(info.Name, InstallationsDirectoryName, StringComparison.Ordinal) ||
-                string.Equals(info.FullName, pathService.SymlinkPath, StringComparison.Ordinal) ||
-                string.Equals(info.FullName, pathService.MacAppSymlinkPath, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
             if (releaseManager.CreateRelease(info.Name) is not Result<Release, ReleaseParseError>.Success(var release) ||
                 release.PlatformString is null)
             {
@@ -519,30 +566,109 @@ public sealed class InstallationRegistry(
                 existing?.LastLaunchedAt));
         }
 
-        return new Result<IReadOnlyList<Installation>, FileOperationError>.Success(installations);
+        return new Result<LegacyInstallationScan, FileOperationError>.Success(
+            new LegacyInstallationScan(installations, CreateLayoutDigest(directories)));
     }
 
-    private Result<IReadOnlyList<Installation>, FileOperationError> ScanTargetAwareInstallations(
-        InstallationRegistryDocument? existingDocument
-    )
-    {
-        switch (hostSystem.DirectoryExists(pathService.InstallationsDirectoryPath))
+    private Result<string, FileOperationError> ComputeLegacyLayoutDigest() =>
+        ReadLegacyCandidateDirectories() switch
         {
-            case Result<bool, FileOperationError>.Failure(var existsError):
-                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(existsError);
+            Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var directories) =>
+                new Result<string, FileOperationError>.Success(CreateLayoutDigest(directories)),
+            Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var error) =>
+                new Result<string, FileOperationError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+    private Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError> ReadLegacyCandidateDirectories()
+    {
+        switch (hostSystem.DirectoryExists(pathService.RootPath))
+        {
+            case Result<bool, FileOperationError>.Failure(var rootError):
+                return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(rootError);
             case Result<bool, FileOperationError>.Success { Value: false }:
-                return new Result<IReadOnlyList<Installation>, FileOperationError>.Success([]);
+                return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success([]);
             case Result<bool, FileOperationError>.Success:
                 break;
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
 
+        return hostSystem.EnumerateDirectories(pathService.RootPath) switch
+        {
+            Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var directories) =>
+                new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(
+                    directories.Where(IsLegacyCandidateDirectory).ToArray()),
+            Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var error) =>
+                new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+    }
+
+    private bool IsLegacyCandidateDirectory(HostDirectoryEntry info) =>
+        !info.Attributes.HasFlag(FileAttributes.Hidden) &&
+        !info.Name.StartsWith('.') &&
+        !string.Equals(info.Name, "bin", StringComparison.Ordinal) &&
+        !string.Equals(info.Name, InstallationsDirectoryName, StringComparison.Ordinal) &&
+        !string.Equals(info.FullName, pathService.SymlinkPath, StringComparison.Ordinal) &&
+        !string.Equals(info.FullName, pathService.MacAppSymlinkPath, StringComparison.Ordinal);
+
+    private Result<Unit, FileOperationError> PreserveCustomInstallations(InstallationRegistryDocument scanned,
+        InstallationRegistryDocument? existing
+    )
+    {
+        if (existing is null)
+        {
+            return new Result<Unit, FileOperationError>.Success(Unit.Value);
+        }
+
+        foreach (var (key, entry) in existing.Installations)
+        {
+            if (!TryParseKey(key, out var releaseName, out var target) ||
+                string.IsNullOrWhiteSpace(entry.Path) ||
+                !IsSafeRelativePath(entry.Path))
+            {
+                continue;
+            }
+
+            var normalizedPath = NormalizeRelativePath(entry.Path);
+            if (IsScanManagedInstallationPath(releaseName, target, normalizedPath) ||
+                scanned.Installations.ContainsKey(key))
+            {
+                continue;
+            }
+
+            switch (hostSystem.DirectoryExists(ResolvePath(normalizedPath)))
+            {
+                case Result<bool, FileOperationError>.Failure(var directoryError):
+                    return new Result<Unit, FileOperationError>.Failure(directoryError);
+                case Result<bool, FileOperationError>.Success { Value: false }:
+                    continue;
+                case Result<bool, FileOperationError>.Success:
+                    scanned.Installations[key] = new InstallationRegistryEntry
+                    {
+                        Path = normalizedPath,
+                        InstalledAt = entry.InstalledAt,
+                        LastLaunchedAt = entry.LastLaunchedAt
+                    };
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected Result type");
+            }
+        }
+
+        return new Result<Unit, FileOperationError>.Success(Unit.Value);
+    }
+
+    private Result<TargetAwareInstallationScan, FileOperationError> ScanTargetAwareInstallations(
+        InstallationRegistryDocument? existingDocument
+    )
+    {
         IReadOnlyList<HostDirectoryEntry> releases;
-        switch (hostSystem.EnumerateDirectories(pathService.InstallationsDirectoryPath))
+        switch (ReadInstallationReleaseDirectories())
         {
             case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var releaseDirectoriesError):
-                return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(releaseDirectoriesError);
+                return new Result<TargetAwareInstallationScan, FileOperationError>.Failure(releaseDirectoriesError);
             case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var entries):
                 releases = entries;
                 break;
@@ -562,7 +688,7 @@ public sealed class InstallationRegistry(
             switch (hostSystem.EnumerateDirectories(releaseInfo.FullName))
             {
                 case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var targetDirectoriesError):
-                    return new Result<IReadOnlyList<Installation>, FileOperationError>.Failure(targetDirectoriesError);
+                    return new Result<TargetAwareInstallationScan, FileOperationError>.Failure(targetDirectoriesError);
                 case Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var entries):
                     targets = entries;
                     break;
@@ -573,7 +699,7 @@ public sealed class InstallationRegistry(
             foreach (var targetInfo in targets)
             {
                 if (targetInfo.Attributes.HasFlag(FileAttributes.Hidden) ||
-                    targetInfo.Name.StartsWith(".", StringComparison.Ordinal) ||
+                    targetInfo.Name.StartsWith('.') ||
                     !IsSafeTarget(targetInfo.Name))
                 {
                     continue;
@@ -592,7 +718,47 @@ public sealed class InstallationRegistry(
             }
         }
 
-        return new Result<IReadOnlyList<Installation>, FileOperationError>.Success(installations);
+        return new Result<TargetAwareInstallationScan, FileOperationError>.Success(
+            new TargetAwareInstallationScan(installations, CreateLayoutDigest(releases)));
+    }
+
+    private Result<string, FileOperationError> ComputeLayoutDigest() =>
+        ReadInstallationReleaseDirectories() switch
+        {
+            Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success(var releases) =>
+                new Result<string, FileOperationError>.Success(CreateLayoutDigest(releases)),
+            Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(var error) =>
+                new Result<string, FileOperationError>.Failure(error),
+            _ => throw new InvalidOperationException("Unexpected Result type")
+        };
+
+    private Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError> ReadInstallationReleaseDirectories()
+    {
+        switch (hostSystem.DirectoryExists(pathService.InstallationsDirectoryPath))
+        {
+            case Result<bool, FileOperationError>.Failure(var existsError):
+                return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Failure(existsError);
+            case Result<bool, FileOperationError>.Success { Value: false }:
+                return new Result<IReadOnlyList<HostDirectoryEntry>, FileOperationError>.Success([]);
+            case Result<bool, FileOperationError>.Success:
+                return hostSystem.EnumerateDirectories(pathService.InstallationsDirectoryPath);
+            default:
+                throw new InvalidOperationException("Unexpected Result type");
+        }
+    }
+
+    private static string CreateLayoutDigest(IEnumerable<HostDirectoryEntry> releases)
+    {
+        var input = new StringBuilder();
+        foreach (var release in releases.OrderBy(entry => entry.Name, StringComparer.Ordinal))
+        {
+            input.Append(release.Name)
+                .Append(':')
+                .Append(release.LastWriteTimeUtc.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture))
+                .Append('\n');
+        }
+
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(input.ToString())));
     }
 
     private string? InferDefaultFromSymlink(InstallationRegistryDocument document)
@@ -802,6 +968,13 @@ public sealed class InstallationRegistry(
     private static string NormalizeRelativePath(string path) =>
         path.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
 
+    private static bool IsScanManagedInstallationPath(string releaseNameWithRuntime, string target, string path) =>
+        string.Equals(path, releaseNameWithRuntime, StringComparison.Ordinal) ||
+        string.Equals(
+            path,
+            string.Join('/', InstallationsDirectoryName, releaseNameWithRuntime, target),
+            StringComparison.Ordinal);
+
     private DateTimeOffset? GetDirectoryCreatedAt(string path)
     {
         return hostSystem.GetDirectoryCreatedAtUtc(path) is Result<DateTimeOffset, FileOperationError>.Success(var createdAt)
@@ -814,12 +987,30 @@ public sealed class InstallationRegistry(
         bool Changed,
         bool NeedsFileSystemGeneration
     );
+
+    private sealed record LegacyInstallationScan(
+        IReadOnlyList<Installation> Installations,
+        string LayoutDigest
+    );
+
+    private sealed record TargetAwareInstallationScan(
+        IReadOnlyList<Installation> Installations,
+        string LayoutDigest
+    );
 }
 
 public sealed class InstallationRegistryDocument
 {
     [JsonPropertyName("default")]
     public string? Default { get; set; }
+
+    [JsonPropertyName("lastScanDigest")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LastScanDigest { get; set; }
+
+    [JsonPropertyName("lastLegacyScanDigest")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LastLegacyScanDigest { get; set; }
 
     [JsonPropertyName("installations")]
     public Dictionary<string, InstallationRegistryEntry> Installations { get; set; } = [];

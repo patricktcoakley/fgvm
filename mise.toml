@@ -38,11 +38,14 @@ dir = "."
 sources = [
     "Fgvm/**/*.cs",
     "Fgvm.Cli/**/*.cs",
+    "Fgvm.Tests.Fixtures/**/*.cs",
     "Fgvm/Fgvm.csproj",
     "Fgvm.Cli/Fgvm.Cli.csproj",
+    "Fgvm.Tests.Fixtures/Fgvm.Tests.Fixtures.csproj",
     "e2e/fixtures/*.cs",
     "e2e/fixtures/*.json",
     "Fgvm.Tests.Integration/Fixtures/PublishCli.cs",
+    "Fgvm.Tests.Integration/Fixtures/TestHost.cs",
     "Fgvm.slnx",
     "global.json"
 ]

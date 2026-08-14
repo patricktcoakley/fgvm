@@ -2,8 +2,11 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Fgvm.Error;
 
-namespace Fgvm.Tests.Integration;
+namespace Fgvm.Tests.Fixtures;
 
+/// <summary>
+///     Provides an isolated fgvm process environment for the integration suite.
+/// </summary>
 public sealed class TestFixture : IAsyncLifetime
 {
     private readonly Dictionary<string, string> _baseEnvironment = new(StringComparer.Ordinal);
@@ -33,7 +36,7 @@ public sealed class TestFixture : IAsyncLifetime
 
         var platform = CurrentPlatform();
         _fgvmPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_CLI_PATH")
-                    ?? Path.Combine(_repoRoot, ".fgvm-integration-cli", platform, ExecutableName("fgvm"));
+                    ?? Path.Combine(_repoRoot, ".fgvm-integration-cli", platform, ExecutableName("fgvm-test-host"));
         _fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_FIXTURE_MANIFEST")
                                ?? Path.Combine(_repoRoot, "Fgvm.Tests.Integration", "Fixtures", "release-index-manifest.json");
 

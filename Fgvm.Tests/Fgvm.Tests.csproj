@@ -32,6 +32,7 @@
     <ItemGroup>
         <ProjectReference Include="..\Fgvm\Fgvm.csproj"/>
         <ProjectReference Include="..\Fgvm.Cli\Fgvm.Cli.csproj"/>
+        <ProjectReference Include="..\Fgvm.Tests.Fixtures\Fgvm.Tests.Fixtures.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

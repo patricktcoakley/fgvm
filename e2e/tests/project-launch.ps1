@@ -4,11 +4,11 @@ Suite "project launch" {
     Test "auto-detects project arguments and remains detached for flag-like paths" {
         $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
         $projectPath = Join-Path $Context.WorkPath "my-dev-project game-server"
-        $invocationPath = Join-Path $Context.WorkPath "project-launch.json"
+        $invocationPath = $seeded.MockInvocationPath
         New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $projectPath "project.godot") -Value '[application]' -NoNewline
 
-        $godot = Run -Cwd $projectPath -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } -Arguments @("godot")
+        $godot = Run -Cwd $projectPath -Arguments @("godot")
 
         Assert.ExitCode 0 $godot "fgvm godot with auto-detected project"
         Assert.Contains "Auto-detected project file" $godot.Stdout
@@ -29,14 +29,13 @@ Suite "project launch" {
     }
 
     Test "explicit arguments suppress automatic project arguments" {
-        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
         $projectPath = Join-Path $Context.WorkPath "explicit-argument-project"
-        $invocationPath = Join-Path $Context.WorkPath "explicit-project-launch.json"
+        $invocationPath = $seeded.MockInvocationPath
         New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $projectPath "project.godot") -Value '[application]' -NoNewline
 
-        $godot = Run -Cwd $projectPath -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } `
-            -Arguments @("godot", "--attached", "--args", "alpha beta")
+        $godot = Run -Cwd $projectPath -Arguments @("godot", "--attached", "--args", "alpha beta")
 
         Assert.ExitCode 0 $godot "fgvm godot with explicit arguments"
         File.WaitFor $invocationPath
@@ -47,13 +46,13 @@ Suite "project launch" {
     }
 
     Test "project flag adds detected project path to explicit arguments" {
-        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
         $projectPath = Join-Path $Context.WorkPath "project-argument-project"
-        $invocationPath = Join-Path $Context.WorkPath "project-argument-launch.json"
+        $invocationPath = $seeded.MockInvocationPath
         New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $projectPath "project.godot") -Value '[application]' -NoNewline
 
-        $godot = Run -Cwd $projectPath -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } `
+        $godot = Run -Cwd $projectPath `
             -Arguments @("godot", "--attached", "-P", "--args", "--dump-extension-api --quit")
 
         Assert.ExitCode 0 $godot "fgvm godot -P with explicit arguments"
@@ -73,7 +72,7 @@ Suite "project launch" {
         $godot = Run -Cwd $emptyDirectory -Arguments @("godot", "-P")
 
         Assert.ExitCode 1 $godot "fgvm godot -P without a project.godot file"
-        Assert.Contains "No project.godot file was detected in the current directory." $godot.Stdout
-        Assert.NotContains "Something went wrong" $godot.Stdout
+        Assert.Contains "No project.godot file was detected in the current directory." $godot.Stderr
+        Assert.NotContains "Something went wrong" $godot.Stderr
     }
 }

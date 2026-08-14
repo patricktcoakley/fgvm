@@ -128,6 +128,7 @@ config/features=PackedStringArray("4.6", "Forward Plus")
         $godot = Run -Cwd $projectPath "godot" "--args" "--version"
 
         Assert.ExitCode 1 $godot "fgvm godot with malformed .fgvm-version"
-        Assert.Contains '.fgvm-version' ($godot.Stdout.Replace("`r`n", "").Replace("`n", "").Split(@("`t", " "), [System.StringSplitOptions]::RemoveEmptyEntries) -join ' ').Trim()
+        Assert.Contains '.fgvm-version' ($godot.Stderr.Replace("`r`n", "").Replace("`n", "").Split(@("`t", " "), [System.StringSplitOptions]::RemoveEmptyEntries) -join ' ').Trim()
+        Assert.Equal "" $godot.Stdout.Trim() "Version-resolution failures must not leak onto stdout."
     }
 }

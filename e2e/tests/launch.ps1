@@ -31,10 +31,9 @@ Suite "godot launch" {
     Test "launches a queried installed version instead of the default" {
         $stable = Add-FixtureInstallation "4.6.2-stable" -Default
         $older = Add-FixtureInstallation "4.5-stable"
-        $invocationPath = Join-Path $Context.WorkPath "queried-launch.json"
+        $invocationPath = $older.MockInvocationPath
 
-        $godot = Run -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } `
-            -Arguments @("godot", "--attached", "--query", "4.5-stable-standard", "--args", "alpha beta")
+        $godot = Run -Arguments @("godot", "--attached", "--query", "4.5-stable-standard", "--args", "alpha beta")
 
         Assert.ExitCode 0 $godot "fgvm godot --query 4.5-stable-standard --args `"alpha beta`""
         Assert.Contains "Mock Godot launched with: alpha beta" $godot.Stdout
@@ -62,17 +61,16 @@ Suite "godot launch" {
         $failure = Run "godot" "--attached" "--args" "--fgvm-mock-fail"
 
         Assert.ExitCode 2 $invalid "mock Godot argument failure"
-        Assert.Contains "invalid argument" $invalid.Stdout
+        Assert.Contains "invalid argument" $invalid.Stderr
         Assert.ExitCode 42 $failure "mock Godot process failure"
-        Assert.Contains "failure" $failure.Stdout
+        Assert.Contains "failure" $failure.Stderr
     }
 
     Test "returns before a detached godot process exits" {
-        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
-        $invocationPath = Join-Path $Context.WorkPath "detached-lifecycle.json"
+        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
+        $invocationPath = $seeded.MockInvocationPath
 
-        $godot = Run -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } `
-            -Arguments @("godot", "--args", "--fgvm-mock-delay-ms 5000")
+        $godot = Run -Arguments @("godot", "--args", "--fgvm-mock-delay-ms 5000")
 
         Assert.ExitCode 0 $godot "fgvm detached Godot launch"
         File.WaitFor $invocationPath
@@ -108,8 +106,8 @@ Suite "godot launch" {
         $godot = Run "godot" "--args" "--windowed"
 
         Assert.ExitCode 1 $godot "fgvm launch with a missing Godot executable"
-        $normalizedOutput = ($godot.Stdout -replace "\s+", " ").Trim()
-        Assert.Contains "Something went wrong when trying to launch Godot" $normalizedOutput
+        $normalizedOutput = ($godot.Stderr -replace "\s+", " ").Trim()
+        Assert.Contains "Could not run Godot" $normalizedOutput
         $entry = (Manifest.From $Context.InstallationsPath)["installations"][$seeded.Key]
         Assert.Equal $null $entry["lastLaunchedAt"]
     }

@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using Fgvm.Error;
 using Fgvm.Godot;
+using Fgvm.Tests.Fixtures;
 
 namespace Fgvm.Tests.Integration;
 
@@ -181,8 +182,8 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
             var result = await fixture.ExecuteCommandInDirectory(["export", StableRelease], project);
 
             Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
-            Assert.Contains("project.godot", result.Stdout);
-            Assert.DoesNotContain("Something went wrong", result.Stdout);
+            Assert.Contains("project.godot", result.Stderr);
+            Assert.DoesNotContain("Something went wrong", result.Stderr);
             Assert.False(await fixture.FileExists(Path.Combine(project, ".fgvm-version")));
         }
         finally
@@ -207,7 +208,7 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
                 ["export", "--manifest", "build/game.zip", StableRelease], project);
 
             Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
-            Assert.Contains("conflicts", result.Stdout);
+            Assert.Contains("conflicts", result.Stderr);
             Assert.False(await fixture.FileExists(Path.Combine(project, ".fgvm-version")));
         }
         finally
@@ -255,11 +256,11 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
             var result = await fixture.ExecuteCommandInDirectory(["local", StableRelease], project);
 
             Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
-            Assert.Contains("Configuration error", result.Stdout);
-            Assert.Contains("export_presets.cfg", result.Stdout);
-            Assert.Contains("line 3", result.Stdout);
-            Assert.Contains("runnable", result.Stdout);
-            Assert.DoesNotContain("Something went wrong", result.Stdout);
+            Assert.Contains("Configuration error", result.Stderr);
+            Assert.Contains("export_presets.cfg", result.Stderr);
+            Assert.Contains("line 3", result.Stderr);
+            Assert.Contains("runnable", result.Stderr);
+            Assert.DoesNotContain("Something went wrong", result.Stderr);
             Assert.False(await fixture.FileExists(Path.Combine(project, ".fgvm-version")));
         }
         finally
@@ -286,19 +287,19 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     {
         var install = await fixture.ExecuteCommand(["install", "nope"]);
         Assert.Equal(ExitCodes.ArgumentError, install.ExitCode);
-        Assert.Contains("Invalid arguments: nope", install.Stdout);
-        Assert.DoesNotContain("Something went wrong", install.Stdout);
+        Assert.Contains("Invalid arguments: nope", install.Stderr);
+        Assert.DoesNotContain("Something went wrong", install.Stderr);
 
         var logs = await fixture.ExecuteCommand(["logs", "--level", "verbose"]);
         Assert.Equal(ExitCodes.ArgumentError, logs.ExitCode);
-        Assert.Contains("verbose is not valid", logs.Stdout);
-        Assert.DoesNotContain("Something went wrong", logs.Stdout);
+        Assert.Contains("verbose is not valid", logs.Stderr);
+        Assert.DoesNotContain("Something went wrong", logs.Stderr);
 
         var nonInteractiveInstall = await fixture.ExecuteCommand(["install"]);
         Assert.Equal(ExitCodes.ArgumentError, nonInteractiveInstall.ExitCode);
-        Assert.Contains("cannot prompt because", nonInteractiveInstall.Stdout);
-        Assert.Contains("not interactive", nonInteractiveInstall.Stdout);
-        Assert.DoesNotContain("Something went wrong", nonInteractiveInstall.Stdout);
+        Assert.Contains("cannot prompt because", nonInteractiveInstall.Stderr);
+        Assert.Contains("not interactive", nonInteractiveInstall.Stderr);
+        Assert.DoesNotContain("Something went wrong", nonInteractiveInstall.Stderr);
     }
 
     [Fact]

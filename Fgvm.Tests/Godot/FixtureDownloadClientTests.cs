@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using Fgvm.Godot;
+using Fgvm.Tests.Fixtures;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 

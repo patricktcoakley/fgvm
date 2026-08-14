@@ -32,6 +32,9 @@ internal sealed class ExportRunner(
     ILogger<ExportRunner> logger
 ) : IExportRunner
 {
+    private const int DiagnosticHeadLines = 10;
+    private const int DiagnosticTailLines = 10;
+
     public async Task<ExportRunResult> RunAsync(string projectRoot,
         GodotLaunchTarget launchTarget,
         IReadOnlyList<PlannedExportTarget> targets,
@@ -191,7 +194,7 @@ internal sealed class ExportRunner(
         CancellationToken cancellationToken
     )
     {
-        var diagnostics = new Queue<string>(5);
+        var diagnostics = new DiagnosticBuffer(DiagnosticHeadLines, DiagnosticTailLines);
         var result = await godotLauncher.LaunchAsync(
             new GodotLaunchRequest(launchTarget, arguments, GodotLaunchMode.Attached),
             line =>
@@ -202,12 +205,7 @@ internal sealed class ExportRunner(
                         logger.LogDebug("godot: {Line}", text);
                         break;
                     case GodotLaunchOutput.StandardError(var text):
-                        if (diagnostics.Count == 5)
-                        {
-                            diagnostics.Dequeue();
-                        }
-
-                        diagnostics.Enqueue(text);
+                        diagnostics.Add(text);
                         logger.LogWarning("godot: {Line}", text);
                         break;
                 }
@@ -338,8 +336,22 @@ internal sealed class ExportRunner(
             : relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
-    private static string DescribeDiagnostics(Queue<string> diagnostics) =>
-        diagnostics.Count is 0 ? "Godot reported no diagnostics." : string.Join(" ", diagnostics);
+    private static string DescribeDiagnostics(DiagnosticBuffer diagnostics)
+    {
+        if (diagnostics.Count is 0)
+        {
+            return "Godot reported no diagnostics.";
+        }
+
+        if (diagnostics.OmittedCount is 0)
+        {
+            return string.Join(" ", diagnostics.Lines);
+        }
+
+        return string.Join(" ", diagnostics.Head) +
+               $" [...{diagnostics.OmittedCount} more line(s)...] " +
+               string.Join(" ", diagnostics.Tail);
+    }
 
     private static string DescribeLaunchError(GodotLaunchError error) => error switch
     {
@@ -349,4 +361,34 @@ internal sealed class ExportRunner(
     };
 
     private sealed record StagedExportTarget(string StagingPath, StagedExportArtifact Artifact);
+
+    internal sealed class DiagnosticBuffer(int headCapacity, int tailCapacity)
+    {
+        private readonly List<string> _head = new(headCapacity);
+        private readonly Queue<string> _tail = new(tailCapacity);
+        private int _count;
+
+        internal int Count => _count;
+        internal int OmittedCount => _count - _head.Count - _tail.Count;
+        internal IReadOnlyList<string> Head => _head;
+        internal IReadOnlyCollection<string> Tail => _tail;
+        internal IEnumerable<string> Lines => _head.Concat(_tail);
+
+        internal void Add(string line)
+        {
+            _count++;
+            if (_head.Count < headCapacity)
+            {
+                _head.Add(line);
+                return;
+            }
+
+            if (_tail.Count == tailCapacity)
+            {
+                _tail.Dequeue();
+            }
+
+            _tail.Enqueue(line);
+        }
+    }
 }

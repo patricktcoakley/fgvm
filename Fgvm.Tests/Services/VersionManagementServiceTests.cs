@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Fgvm.Cli;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
 using Fgvm.Godot;
@@ -16,6 +17,7 @@ namespace Fgvm.Tests.Services;
 public class VersionManagementServiceTests
 {
     private readonly TestConsole _console;
+    private readonly TestConsole _diagnosticConsole;
     private readonly Mock<IHostSystem> _mockHostSystem;
     private readonly Mock<IInstallationRegistry> _mockInstallationRegistry;
     private readonly Mock<IInstallationService> _mockInstallationService;
@@ -34,6 +36,7 @@ public class VersionManagementServiceTests
         var mockLogger = new Mock<ILogger<VersionManagementService>>();
 
         _console = new TestConsole();
+        _diagnosticConsole = new TestConsole();
         var installFlowProgressHandler = new SilentProgressHandler();
 
         mockPathService.Setup(x => x.RootPath).Returns("/test/fgvm");
@@ -87,6 +90,7 @@ public class VersionManagementServiceTests
             mockPathService.Object,
             _mockProjectManager.Object,
             _console,
+            new DiagnosticConsole(_diagnosticConsole),
             mockLogger.Object
         );
     }
@@ -99,13 +103,15 @@ public class VersionManagementServiceTests
         var result = await _service.ResolveVersionForLaunchAsync();
 
         Assert.True(result is Result<VersionResolutionOutcome, VersionResolutionError>.Failure { Error: VersionResolutionError.NotFound });
-        var hasProjectMessage = _console.Output.Contains("Project requires") || _console.Output.Contains("Project specifies");
-        var hasNoInstallationMessage = _console.Output.Contains("No Godot versions installed");
-        var hasNoVersionSetMessage = _console.Output.Contains("No current Godot version set");
-        var hasNotFoundMessage = _console.Output.Contains("could not be found");
+        var hasProjectMessage = _diagnosticConsole.Output.Contains("Project requires") ||
+                                _diagnosticConsole.Output.Contains("Project specifies");
+        var hasNoInstallationMessage = _diagnosticConsole.Output.Contains("No Godot versions installed");
+        var hasNoVersionSetMessage = _diagnosticConsole.Output.Contains("No current Godot version set");
+        var hasNotFoundMessage = _diagnosticConsole.Output.Contains("could not be found");
 
         Assert.True(hasProjectMessage || hasNoInstallationMessage || hasNoVersionSetMessage || hasNotFoundMessage,
-            $"Expected either project-specific, no installations, no version set, or not found message. Actual output: {_console.Output}");
+            $"Expected either project-specific, no installations, no version set, or not found message. Actual output: {_diagnosticConsole.Output}");
+        Assert.Empty(_console.Output);
     }
 
     [Fact]
@@ -167,8 +173,11 @@ public class VersionManagementServiceTests
         var result = await _service.ResolveVersionForLaunchAsync();
 
         Assert.True(result is Result<VersionResolutionOutcome, VersionResolutionError>.Failure { Error: VersionResolutionError.NotFound });
-        Assert.True(_console.Output.Contains("Project requires") || _console.Output.Contains("could not be found"),
-            $"Expected project or not found message. Actual: {_console.Output}");
+        Assert.True(_diagnosticConsole.Output.Contains("Project specifies") ||
+                    _diagnosticConsole.Output.Contains("Project requires") ||
+                    _diagnosticConsole.Output.Contains("could not be found"),
+            $"Expected project or not found message. Actual: {_diagnosticConsole.Output}");
+        Assert.Empty(_console.Output);
     }
 
     [Fact]
@@ -1002,7 +1011,8 @@ public class VersionManagementServiceTests
         var result = await _service.ResolveVersionForLaunchAsync();
 
         Assert.True(result is Result<VersionResolutionOutcome, VersionResolutionError>.Failure { Error: VersionResolutionError.Failed });
-        Assert.Contains("Error resolving Godot version for launch", _console.Output);
+        Assert.Contains("Error resolving Godot version for launch", _diagnosticConsole.Output);
+        Assert.Empty(_console.Output);
     }
 
     [Fact]

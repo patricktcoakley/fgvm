@@ -31,8 +31,8 @@ Suite "launch artifacts" {
             Assert.True $mode.HasFlag([System.IO.UnixFileMode]::UserExecute) "The generated shim should be executable."
         }
 
-        $invocationPath = Join-Path $Context.WorkPath "shim-invocation.json"
-        $shim = Invoke-GodotShim -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } -Arguments @("shim-probe")
+        $invocationPath = $seeded.MockInvocationPath
+        $shim = Invoke-GodotShim -Arguments @("--fgvm-mock-delay-ms", "1000", "shim-probe")
 
         Assert.ExitCode 0 $shim "Godot PATH shim"
         File.WaitFor $invocationPath
@@ -52,8 +52,8 @@ Suite "launch artifacts" {
         Assert.ExitCode 0 (Run "set" "4.5") "fgvm set 4.5"
         Assert.Equal ([System.IO.Path]::GetFullPath($older.ShortcutTargetPath)) ([System.IO.Path]::GetFullPath((Read-SelectedArtifactTarget)))
 
-        $invocationPath = Join-Path $Context.WorkPath "switched-shim-invocation.json"
-        $shim = Invoke-GodotShim -Environment @{ FGVM_MOCK_INVOCATION_PATH = $invocationPath } -Arguments @("switch-probe")
+        $invocationPath = $older.MockInvocationPath
+        $shim = Invoke-GodotShim -Arguments @("--fgvm-mock-delay-ms", "1000", "switch-probe")
 
         Assert.ExitCode 0 $shim "Godot PATH shim after switching versions"
         File.WaitFor $invocationPath
