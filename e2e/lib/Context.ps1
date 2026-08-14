@@ -195,10 +195,10 @@ function ResolveCliPath {
 
     $platform = Platform
     $executable = if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
-        "fgvm.exe"
+        "fgvm-test-host.exe"
     }
     else {
-        "fgvm"
+        "fgvm-test-host"
     }
 
     Join-Path $RepoRoot "e2e" ".cli" $platform $executable

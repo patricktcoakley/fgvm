@@ -52,7 +52,7 @@ Suite "startup" {
         $invalid = Run "list" "--installed"
 
         Assert.ExitCode 2 $invalid "fgvm list --installed"
-        Assert.Contains "--installed" $invalid.Stdout
+        Assert.Contains "--installed" $invalid.Stderr
     }
 
     Test "lists no installed versions in a fresh home" {
@@ -103,6 +103,15 @@ Suite "startup" {
         $godot = Run "godot" "--args" "--version"
 
         Assert.ExitCode 1 $godot "fgvm godot without a selected version"
-        Assert.Contains "No current Godot version set" $godot.Stdout
+        Assert.Contains "No current Godot version set" $godot.Stderr
+        Assert.Equal "" $godot.Stdout.Trim() "Launch failures must not leak onto stdout."
+    }
+
+    Test "interactive godot fails cleanly when no versions are installed" {
+        $godot = Run "godot" "--interactive"
+
+        Assert.ExitCode 1 $godot "fgvm godot --interactive without installations"
+        Assert.Contains "No Godot versions installed" $godot.Stderr
+        Assert.Equal "" $godot.Stdout.Trim() "Interactive launch failures must not leak onto stdout."
     }
 }

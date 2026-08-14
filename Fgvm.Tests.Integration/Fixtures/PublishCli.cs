@@ -20,11 +20,11 @@ internal sealed class CliPublisher(PublishContext context)
         Directory.CreateDirectory(context.OutputPath);
 
         await DotNet.PublishCliAsync(
-            context.ProjectPath,
+            context.HostPath,
             context.Platform.RuntimeIdentifier,
             context.OutputPath);
 
-        return Path.Combine(context.OutputPath, context.Platform.ExecutableName("fgvm"));
+        return Path.Combine(context.OutputPath, context.Platform.ExecutableName("fgvm-test-host"));
     }
 }
 
@@ -32,7 +32,7 @@ internal sealed record PublishContext(string RepoRoot, string OutputRoot, BuildP
 {
     public string OutputPath => Path.Combine(OutputRoot, Platform.Name);
 
-    public string ProjectPath => Path.Combine(RepoRoot, "Fgvm.Cli", "Fgvm.Cli.csproj");
+    public string HostPath => Path.Combine(RepoRoot, "Fgvm.Tests.Integration", "Fixtures", "TestHost.cs");
 
     public static PublishContext Create(PublishOptions options)
     {
@@ -90,11 +90,11 @@ internal readonly record struct BuildPlatform(string Name)
 
 internal static class DotNet
 {
-    public static Task PublishCliAsync(string projectPath, string rid, string outputPath) =>
+    public static Task PublishCliAsync(string hostPath, string rid, string outputPath) =>
         CommandRunner.RunAsync("dotnet",
         [
             "publish",
-            projectPath,
+            hostPath,
             "--nologo",
             "-c",
             "Release",

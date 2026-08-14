@@ -5,29 +5,52 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Text.Json;
 
+const string delayArgument = "--fgvm-mock-delay-ms";
+var effectiveArguments = new List<string>(args.Length);
+int? delayMilliseconds = null;
+
+for (var index = 0; index < args.Length; index++)
+{
+    if (!string.Equals(args[index], delayArgument, StringComparison.OrdinalIgnoreCase))
+    {
+        effectiveArguments.Add(args[index]);
+        continue;
+    }
+
+    if (index + 1 >= args.Length ||
+        !int.TryParse(args[++index], out var parsedDelayMilliseconds) ||
+        parsedDelayMilliseconds < 0)
+    {
+        Console.Error.WriteLine("Mock Godot requires a non-negative delay in milliseconds.");
+        return 2;
+    }
+
+    delayMilliseconds = parsedDelayMilliseconds;
+}
+
+args = [.. effectiveArguments];
+
 var version = Assembly.GetExecutingAssembly()
                   .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
                   ?.InformationalVersion
               ?? throw new InvalidOperationException("Mock Godot version metadata is missing.");
 
-if (System.Environment.GetEnvironmentVariable("FGVM_MOCK_INVOCATION_PATH") is { Length: > 0 } invocationPath)
+var invocationPath = Path.Combine(AppContext.BaseDirectory, ".fgvm-mock-invocation.json");
+var invocationDirectory = Path.GetDirectoryName(Path.GetFullPath(invocationPath));
+if (invocationDirectory is not null)
 {
-    var invocationDirectory = Path.GetDirectoryName(Path.GetFullPath(invocationPath));
-    if (invocationDirectory is not null)
-    {
-        Directory.CreateDirectory(invocationDirectory);
-    }
-
-    var tempPath = $"{invocationPath}.{Guid.NewGuid():N}.tmp";
-    File.WriteAllText(tempPath, JsonSerializer.Serialize(new
-    {
-        ProcessId = System.Environment.ProcessId,
-        Arguments = args,
-        BaseDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-        WorkingDirectory = Directory.GetCurrentDirectory()
-    }));
-    File.Move(tempPath, invocationPath, true);
+    Directory.CreateDirectory(invocationDirectory);
 }
+
+var tempPath = $"{invocationPath}.{Guid.NewGuid():N}.tmp";
+File.WriteAllText(tempPath, JsonSerializer.Serialize(new
+{
+    ProcessId = System.Environment.ProcessId,
+    Arguments = args,
+    BaseDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+    WorkingDirectory = Directory.GetCurrentDirectory()
+}));
+File.Move(tempPath, invocationPath, true);
 
 if (args.Contains("--fgvm-mock-invalid-arg", StringComparer.OrdinalIgnoreCase))
 {
@@ -41,26 +64,33 @@ if (args.Contains("--fgvm-mock-fail", StringComparer.OrdinalIgnoreCase))
     return 42;
 }
 
+if (args.Contains("--fgvm-mock-noisy-fail", StringComparer.OrdinalIgnoreCase))
+{
+    Console.Error.WriteLine("Mock Godot cause: the export template is missing.");
+    for (var line = 1; line <= 40; line++)
+    {
+        Console.Error.WriteLine($"Mock Godot follow-up {line}.");
+    }
+
+    return 42;
+}
+
 if (args.Contains("--fgvm-mock-print-directory", StringComparer.OrdinalIgnoreCase))
 {
     Console.WriteLine(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     return 0;
 }
 
-var delayArgumentIndex = Array.FindIndex(
-    args,
-    argument => string.Equals(argument, "--fgvm-mock-delay-ms", StringComparison.OrdinalIgnoreCase));
-if (delayArgumentIndex >= 0)
+// An editor normally remains alive after its launcher exits. Preserve that behavior
+// long enough for detached-startup tests without adding explicit arguments to fgvm.
+if (delayMilliseconds is null && args.Contains("--editor", StringComparer.OrdinalIgnoreCase))
 {
-    if (delayArgumentIndex + 1 >= args.Length ||
-        !int.TryParse(args[delayArgumentIndex + 1], out var delayMilliseconds) ||
-        delayMilliseconds < 0)
-    {
-        Console.Error.WriteLine("Mock Godot requires a non-negative delay in milliseconds.");
-        return 2;
-    }
+    delayMilliseconds = 1000;
+}
 
-    await Task.Delay(delayMilliseconds);
+if (delayMilliseconds is not null)
+{
+    await Task.Delay(delayMilliseconds.Value);
     return 0;
 }
 

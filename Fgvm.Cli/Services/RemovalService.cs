@@ -13,8 +13,8 @@ namespace Fgvm.Cli.Services;
 public interface IRemovalService
 {
     /// <summary>
-    ///     Renames directories aside. Update the installation registry after this, never before: a registry entry with
-    ///     no directory repairs itself on the next read, but a directory with no entry stays invisible.
+    ///     Renames directories aside. Update the installation registry after this so its scan-derived digest describes
+    ///     the post-removal layout and an interrupted removal remains recoverable on the next read.
     /// </summary>
     /// <param name="directoryPaths">The directories to remove.</param>
     /// <returns>The staged directories, to delete with <see cref="Discard" /> once the registry is updated.</returns>

@@ -13,6 +13,14 @@
         "null"
       ]
     },
+    "lastScanDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "lastLegacyScanDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "installations": {
       "type": "object",
       "additionalProperties": {

@@ -1,6 +1,5 @@
 ﻿using System.Buffers;
 using System.Net.Http.Headers;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using ConsoleAppFramework;
@@ -26,11 +25,18 @@ namespace Fgvm.Cli;
 
 public class Program
 {
-    public static int Main(string[] args)
+    public static int Main(string[] args) => CliApplication.Run(args);
+}
+
+/// <summary>
+///     Composes and runs the fgvm command-line application. Hosts may replace service registrations before the
+///     service provider is built without changing production startup behavior.
+/// </summary>
+public static class CliApplication
+{
+    public static int Run(string[] args, Action<IServiceCollection>? configureServices = null)
     {
         var pathService = new PathService();
-        var fixtureManifestPath = System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_FIXTURE_MANIFEST");
-        var fixtureMode = !string.IsNullOrWhiteSpace(fixtureManifestPath);
 
         var services = new ServiceCollection();
 
@@ -60,29 +66,21 @@ public class Program
 
         // Register services
         services.AddSingleton<IPathService>(pathService);
-        services.AddSingleton(_ => CreateSystemInfo(fixtureMode));
+        services.AddSingleton(new SystemInfo());
         services.AddSingleton<PlatformStringProvider>();
         services.AddSingleton<IGodotPathService, GodotPathService>();
         services.AddSingleton<IHostSystem, HostSystem>();
 
-        if (!string.IsNullOrWhiteSpace(fixtureManifestPath))
-        {
-            services.AddSingleton<IDownloadClient>(sp =>
-                new FixtureDownloadClient(fixtureManifestPath, sp.GetRequiredService<ILogger<FixtureDownloadClient>>()));
-        }
-        else
-        {
-            // Register HTTP clients
-            services.AddHttpClient<IDownloadClient, DownloadClient>("godot-builds")
-                .ConfigureHttpClient((_, client) =>
-                {
-                    var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
-                    client.DefaultRequestHeaders.UserAgent.Clear();
-                    client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("fgvm", version));
-                    client.Timeout = TimeSpan.FromSeconds(30);
-                })
-                .AddHttpMessageHandler(() => new ExponentialBackoffHandler(TimeSpan.FromSeconds(2), 3));
-        }
+        // Register HTTP clients
+        services.AddHttpClient<IDownloadClient, DownloadClient>("godot-builds")
+            .ConfigureHttpClient((_, client) =>
+            {
+                var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+                client.DefaultRequestHeaders.UserAgent.Clear();
+                client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("fgvm", version));
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .AddHttpMessageHandler(() => new ExponentialBackoffHandler(TimeSpan.FromSeconds(2), 3));
 
         // Register core services
         services.AddSingleton<IReleaseCatalog, ReleaseCatalog>();
@@ -102,14 +100,13 @@ public class Program
         services.AddSingleton<IGodotArgumentService, GodotArgumentService>();
         services.AddSingleton<IGodotLauncher, GodotLauncher>();
         services.AddSingleton<IExportRunner, ExportRunner>();
-        var commandConsole = IsJsonExport(args)
-            ? AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(Console.Error) })
-            : AnsiConsole.Console;
-        services.AddSingleton<IAnsiConsole>(commandConsole);
+        services.AddSingleton(AnsiConsole.Console);
+        services.AddSingleton(new DiagnosticConsole(AnsiConsole.Create(new AnsiConsoleSettings
+            { Out = new AnsiConsoleOutput(Console.Error) })));
         services.AddSingleton<TextWriter>(_ => Console.Out);
-
-        // Progress handling
         services.AddSingleton<IProgressHandler, SpectreProgressHandler>();
+
+        configureServices?.Invoke(services);
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -144,7 +141,7 @@ public class Program
         app.UseFilter<ExitCodeFilter>();
 
         // ConsoleAppFramework does not dispatch custom help for hidden grouped subcommands.
-        if (TemplateHelpCommand.TryWriteHelp(args, System.Console.Out))
+        if (TemplateHelpCommand.TryWriteHelp(args, Console.Out))
         {
             return 0;
         }
@@ -153,28 +150,6 @@ public class Program
 
         return 0;
     }
-
-    private static SystemInfo CreateSystemInfo(bool fixtureMode)
-    {
-        var systemInfo = new SystemInfo();
-        if (!fixtureMode || System.Environment.GetEnvironmentVariable("FGVM_INTEGRATION_ARCH_OVERRIDE") is not { Length: > 0 } archOverride)
-        {
-            return systemInfo;
-        }
-
-        var architecture = archOverride.ToLowerInvariant() switch
-        {
-            "x64" => Architecture.X64,
-            "arm64" => Architecture.Arm64,
-            _ => throw new ConfigurationException("FGVM_INTEGRATION_ARCH_OVERRIDE must be either 'x64' or 'arm64'.")
-        };
-
-        return new SystemInfo(systemInfo.CurrentOS, architecture);
-    }
-
-    private static bool IsJsonExport(string[] args) =>
-        args is ["export", ..] &&
-        (args.Contains("--json", StringComparer.Ordinal) || args.Contains("-j", StringComparer.Ordinal));
 }
 
 public class SlogFormatter : ITextFormatter

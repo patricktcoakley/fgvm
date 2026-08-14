@@ -1,4 +1,3 @@
-using System.Text;
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
@@ -18,6 +17,7 @@ public sealed class GodotCommand(
     IProjectManager projectManager,
     IInstallationRegistry installationRegistry,
     IAnsiConsole console,
+    DiagnosticConsole diagnostics,
     ILogger<GodotCommand> logger
 )
 {
@@ -41,7 +41,6 @@ public sealed class GodotCommand(
         CancellationToken cancellationToken = default
     )
     {
-        var error = new StringBuilder();
         Result<VersionResolutionOutcome, VersionResolutionError>? versionResult = null;
         GodotLaunchTarget? launchTarget = null;
 
@@ -76,8 +75,8 @@ public sealed class GodotCommand(
                 var installed = interactiveRequired.AvailableVersions;
                 if (installed.Count == 0)
                 {
-                    console.MarkupLine(Messages.NoVersionsInstalled);
-                    return;
+                    diagnostics.MarkupLine(Messages.NoVersionsInstalled);
+                    throw new ProcessExitCodeException(ExitCodes.GeneralError);
                 }
 
                 if (!console.Profile.Capabilities.Interactive)
@@ -103,7 +102,7 @@ public sealed class GodotCommand(
                         _ => Messages.UnknownResolutionError
                     };
 
-                    console.MarkupLine(errorMessage);
+                    diagnostics.MarkupLine(errorMessage);
                     throw new ProcessExitCodeException(resolutionError switch
                     {
                         VersionResolutionError.InvalidVersion => ExitCodes.ArgumentError,
@@ -113,7 +112,7 @@ public sealed class GodotCommand(
                     resolutionOutcome = outcome;
                     break;
                 default:
-                    console.MarkupLine(Messages.UnexpectedError);
+                    diagnostics.MarkupLine(Messages.UnexpectedError);
                     return;
             }
 
@@ -156,8 +155,7 @@ public sealed class GodotCommand(
                             console.MarkupLine($"[green]{line.EscapeMarkup()}[/]");
                             break;
                         case GodotLaunchOutput.StandardError(var line):
-                            console.MarkupLine(line.EscapeMarkup());
-                            error.Append(line + " ");
+                            diagnostics.MarkupLine(line.EscapeMarkup());
                             break;
                     }
                 },
@@ -166,7 +164,10 @@ public sealed class GodotCommand(
             switch (launchResult)
             {
                 case Result<GodotLaunchOutcome, GodotLaunchError>.Failure(var launchError):
-                    throw new InvalidOperationException(DescribeLaunchError(launchError));
+                    var launchReason = DescribeLaunchError(launchError);
+                    logger.LogError("Could not launch Godot: {Reason}", launchReason);
+                    diagnostics.MarkupLine(Messages.GodotLaunchFailed(launchReason));
+                    throw new ProcessExitCodeException(ExitCodes.GeneralError);
                 case Result<GodotLaunchOutcome, GodotLaunchError>.Success(GodotLaunchOutcome.Detached(var processId)):
                     RecordLaunch(launchTarget);
                     console.MarkupLine(Messages.LaunchedGodotDetached(launchTarget.VersionName, processId));
@@ -176,11 +177,10 @@ public sealed class GodotCommand(
                     if (exitCode != 0)
                     {
                         logger.LogError(
-                            "Godot exited with code {ExitCode} and stderr: {StandardError}",
-                            exitCode,
-                            error.ToString());
+                            "Godot exited with code {ExitCode}.",
+                            exitCode);
 
-                        console.MarkupLine(Messages.SomethingWentWrong("when running Godot."));
+                        diagnostics.MarkupLine(Messages.GodotExited(exitCode));
                         throw new ProcessExitCodeException(exitCode);
                     }
 
@@ -192,7 +192,7 @@ public sealed class GodotCommand(
         catch (OperationCanceledException)
         {
             logger.LogError("User cancelled running Godot.");
-            console.MarkupLine(Messages.UserCancelled("godot"));
+            diagnostics.MarkupLine(Messages.UserCancelled("godot"));
 
             throw;
         }
@@ -211,7 +211,7 @@ public sealed class GodotCommand(
                 execPath,
                 workingDir);
 
-            console.MarkupLine(
+            diagnostics.MarkupLine(
                 Messages.SomethingWentWrong("when trying to launch Godot.")
             );
 
@@ -246,7 +246,7 @@ public sealed class GodotCommand(
                     ? $"--editor --path \"{projectDirectory}\""
                     : $"--path \"{projectDirectory}\" {argumentString}";
             case Result<ProjectLookup<string>, ProjectError>.Success when required:
-                console.MarkupLine(Messages.NoProjectFileDetected);
+                diagnostics.MarkupLine(Messages.NoProjectFileDetected);
                 throw new ProcessExitCodeException(ExitCodes.GeneralError);
             case Result<ProjectLookup<string>, ProjectError>.Success:
                 return argumentString;

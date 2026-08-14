@@ -1,6 +1,27 @@
 Set-StrictMode -Version Latest
 
 Suite "installation registry" {
+    Test "adopts an installation added after the registry digest was written" {
+        $stable = Add-FixtureInstallation "4.6.2-stable"
+        $initial = Run "list" "--json"
+        Assert.ExitCode 0 $initial "fgvm list while establishing the layout digest"
+        Assert.Contains $stable.Key (Manifest.From $Context.InstallationsPath)["installations"].Keys
+
+        $orphan = Add-FixtureInstallation "4.5-stable"
+        $registry = Manifest.From $Context.InstallationsPath
+        $registry["installations"].Remove($orphan.Key)
+        Manifest.Write $Context.InstallationsPath $registry
+
+        $list = Run "list" "--json"
+
+        Assert.ExitCode 0 $list "fgvm list with a filesystem-only installation"
+        Assert.ContainsAll @((Json $list.Stdout).name) $stable.Name $orphan.Name
+        $reconciled = Manifest.From $Context.InstallationsPath
+        Assert.Contains $orphan.Key $reconciled["installations"].Keys
+        Assert.True ([string]$reconciled["lastScanDigest"] -match "^[0-9a-f]{64}$") `
+            "Reconciliation should persist the observed layout digest."
+    }
+
     Test "discovers a filesystem-only installation" {
         $seeded = Add-FixtureInstallation "4.6.2-stable"
         Remove-Item -LiteralPath $Context.InstallationsPath -Force

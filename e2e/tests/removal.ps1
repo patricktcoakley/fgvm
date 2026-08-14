@@ -24,7 +24,7 @@ Suite "removal" {
         $list = Run "list" "--json"
 
         # Console width wraps the message at an arbitrary point, so collapse whitespace before matching.
-        $normalized = ($remove.Stdout -replace "\s+", " ").Trim()
+        $normalized = ($remove.Stderr -replace "\s+", " ").Trim()
 
         Assert.ExitCode 2 $remove "fgvm remove with an ambiguous query"
         Assert.Contains "not interactive" $normalized
@@ -141,5 +141,22 @@ Suite "removal" {
         $tombstones = @(Get-ChildItem -LiteralPath $Context.FgvmRootPath -Directory -Recurse -Force |
                 Where-Object Name -Like ".fgvm-removing-*")
         Assert.Empty $tombstones "No removal tombstones should remain ($filesystemMode)."
+    }
+
+    Test "removes an editor tracked at a valid custom path" {
+        $installation = Add-FixtureInstallation "4.6.2-stable"
+        $customPath = Join-Path $Context.FgvmRootPath "custom-editors" "godot-4.6.2"
+        New-Item -ItemType Directory -Path (Split-Path -Parent $customPath) -Force | Out-Null
+        Move-Item -LiteralPath $installation.InstallationPath -Destination $customPath
+
+        $registry = Manifest.From $Context.InstallationsPath
+        $registry["installations"][$installation.Key]["path"] = "custom-editors/godot-4.6.2"
+        Manifest.Write $Context.InstallationsPath $registry
+
+        $remove = Run "remove" $installation.Name
+
+        Assert.ExitCode 0 $remove "fgvm remove with a custom editor path"
+        Assert.False (Test-Path -LiteralPath $customPath) "The custom editor path should be removed."
+        Assert.NotContains $installation.Key (Manifest.From $Context.InstallationsPath)["installations"].Keys
     }
 }

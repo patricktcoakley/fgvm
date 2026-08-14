@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Fgvm.Cli;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
 using Fgvm.Godot;
@@ -118,6 +119,7 @@ public sealed class InstalledVersionResolutionPropertyTests
             pathService.Object,
             projectManager.Object,
             new TestConsole(),
+            new DiagnosticConsole(new TestConsole()),
             new Mock<ILogger<VersionManagementService>>().Object);
     }
 

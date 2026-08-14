@@ -31,6 +31,26 @@ function Get-ExportEnvironment {
 }
 
 Suite "export" {
+    Test "auto-install keeps JSON stdout machine-readable" {
+        $projectPath = New-ExportProject "export-json-auto-install" @'
+[preset.0]
+name="Linux"
+platform="Linux"
+export_path="build/linux/game"
+'@
+
+        $export = Run -Cwd $projectPath -Environment (Get-ExportEnvironment) `
+            -Arguments @("export", "--json", "4.6")
+
+        Assert.ExitCode 0 $export "fgvm export --json with editor auto-install"
+        $manifest = $export.Stdout | ConvertFrom-Json
+        Assert.Equal "Linux" $manifest.targets[0].preset
+        Assert.NotContains "Installing" $export.Stdout `
+            "Editor preparation status must not corrupt the JSON document."
+        Assert.Contains "Installing" $export.Stderr `
+            "Human-readable editor preparation status belongs on stderr in JSON mode."
+    }
+
     Test "exports every configured preset and reports where each landed" {
         Add-FixtureInstallation "4.6.2-stable" | Out-Null
         $projectPath = New-ExportProject "export-happy" @'
@@ -87,7 +107,7 @@ export_path="build/linux/game"
     }
 
     Test "passes the preset name to Godot as a single argument" {
-        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        $seeded = Add-FixtureInstallation "4.6.2-stable"
         $projectPath = New-ExportProject "export-arguments" @'
 [preset.0]
 name="Windows Demo"
@@ -95,9 +115,8 @@ platform="Windows Desktop"
 export_path="build/windows/game.exe"
 '@
 
-        $invocationPath = Join-Path $Context.WorkPath "export-invocation.json"
+        $invocationPath = $seeded.MockInvocationPath
         $environment = Get-ExportEnvironment
-        $environment["FGVM_MOCK_INVOCATION_PATH"] = $invocationPath
 
         $export = Run -Cwd $projectPath -Environment $environment -Arguments @("export", "4.6")
 
@@ -241,7 +260,7 @@ export_path="build/web/index.html"
         $export = Run -Cwd $projectPath -Arguments @("export", "4.6")
 
         Assert.ExitCode 78 $export "fgvm export without project.godot"
-        Assert.Contains "project.godot" $export.Stdout
+        Assert.Contains "project.godot" $export.Stderr
     }
 
     Test "fails when the project declares no export presets" {
@@ -251,7 +270,7 @@ export_path="build/web/index.html"
         $export = Run -Cwd $projectPath -Arguments @("export", "4.6")
 
         Assert.ExitCode 78 $export "fgvm export without export_presets.cfg"
-        Assert.Contains "export" $export.Stdout
+        Assert.Contains "export" $export.Stderr
         Assert.False (Test-Path -LiteralPath (Join-Path $projectPath ".fgvm-version") -PathType Leaf) `
             "Preflight must reject the project before any state changes."
     }
@@ -296,8 +315,8 @@ runnable=perhaps
         $export = Run -Cwd $projectPath -Arguments @("export", "4.6")
 
         Assert.ExitCode 78 $export "fgvm export with a malformed preset"
-        Assert.Contains "runnable" $export.Stdout
-        Assert.Contains "line 4" $export.Stdout
+        Assert.Contains "runnable" $export.Stderr
+        Assert.Contains "line 4" $export.Stderr
         Assert.False (Test-Path -LiteralPath (Join-Path $projectPath ".fgvm-version") -PathType Leaf) `
             "A malformed preset file must be rejected before any state changes."
     }
@@ -319,8 +338,8 @@ export_path="build/shared/game"
         $export = Run -Cwd $projectPath -Arguments @("export", "4.6")
 
         Assert.ExitCode 78 $export "fgvm export with colliding destinations"
-        Assert.Contains "Linux One" $export.Stdout
-        Assert.Contains "Linux Two" $export.Stdout
+        Assert.Contains "Linux One" $export.Stderr
+        Assert.Contains "Linux Two" $export.Stderr
     }
 
     Test "a later Godot failure preserves every prior final output and invalidates the manifest" {
@@ -345,7 +364,7 @@ export_path="build/failing/game"
         $export = Run -Cwd $projectPath -Environment (Get-ExportEnvironment) -Arguments @("export", "4.6")
 
         Assert.ExitCode 1 $export "fgvm export when Godot fails"
-        Assert.Contains "failed" $export.Stdout
+        Assert.Contains "failed" $export.Stderr
         Assert.Equal "prior" (File.Read (Join-Path $priorOutput "game")) `
             "The successful first target must remain staged when a later target fails."
         Assert.False (Test-Path -LiteralPath (Join-Path $projectPath "build" "failing") -PathType Container) `

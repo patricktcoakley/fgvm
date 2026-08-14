@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Fgvm.Cli;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
@@ -7,9 +8,12 @@ using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
 using Fgvm.Error;
 using Fgvm.Godot;
+using Fgvm.Progress;
+using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Spectre.Console;
 using Spectre.Console.Testing;
 
 namespace Fgvm.Tests.Command;
@@ -317,12 +321,63 @@ public sealed class ExportCommandTests
         Assert.Single(manifest.Targets);
         Assert.DoesNotContain("Exported", output.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Exporting", console.Output, StringComparison.Ordinal);
+        _versionManagementService.Verify(service => service.PrepareLocalVersionAsync(
+            It.IsAny<string[]>(),
+            It.IsAny<bool>(),
+            It.IsNotNull<IAnsiConsole>(),
+            It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task Export_JsonWritesUnavailableTemplateChecksumWarningOnlyToDiagnostics()
+    {
+        SetupPresets([Preset(0, "Linux", "Linux", "build/game")]);
+        _templateOrchestrator.Setup(orchestrator => orchestrator.InstallAsync(
+                It.IsAny<Release>(),
+                It.IsAny<IOperationProgress<TemplateInstallationStage>>(),
+                false,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
+                new TemplateInstallationOutcome.NewInstallation(
+                    "4.6.2.stable",
+                    "/templates/4.6.2.stable",
+                    new ChecksumVerification.Unavailable())));
+
+        await CreateCommand(out var console, out var diagnostics, out var output).Export(json: true);
+
+        var manifest = JsonSerializer.Deserialize<ExportManifestView>(output.ToString(), JsonView.Options);
+        Assert.Single(manifest.Targets);
+        Assert.Empty(console.Output);
+        Assert.Contains("Checksum unavailable", diagnostics.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DiagnosticBuffer_RetainsOnlyItsHeadAndTail()
+    {
+        var diagnostics = new ExportRunner.DiagnosticBuffer(10, 10);
+
+        for (var index = 0; index < 1_000; index++)
+        {
+            diagnostics.Add($"line-{index}");
+        }
+
+        Assert.Equal(1_000, diagnostics.Count);
+        Assert.Equal(980, diagnostics.OmittedCount);
+        Assert.Equal(20, diagnostics.Lines.Count());
+        Assert.Equal("line-0", diagnostics.Head[0]);
+        Assert.Equal("line-9", diagnostics.Head[^1]);
+        Assert.Equal("line-990", diagnostics.Tail.First());
+        Assert.Equal("line-999", diagnostics.Tail.Last());
     }
 
     private void VerifyNothingWasPrepared()
     {
         _versionManagementService.Verify(service => service.PrepareLocalVersionAsync(
-            It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<string[]>(),
+            It.IsAny<bool>(),
+            It.IsAny<IAnsiConsole?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
         Assert.Empty(_invocations);
     }
 
@@ -337,8 +392,18 @@ public sealed class ExportCommandTests
 
     private ExportCommand CreateCommand(out TestConsole console, out StringWriter standardOutput)
     {
+        return CreateCommand(out console, out _, out standardOutput);
+    }
+
+    private ExportCommand CreateCommand(out TestConsole console,
+        out TestConsole diagnosticConsole,
+        out StringWriter standardOutput
+    )
+    {
         console = new TestConsole();
         console.Profile.Width = 200;
+        diagnosticConsole = new TestConsole();
+        diagnosticConsole.Profile.Width = 200;
         standardOutput = new StringWriter();
         var exportRunner = new ExportRunner(
             _godotLauncher.Object,
@@ -353,6 +418,7 @@ public sealed class ExportCommandTests
             _hostSystem.Object,
             standardOutput,
             console,
+            new DiagnosticConsole(diagnosticConsole),
             NullLogger<ExportCommand>.Instance);
     }
 
@@ -362,14 +428,27 @@ public sealed class ExportCommandTests
 
     private void SetupLocalRelease(Release release) =>
         _versionManagementService.Setup(service => service.PrepareLocalVersionAsync(
-                It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string[]>(),
+                It.IsAny<bool>(),
+                It.IsAny<IAnsiConsole?>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(release);
 
-    private void SetupTemplateSuccess() =>
+    private void SetupTemplateSuccess()
+    {
+        var result = new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
+            new TemplateInstallationOutcome.AlreadyInstalled("4.6.2.stable", "/templates/4.6.2.stable"));
         _templateOrchestrator.Setup(orchestrator => orchestrator.InstallAsync(
                 It.IsAny<string[]>(), false, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
-                new TemplateInstallationOutcome.AlreadyInstalled("4.6.2.stable", "/templates/4.6.2.stable")));
+            .ReturnsAsync(result);
+        _templateOrchestrator.Setup(orchestrator => orchestrator.InstallAsync(
+                It.IsAny<Release>(),
+                It.IsAny<IOperationProgress<TemplateInstallationStage>>(),
+                false,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+    }
 
     private void SetupResolvedEditor(string version) =>
         _versionManagementService.Setup(service => service.ResolveInstalledVersionAsync(

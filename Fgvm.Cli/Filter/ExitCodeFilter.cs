@@ -1,11 +1,10 @@
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
 using Fgvm.Error;
-using Spectre.Console;
 
 namespace Fgvm.Cli.Filter;
 
-internal sealed class ExitCodeFilter(IAnsiConsole console, ConsoleAppFilter next) : ConsoleAppFilter(next)
+internal sealed class ExitCodeFilter(DiagnosticConsole diagnostics, ConsoleAppFilter next) : ConsoleAppFilter(next)
 {
     public override async Task InvokeAsync(ConsoleAppContext context, CancellationToken cancellationToken)
     {
@@ -25,7 +24,7 @@ internal sealed class ExitCodeFilter(IAnsiConsole console, ConsoleAppFilter next
         catch (ConfigurationException ex)
         {
             exitCode = ExitCodes.ConfigurationError;
-            Report(Messages.ConfigurationError(ex.Message));
+            diagnostics.MarkupLine(Messages.ConfigurationError(ex.Message));
         }
         catch (ProcessExitCodeException ex)
         {
@@ -37,7 +36,7 @@ internal sealed class ExitCodeFilter(IAnsiConsole console, ConsoleAppFilter next
                                       or ArgumentParseFailedException)
         {
             exitCode = ExitCodes.ArgumentError;
-            Report(Messages.ExceptionMessage(string.IsNullOrWhiteSpace(e.Message) ? "Invalid arguments" : e.Message));
+            diagnostics.MarkupLine(Messages.ExceptionMessage(string.IsNullOrWhiteSpace(e.Message) ? "Invalid arguments" : e.Message));
         }
         catch (Exception)
         {
@@ -46,29 +45,6 @@ internal sealed class ExitCodeFilter(IAnsiConsole console, ConsoleAppFilter next
         finally
         {
             System.Environment.Exit(exitCode);
-        }
-    }
-
-    /// <summary>
-    ///     Renders a failure without wrapping so a path or query stays on one line and remains
-    ///     greppable. Callers assign the exit code first, so a rendering fault can only degrade the
-    ///     message, never turn the failure into a success.
-    /// </summary>
-    private void Report(string markup)
-    {
-        var width = console.Profile.Width;
-        try
-        {
-            console.Profile.Width = int.MaxValue;
-            console.MarkupLine(markup);
-        }
-        catch (Exception)
-        {
-            Console.Error.WriteLine(markup);
-        }
-        finally
-        {
-            console.Profile.Width = width;
         }
     }
 }

@@ -24,6 +24,8 @@ public class GodotArgumentServiceTests
     [InlineData("-v")]
     [InlineData("--quiet")]
     [InlineData("-q")]
+    [InlineData("--quit")]
+    [InlineData("--quit-after")]
     [InlineData("--no-header")]
     public void ShouldForceAttachedMode_WithGeneralOptions_ReturnsTrue(string argument)
     {

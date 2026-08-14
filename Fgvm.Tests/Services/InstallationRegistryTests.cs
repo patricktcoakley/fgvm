@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Fgvm.Environment;
 using Fgvm.Godot;
@@ -68,6 +69,7 @@ public sealed class InstallationRegistryTests : IDisposable
     }
 
     private string InstallationsPath => Path.Combine(_rootPath, "installations.json");
+    private string InstallationsDirectoryPath => Path.Combine(_rootPath, "installations");
 
     public void Dispose()
     {
@@ -182,11 +184,43 @@ public sealed class InstallationRegistryTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease, Target));
         Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease,
             $".backup-{Guid.NewGuid():N}-{Target}"));
+        Directory.CreateDirectory(Path.Combine(_rootPath, "installations", LegacyRelease,
+            $".fgvm-staging-{Guid.NewGuid():N}"));
 
         var result = CreateRegistry().ListInstallations();
 
         var installation = Assert.Single(AssertSuccess(result));
         Assert.Equal(Target, installation.Target);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenLayoutChanges_PreservesRegistryMetadataAndDefault()
+    {
+        var installedAt = DateTimeOffset.Parse("2026-05-11T20:15:00Z", CultureInfo.InvariantCulture);
+        var launchedAt = DateTimeOffset.Parse("2026-08-12T09:30:00Z", CultureInfo.InvariantCulture);
+        var key = $"{NewLayoutRelease}@{Target}";
+        var relativePath = $"installations/{NewLayoutRelease}/{Target}";
+        Directory.CreateDirectory(Path.Combine(_rootPath, relativePath));
+        WriteRegistry(new InstallationRegistryDocument
+        {
+            Default = key,
+            LastScanDigest = "layout-changed",
+            Installations =
+            {
+                [key] = new InstallationRegistryEntry
+                {
+                    Path = relativePath,
+                    InstalledAt = installedAt,
+                    LastLaunchedAt = launchedAt
+                }
+            }
+        });
+
+        var installation = Assert.Single(AssertSuccess(CreateRegistry().ListInstallations()));
+
+        Assert.Equal(installedAt, installation.InstalledAt);
+        Assert.Equal(launchedAt, installation.LastLaunchedAt);
+        Assert.Equal(key, ReadRegistry().Default);
     }
 
     [Fact]
@@ -216,7 +250,7 @@ public sealed class InstallationRegistryTests : IDisposable
                 [$"{LegacyRelease}@{Target}"] = new InstallationRegistryEntry
                 {
                     Path = $"installations/{LegacyRelease}/{Target}",
-                    InstalledAt = DateTimeOffset.Parse("2026-05-11T20:15:00Z")
+                    InstalledAt = DateTimeOffset.Parse("2026-05-11T20:15:00Z", CultureInfo.InvariantCulture)
                 },
                 ["not-a-key"] = new InstallationRegistryEntry
                 {
@@ -331,16 +365,34 @@ public sealed class InstallationRegistryTests : IDisposable
     public void UpsertInstalled_WritesRegistryAndRemovesTemporaryFile()
     {
         var release = Assert.IsType<Result<Release, ReleaseParseError>.Success>(CreateRelease(LegacyRelease)).Value;
+        Directory.CreateDirectory(Path.Combine(InstallationsDirectoryPath, LegacyRelease, Target));
         var registry = CreateRegistry();
+        var installedAt = DateTimeOffset.Parse("2026-05-11T20:15:00Z", CultureInfo.InvariantCulture);
 
-        var result = registry.UpsertInstalled(release, $"installations/{LegacyRelease}/{Target}",
-            DateTimeOffset.Parse("2026-05-11T20:15:00Z"));
+        var result = registry.UpsertInstalled(release, $"installations/{LegacyRelease}/{Target}", installedAt);
 
         Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(result);
         Assert.False(File.Exists(InstallationsPath + ".tmp"));
         Assert.Empty(Directory.EnumerateFiles(_rootPath, "installations.json.*.tmp"));
         var document = ReadRegistry();
         Assert.True(document.Installations.ContainsKey($"{LegacyRelease}@{Target}"));
+        Assert.Equal(installedAt, document.Installations[$"{LegacyRelease}@{Target}"].InstalledAt);
+    }
+
+    [Fact]
+    public void UpsertInstalled_WithSafeCustomPath_RegistersItAndHonorsInstalledAt()
+    {
+        var release = Assert.IsType<Result<Release, ReleaseParseError>.Success>(CreateRelease(LegacyRelease)).Value;
+        const string relativePath = "custom-editors/godot-4.3";
+        Directory.CreateDirectory(Path.Combine(_rootPath, relativePath));
+        var installedAt = DateTimeOffset.Parse("2026-05-11T20:15:00Z", CultureInfo.InvariantCulture);
+
+        var result = CreateRegistry().UpsertInstalled(release, relativePath, installedAt);
+
+        Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(result);
+        var entry = ReadRegistry().Installations[$"{LegacyRelease}@{Target}"];
+        Assert.Equal(relativePath, entry.Path);
+        Assert.Equal(installedAt, entry.InstalledAt);
     }
 
     [Fact]
@@ -362,29 +414,115 @@ public sealed class InstallationRegistryTests : IDisposable
         Assert.IsType<InstallationRegistryError.InvalidPath>(failure.Error);
     }
 
-    // Removal renames the directory away before touching the registry, so this is the state a crash in between leaves
     [Fact]
     public void ListInstallations_WhenAListedDirectoryIsGone_DropsTheEntry()
     {
         var relativePath = $"installations/{NewLayoutRelease}/{Target}";
-        WriteRegistry(new InstallationRegistryDocument
-        {
-            Default = $"{NewLayoutRelease}@{Target}",
-            Installations =
-            {
-                [$"{NewLayoutRelease}@{Target}"] = new InstallationRegistryEntry { Path = relativePath }
-            }
-        });
+        var installationPath = Path.Combine(_rootPath, relativePath);
+        Directory.CreateDirectory(installationPath);
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(
+            registry.SetDefault($"{NewLayoutRelease}@{Target}"));
 
-        var installations = AssertSuccess(CreateRegistry().ListInstallations());
+        Directory.Delete(installationPath, true);
+
+        var installations = AssertSuccess(registry.ListInstallations());
 
         Assert.Empty(installations);
         Assert.Null(ReadRegistry().Default);
     }
 
-    // The reverse does not repair itself, which is why the registry is never written before the directory is moved
     [Fact]
-    public void ListInstallations_WhenAPresentDirectoryIsNotListed_DoesNotResurrectIt()
+    public void ListInstallations_WhenLegacyDirectoryIsGone_StillDropsTheEntry()
+    {
+        var legacyPath = Path.Combine(_rootPath, LegacyRelease);
+        Directory.CreateDirectory(legacyPath);
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+
+        Directory.Delete(legacyPath, true);
+
+        Assert.Empty(AssertSuccess(registry.ListInstallations()));
+        Assert.Empty(ReadRegistry().Installations);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenLegacyDirectoryIsAddedAfterDigest_AdoptsTheEntry()
+    {
+        const string addedLegacyRelease = "4.1-stable-standard";
+        Directory.CreateDirectory(Path.Combine(_rootPath, LegacyRelease));
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+
+        Directory.CreateDirectory(Path.Combine(_rootPath, addedLegacyRelease));
+
+        var installations = AssertSuccess(registry.ListInstallations());
+
+        Assert.Equal(2, installations.Count);
+        Assert.Contains(installations, installation => installation.ReleaseNameWithRuntime == addedLegacyRelease);
+        Assert.Contains(ReadRegistry().Installations.Keys, key => key.StartsWith($"{addedLegacyRelease}@", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ListInstallations_WhenLegacyDigestMatches_RespectsAHandRemovedEntry()
+    {
+        Directory.CreateDirectory(Path.Combine(_rootPath, LegacyRelease));
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        var edited = ReadRegistry();
+        edited.Installations.Clear();
+        WriteRegistry(edited);
+
+        Assert.Empty(AssertSuccess(registry.ListInstallations()));
+        Assert.Empty(ReadRegistry().Installations);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenCanonicalEntryMovesToCustomPath_PreservesItDuringReconciliation()
+    {
+        var canonicalPath = Path.Combine(InstallationsDirectoryPath, NewLayoutRelease, Target);
+        var customRelativePath = "custom-editors/godot-4.2";
+        var customPath = Path.Combine(_rootPath, customRelativePath);
+        Directory.CreateDirectory(canonicalPath);
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+
+        Directory.CreateDirectory(Path.GetDirectoryName(customPath)!);
+        Directory.Move(canonicalPath, customPath);
+        Directory.SetLastWriteTimeUtc(Path.Combine(InstallationsDirectoryPath, NewLayoutRelease), DateTime.UtcNow.AddMinutes(1));
+        var edited = ReadRegistry();
+        edited.Installations[$"{NewLayoutRelease}@{Target}"].Path = customRelativePath;
+        WriteRegistry(edited);
+
+        var installation = Assert.Single(AssertSuccess(registry.ListInstallations()));
+
+        Assert.Equal(customRelativePath, installation.RelativePath);
+        Assert.Equal(customRelativePath, ReadRegistry().Installations[installation.Key].Path);
+    }
+
+    [Fact]
+    public void SetDefault_WhenInstallationUsesCustomPath_PreservesTheEntry()
+    {
+        const string customRelativePath = "custom-editors/godot-4.2";
+        var key = $"{NewLayoutRelease}@{Target}";
+        Directory.CreateDirectory(Path.Combine(_rootPath, customRelativePath));
+        WriteRegistry(new InstallationRegistryDocument
+        {
+            Installations =
+            {
+                [key] = new InstallationRegistryEntry { Path = customRelativePath }
+            }
+        });
+        var registry = CreateRegistry();
+
+        Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(registry.SetDefault(key));
+        Assert.Equal(key, ReadRegistry().Default);
+        Assert.Equal(customRelativePath, ReadRegistry().Installations[key].Path);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenAPresentDirectoryIsNotListed_AdoptsIt()
     {
         var relativePath = $"installations/{NewLayoutRelease}/{Target}";
         Directory.CreateDirectory(Path.Combine(_rootPath, relativePath));
@@ -392,7 +530,197 @@ public sealed class InstallationRegistryTests : IDisposable
 
         var installations = AssertSuccess(CreateRegistry().ListInstallations());
 
-        Assert.Empty(installations);
+        var installation = Assert.Single(installations);
+        Assert.Equal($"{NewLayoutRelease}@{Target}", installation.Key);
+        Assert.Equal(relativePath, installation.RelativePath);
+        Assert.NotNull(ReadRegistry().LastScanDigest);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenDigestMatches_DoesNotRunAFullScanOrCheckEveryInstallation()
+    {
+        var releasePath = Path.Combine(InstallationsDirectoryPath, NewLayoutRelease);
+        var installationPath = Path.Combine(releasePath, Target);
+        Directory.CreateDirectory(installationPath);
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        _hostSystem.Invocations.Clear();
+
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+
+        _hostSystem.Verify(x => x.EnumerateDirectories(InstallationsDirectoryPath), Times.Once);
+        _hostSystem.Verify(x => x.EnumerateDirectories(_rootPath), Times.Once);
+        _hostSystem.Verify(x => x.EnumerateDirectories(releasePath), Times.Never);
+        _hostSystem.Verify(x => x.DirectoryExists(installationPath), Times.Never);
+        _hostSystem.Verify(x => x.GetDirectoryCreatedAtUtc(It.IsAny<string>()), Times.Never);
+        _releaseManager.Verify(x => x.CreateRelease(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenDigestIsMissing_ScansOnceAndPersistsIt()
+    {
+        var relativePath = $"installations/{NewLayoutRelease}/{Target}";
+        Directory.CreateDirectory(Path.Combine(_rootPath, relativePath));
+        WriteRegistry(new InstallationRegistryDocument
+        {
+            Installations =
+            {
+                [$"{NewLayoutRelease}@{Target}"] = new InstallationRegistryEntry { Path = relativePath }
+            }
+        });
+        var registry = CreateRegistry();
+
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        Assert.Matches("^[0-9a-f]{64}$", ReadRegistry().LastScanDigest);
+        _hostSystem.Invocations.Clear();
+
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        _hostSystem.Verify(x => x.EnumerateDirectories(InstallationsDirectoryPath), Times.Once);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenDigestIsMalformed_RescansInsteadOfTrustingIt()
+    {
+        var relativePath = $"installations/{NewLayoutRelease}/{Target}";
+        var releasePath = Path.Combine(InstallationsDirectoryPath, NewLayoutRelease);
+        Directory.CreateDirectory(Path.Combine(_rootPath, relativePath));
+        WriteRegistry(new InstallationRegistryDocument
+        {
+            LastScanDigest = "not-a-digest",
+            Installations =
+            {
+                [$"{NewLayoutRelease}@{Target}"] = new InstallationRegistryEntry { Path = relativePath }
+            }
+        });
+
+        Assert.Single(AssertSuccess(CreateRegistry().ListInstallations()));
+
+        Assert.Matches("^[0-9a-f]{64}$", ReadRegistry().LastScanDigest);
+        _hostSystem.Verify(x => x.EnumerateDirectories(releasePath), Times.Once);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenTargetIsAddedToExistingRelease_AdoptsTheNewTarget()
+    {
+        const string armTarget = "linux.arm64";
+        var releasePath = Path.Combine(InstallationsDirectoryPath, NewLayoutRelease);
+        Directory.CreateDirectory(Path.Combine(releasePath, Target));
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+
+        Directory.CreateDirectory(Path.Combine(releasePath, armTarget));
+        Directory.SetLastWriteTimeUtc(releasePath, DateTime.UtcNow.AddMinutes(1));
+
+        var installations = AssertSuccess(registry.ListInstallations());
+        Assert.Equal(2, installations.Count);
+        Assert.Contains(installations, installation => installation.Target == Target);
+        Assert.Contains(installations, installation => installation.Target == armTarget);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenFileInsideInstallationChanges_DoesNotRescan()
+    {
+        var releasePath = Path.Combine(InstallationsDirectoryPath, NewLayoutRelease);
+        var installationPath = Path.Combine(releasePath, Target);
+        Directory.CreateDirectory(installationPath);
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        var digest = ReadRegistry().LastScanDigest;
+
+        File.WriteAllText(Path.Combine(installationPath, "editor.log"), "changed");
+        _hostSystem.Invocations.Clear();
+
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        Assert.Equal(digest, ReadRegistry().LastScanDigest);
+        _hostSystem.Verify(x => x.EnumerateDirectories(releasePath), Times.Never);
+    }
+
+    [Fact]
+    public void ListInstallations_WhenValidEntryIsRemovedByHandAndLayoutIsUnchanged_RespectsTheEdit()
+    {
+        var installationPath = Path.Combine(InstallationsDirectoryPath, NewLayoutRelease, Target);
+        Directory.CreateDirectory(installationPath);
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        var edited = ReadRegistry();
+        edited.Installations.Clear();
+        WriteRegistry(edited);
+
+        Assert.Empty(AssertSuccess(registry.ListInstallations()));
+        Assert.IsType<Result<Installation, InstallationRegistryError>.Failure>(
+            registry.FindByReleaseName(NewLayoutRelease));
+    }
+
+    [Fact]
+    public void ListInstallations_WhenDefaultEntryIsRemovedByHandAndLayoutIsUnchanged_RespectsTheEdit()
+    {
+        var key = $"{NewLayoutRelease}@{Target}";
+        Directory.CreateDirectory(Path.Combine(InstallationsDirectoryPath, NewLayoutRelease, Target));
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+        Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(registry.SetDefault(key));
+        var edited = ReadRegistry();
+        edited.Installations.Clear();
+        WriteRegistry(edited);
+
+        Assert.Empty(AssertSuccess(registry.ListInstallations()));
+        var persisted = ReadRegistry();
+        Assert.Null(persisted.Default);
+        Assert.Empty(persisted.Installations);
+    }
+
+    [Fact]
+    public void SetDefault_WhenAnotherEntryWasRemovedByHandAndLayoutIsUnchanged_DoesNotResurrectIt()
+    {
+        var retainedKey = $"{NewLayoutRelease}@{Target}";
+        var removedKey = $"{LegacyRelease}@{Target}";
+        Directory.CreateDirectory(Path.Combine(InstallationsDirectoryPath, NewLayoutRelease, Target));
+        Directory.CreateDirectory(Path.Combine(InstallationsDirectoryPath, LegacyRelease, Target));
+        var registry = CreateRegistry();
+        Assert.Equal(2, AssertSuccess(registry.ListInstallations()).Count);
+        var edited = ReadRegistry();
+        edited.Installations.Remove(removedKey);
+        WriteRegistry(edited);
+
+        Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(registry.SetDefault(retainedKey));
+
+        var persisted = ReadRegistry();
+        Assert.Equal(retainedKey, persisted.Default);
+        Assert.Contains(retainedKey, persisted.Installations.Keys);
+        Assert.DoesNotContain(removedKey, persisted.Installations.Keys);
+    }
+
+    [Fact]
+    public void MutationWhoseScanBecomesStale_DoesNotCertifyTheStaleDocument()
+    {
+        var firstReleasePath = Path.Combine(InstallationsDirectoryPath, NewLayoutRelease, Target);
+        Directory.CreateDirectory(firstReleasePath);
+        var registry = CreateRegistry();
+        Assert.Single(AssertSuccess(registry.ListInstallations()));
+
+        var secondReleasePath = Path.Combine(InstallationsDirectoryPath, LegacyRelease, Target);
+        var addSecondReleaseDuringWrite = true;
+        _hostSystem.Setup(x => x.WriteAllText(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns((string path, string contents) =>
+            {
+                if (addSecondReleaseDuringWrite)
+                {
+                    addSecondReleaseDuringWrite = false;
+                    Directory.CreateDirectory(secondReleasePath);
+                }
+
+                File.WriteAllText(path, contents);
+                return new Result<Unit, FileOperationError>.Success(Unit.Value);
+            });
+
+        Assert.IsType<Result<Unit, InstallationRegistryError>.Success>(
+            registry.SetDefault($"{NewLayoutRelease}@{Target}"));
+        var staleDigest = ReadRegistry().LastScanDigest;
+
+        var reconciled = AssertSuccess(registry.ListInstallations());
+        Assert.Equal(2, reconciled.Count);
+        Assert.Contains(reconciled, installation => installation.Key == $"{LegacyRelease}@{Target}");
+        Assert.NotEqual(staleDigest, ReadRegistry().LastScanDigest);
     }
 
     [Fact]

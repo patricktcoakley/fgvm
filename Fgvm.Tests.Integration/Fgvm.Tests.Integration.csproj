@@ -27,6 +27,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Fgvm.Cli\Fgvm.Cli.csproj"/>
+        <ProjectReference Include="..\Fgvm.Tests.Fixtures\Fgvm.Tests.Fixtures.csproj"/>
         <ProjectReference Include="..\Fgvm\Fgvm.csproj"/>
     </ItemGroup>
 

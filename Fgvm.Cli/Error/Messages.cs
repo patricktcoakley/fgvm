@@ -92,6 +92,10 @@ public static class Messages
     public static string UserCancelled(string what) => $"[red]User cancelled {what} operation :prohibited:[/]";
 
     // Errors
+    public static string GodotLaunchFailed(string reason) => $"[red]Could not run Godot: {reason.EscapeMarkup()}[/]";
+
+    public static string GodotExited(int exitCode) => $"[red]Godot exited with code {exitCode}.[/]";
+
     public static string SomethingWentWrong(string when, string logPath) =>
         $"[red]Something went wrong {when} 💣[/]\n[red]Please use [hotpink_1]fgvm logs[/] for more information or check {logPath}.[/]";
 

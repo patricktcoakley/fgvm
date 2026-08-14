@@ -286,7 +286,7 @@ public class RemoveCommandTests : IDisposable
 
         await _removeCommand.Remove(cancellationToken: CancellationToken.None, query: query);
 
-        // An entry with no directory repairs itself; a directory with no entry stays invisible
+        // Stage the directory before mutating the scan-derived registry document.
         Assert.False(existedWhenRegistryWasUpdated);
         Assert.False(Directory.Exists(editorPath));
         Assert.Empty(Tombstones());

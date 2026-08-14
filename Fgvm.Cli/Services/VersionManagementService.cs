@@ -95,9 +95,11 @@ public interface IVersionManagementService
     /// <param name="query">Version query arguments, or null to detect from the project.</param>
     /// <param name="forceInteractive">Force interactive selection.</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="outputConsole">Console for preparation status and prompts, or null to use standard output.</param>
     /// <returns>The resolved release.</returns>
     Task<Release> PrepareLocalVersionAsync(string[]? query = null,
         bool forceInteractive = false,
+        IAnsiConsole? outputConsole = null,
         CancellationToken cancellationToken = default
     );
 
@@ -156,6 +158,7 @@ public class VersionManagementService(
     IPathService pathService,
     IProjectManager projectManager,
     IAnsiConsole console,
+    DiagnosticConsole diagnostics,
     ILogger<VersionManagementService> logger
 ) : IVersionManagementService
 {
@@ -194,7 +197,7 @@ public class VersionManagementService(
         catch (Exception e)
         {
             logger.LogError(e, "Error resolving version for launch");
-            console.MarkupLine(Messages.ErrorResolvingVersion);
+            diagnostics.MarkupLine(Messages.ErrorResolvingVersion);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Error resolving version for launch: {e.Message}"));
         }
@@ -233,7 +236,7 @@ public class VersionManagementService(
         catch (Exception e)
         {
             logger.LogError(e, "Error resolving version for launch");
-            console.MarkupLine(Messages.ErrorResolvingVersion);
+            diagnostics.MarkupLine(Messages.ErrorResolvingVersion);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Error resolving explicit version for launch: {e.Message}"));
         }
@@ -416,13 +419,19 @@ public class VersionManagementService(
     /// <inheritdoc />
     public async Task<Release> PrepareLocalVersionAsync(string[]? query = null,
         bool forceInteractive = false,
+        IAnsiConsole? outputConsole = null,
         CancellationToken cancellationToken = default
     )
     {
         try
         {
             var installed = ListInstallations().ToArray();
-            return CreateRelease(await DetermineVersionToSetAsync(query, forceInteractive, installed, cancellationToken));
+            return CreateRelease(await DetermineVersionToSetAsync(
+                query,
+                forceInteractive,
+                installed,
+                outputConsole ?? console,
+                cancellationToken));
         }
         catch (Exception e)
         {
@@ -439,7 +448,10 @@ public class VersionManagementService(
     {
         try
         {
-            var godotRelease = await PrepareLocalVersionAsync(query, forceInteractive, cancellationToken);
+            var godotRelease = await PrepareLocalVersionAsync(
+                query,
+                forceInteractive,
+                cancellationToken: cancellationToken);
 
             var versionFilePath = Path.Combine(Directory.GetCurrentDirectory(), ".fgvm-version");
             var fileExists = hostSystem.FileExists(versionFilePath) is Result<bool, FileOperationError>.Success { Value: true };
@@ -583,7 +595,7 @@ public class VersionManagementService(
         if (releaseManager.CreateRelease(selection) is not Result<Release, ReleaseParseError>.Success(var godotRelease))
         {
             logger.LogError("Invalid Godot version selected: {Selection}", selection);
-            console.MarkupLine($"[red]Invalid Godot version: {selection}[/]");
+            diagnostics.MarkupLine($"[red]Invalid Godot version: {selection}[/]");
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.InvalidVersion(selection));
         }
@@ -625,13 +637,13 @@ public class VersionManagementService(
                 compatibleInstalled = installedVersion;
                 break;
             case Result<CompatibleVersionOutcome, CompatibleVersionError>.Success(CompatibleVersionOutcome.Declined):
-                console.MarkupLine(Messages.ProjectVersionNotInstalled(projectVersion, projectRelease.RuntimeDisplaySuffix));
-                console.MarkupLine(Messages.InstallationInstructions(projectVersion, projectRelease.IsDotNet));
+                diagnostics.MarkupLine(Messages.ProjectVersionNotInstalled(projectVersion, projectRelease.RuntimeDisplaySuffix));
+                diagnostics.MarkupLine(Messages.InstallationInstructions(projectVersion, projectRelease.IsDotNet));
                 return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                     new VersionResolutionError.NotFound(projectVersion));
             case Result<CompatibleVersionOutcome, CompatibleVersionError>.Failure(var error):
-                console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
-                console.MarkupLine(Messages.ManualInstallInstructions(projectVersion, projectRelease.IsDotNet));
+                diagnostics.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
+                diagnostics.MarkupLine(Messages.ManualInstallInstructions(projectVersion, projectRelease.IsDotNet));
                 return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                     new VersionResolutionError.Failed(DescribeCompatibleVersionError(error)));
             default:
@@ -641,7 +653,7 @@ public class VersionManagementService(
         if (releaseManager.CreateRelease(compatibleInstalled) is not
             Result<Release, ReleaseParseError>.Success(var newProjectGodotRelease))
         {
-            console.MarkupLine(Messages.InstallationSucceededButNotFound);
+            diagnostics.MarkupLine(Messages.InstallationSucceededButNotFound);
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.Failed($"Installation succeeded but version {projectVersion} not found in installed list"));
         }
@@ -674,7 +686,7 @@ public class VersionManagementService(
         {
             case Result<Installation, InstallationRegistryError>.Failure(InstallationRegistryError.NotFound):
                 logger.LogError("Tried to launch when no version is set.");
-                console.MarkupLine(Messages.NoCurrentVersionSet);
+                diagnostics.MarkupLine(Messages.NoCurrentVersionSet);
 
                 return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                     new VersionResolutionError.NotFound("No current version set"));
@@ -744,7 +756,7 @@ public class VersionManagementService(
         if (releaseManager.CreateRelease(compatibleVersion) is not Result<Release, ReleaseParseError>.Success(var projectGodotRelease))
         {
             logger.LogError("Invalid project version: {CompatibleVersion}", compatibleVersion);
-            console.MarkupLine(Messages.InvalidProjectVersion(compatibleVersion));
+            diagnostics.MarkupLine(Messages.InvalidProjectVersion(compatibleVersion));
             return new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
                 new VersionResolutionError.InvalidVersion(compatibleVersion));
         }
@@ -836,25 +848,30 @@ public class VersionManagementService(
     private async Task<string> DetermineVersionToSetAsync(string[]? query,
         bool forceInteractive,
         string[] installed,
+        IAnsiConsole outputConsole,
         CancellationToken cancellationToken
     )
     {
         if (query == null || query.Length == 0)
         {
-            return await HandleAutoDetectionModeAsync(installed, forceInteractive, cancellationToken);
+            return await HandleAutoDetectionModeAsync(installed, forceInteractive, outputConsole, cancellationToken);
         }
 
-        return await HandleQueryModeAsync(query, installed, cancellationToken);
+        return await HandleQueryModeAsync(query, installed, outputConsole, cancellationToken);
     }
 
 
-    private async Task<string> HandleAutoDetectionModeAsync(string[] installed, bool forceInteractive, CancellationToken cancellationToken)
+    private async Task<string> HandleAutoDetectionModeAsync(string[] installed,
+        bool forceInteractive,
+        IAnsiConsole outputConsole,
+        CancellationToken cancellationToken
+    )
     {
         // Check for existing `.fgvm-version` file or `project.godot`
         var projectInfo = FindProjectInfo();
         if (projectInfo is not null)
         {
-            return await HandleProjectInfoAsync(projectInfo, installed, forceInteractive, cancellationToken);
+            return await HandleProjectInfoAsync(projectInfo, installed, forceInteractive, outputConsole, cancellationToken);
         }
 
         if (installed.Length == 0)
@@ -863,18 +880,19 @@ public class VersionManagementService(
             throw new ArgumentException(Messages.NoInstallationsAndNoVersionFile);
         }
 
-        if (!console.Profile.Capabilities.Interactive)
+        if (!outputConsole.Profile.Capabilities.Interactive)
         {
             throw new ArgumentException(Messages.VersionQueryRequiredInNonInteractiveShell("fgvm local"));
         }
 
         // No `.fgvm-version` found, prompt for selection
-        return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+        return await Set.ShowSetVersionPrompt(installed, outputConsole, cancellationToken);
     }
 
     private async Task<string> HandleProjectInfoAsync(Release projectRelease,
         string[] installed,
         bool forceInteractive,
+        IAnsiConsole outputConsole,
         CancellationToken cancellationToken
     )
     {
@@ -888,14 +906,14 @@ public class VersionManagementService(
                 throw new ArgumentException(Messages.NoVersionsInstalledPrompt);
             }
 
-            if (!console.Profile.Capabilities.Interactive)
+            if (!outputConsole.Profile.Capabilities.Interactive)
             {
                 throw new ArgumentException(Messages.VersionQueryRequiredInNonInteractiveShell("fgvm local"));
             }
 
-            console.MarkupLine(Messages.ProjectSpecifiesVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
-            console.MarkupLine(Messages.ChooseFromInstalled);
-            return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+            outputConsole.MarkupLine(Messages.ProjectSpecifiesVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
+            outputConsole.MarkupLine(Messages.ChooseFromInstalled);
+            return await Set.ShowSetVersionPrompt(installed, outputConsole, cancellationToken);
         }
 
         // Try to find a compatible installed version
@@ -909,10 +927,10 @@ public class VersionManagementService(
 
         // Not installed, auto-install
         logger.LogInformation("Project version {ProjectVersion} is not installed, automatically installing it.", projectVersion);
-        console.MarkupLine(Messages.ProjectVersionNotInstalled(projectVersion, projectRelease.RuntimeDisplaySuffix));
+        outputConsole.MarkupLine(Messages.ProjectVersionNotInstalled(projectVersion, projectRelease.RuntimeDisplaySuffix));
 
         // We already have projectRelease validated, no need to revalidate
-        console.MarkupLine(Messages.InstallingProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
+        outputConsole.MarkupLine(Messages.InstallingProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
 
         // Use the exact version with runtime as the install query
         string[] installQuery = [projectRelease.ReleaseNameWithRuntime];
@@ -924,15 +942,15 @@ public class VersionManagementService(
                 installOutcome = outcome;
                 break;
             case Result<InstallationOutcome, InstallationError>.Failure:
-                console.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
+                outputConsole.MarkupLine(Messages.FailedToInstallProjectVersion(projectVersion, projectRelease.RuntimeDisplaySuffix));
 
                 if (installed.Length <= 0)
                 {
                     throw new InvalidOperationException("No versions installed. Install a version first with: fgvm install <version>");
                 }
 
-                console.MarkupLine(Messages.ChooseFromInstalled);
-                return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+                outputConsole.MarkupLine(Messages.ChooseFromInstalled);
+                return await Set.ShowSetVersionPrompt(installed, outputConsole, cancellationToken);
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
@@ -944,11 +962,15 @@ public class VersionManagementService(
             _ => throw new InvalidOperationException(Messages.UnknownInstallationOutcome)
         };
 
-        console.MarkupLine(Messages.SuccessfullyInstalled(releaseNameWithRuntime));
+        outputConsole.MarkupLine(Messages.SuccessfullyInstalled(releaseNameWithRuntime));
         return releaseNameWithRuntime;
     }
 
-    private async Task<string> HandleQueryModeAsync(string[] query, string[] installed, CancellationToken cancellationToken)
+    private async Task<string> HandleQueryModeAsync(string[] query,
+        string[] installed,
+        IAnsiConsole outputConsole,
+        CancellationToken cancellationToken
+    )
     {
         // Installed registry entries include runtime suffixes, while release queries resolve from runtime-neutral release names.
         var installedReleaseNames = GetInstalledReleaseNames(installed);
@@ -966,8 +988,8 @@ public class VersionManagementService(
         }
 
         logger.LogInformation("Version matching '{Query}' not installed, attempting to install it.", string.Join(" ", query));
-        console.MarkupLine(Messages.NoInstalledVersionMatching(string.Join(" ", query)));
-        console.MarkupLine(Messages.Installing(string.Join(" ", query)));
+        outputConsole.MarkupLine(Messages.NoInstalledVersionMatching(string.Join(" ", query)));
+        outputConsole.MarkupLine(Messages.Installing(string.Join(" ", query)));
 
         // Try to install
         InstallationOutcome installOutcome;
@@ -978,21 +1000,21 @@ public class VersionManagementService(
                 installOutcome = outcome;
                 break;
             case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.NotFound notFound):
-                console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
+                outputConsole.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
                 throw new ArgumentException(Messages.InstallationNotFound(notFound.Version, hostSystem));
             case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.InvalidQuery invalidQuery):
-                console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
+                outputConsole.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
                 throw new ArgumentException(invalidQuery.Message);
             case Result<InstallationOutcome, InstallationError>.Failure:
-                console.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
+                outputConsole.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
 
                 if (installed.Length <= 0)
                 {
                     throw new InvalidOperationException(Messages.InstallationFailedNoVersions);
                 }
 
-                console.MarkupLine(Messages.ChooseFromInstalled);
-                return await Set.ShowSetVersionPrompt(installed, console, cancellationToken);
+                outputConsole.MarkupLine(Messages.ChooseFromInstalled);
+                return await Set.ShowSetVersionPrompt(installed, outputConsole, cancellationToken);
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
@@ -1012,7 +1034,7 @@ public class VersionManagementService(
 
         if (foundVersion == null)
         {
-            console.MarkupLine(Messages.InstallationSucceededButNotFound);
+            outputConsole.MarkupLine(Messages.InstallationSucceededButNotFound);
             throw new InvalidOperationException(Messages.InstallationSucceededButNotFound);
         }
 
@@ -1023,7 +1045,7 @@ public class VersionManagementService(
             _ => throw new InvalidOperationException(Messages.UnknownInstallationOutcome)
         };
 
-        console.MarkupLine(Messages.SuccessfullyInstalled(releaseNameWithRuntime));
+        outputConsole.MarkupLine(Messages.SuccessfullyInstalled(releaseNameWithRuntime));
         return foundVersion;
     }
 
@@ -1058,6 +1080,13 @@ public class VersionManagementService(
     /// </summary>
     private async Task<bool> PromptForInstallationAsync(string projectVersion, bool isDotNet, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!console.Profile.Capabilities.Interactive)
+        {
+            return false;
+        }
+
         try
         {
             var runtimeText = isDotNet ? " [[.NET]]" : "";

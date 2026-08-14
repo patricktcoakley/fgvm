@@ -2,11 +2,12 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Fgvm.Godot;
 using Fgvm.Godot.Download;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 
-namespace Fgvm.Godot;
+namespace Fgvm.Tests.Fixtures;
 
 /// <summary>
 ///     Test-only download client backed by a generated local fixture manifest.
@@ -65,7 +66,7 @@ public sealed class FixtureDownloadClient : IDownloadClient
             if (string.IsNullOrWhiteSpace(_manifestPath))
             {
                 return new Result<FixtureManifest, NetworkError>.Failure(
-                    new NetworkError.ConnectionFailure("FGVM_INTEGRATION_FIXTURE_MANIFEST is not set."));
+                    new NetworkError.ConnectionFailure("Fixture manifest path is not set."));
             }
 
             var fullPath = Path.GetFullPath(_manifestPath);
@@ -243,4 +244,4 @@ public sealed class FixtureArtifact
 
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(FixtureManifest))]
-internal partial class FixtureJsonContext : JsonSerializerContext;
+internal sealed partial class FixtureJsonContext : JsonSerializerContext;

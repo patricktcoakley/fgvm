@@ -84,6 +84,7 @@ public sealed class GodotLauncher : IGodotLauncher
     private const int SetFileDescriptorFlags = 2;
     private const uint HandleFlagInherit = 1;
     private static readonly Lock DetachedStartLock = new();
+    private static readonly TimeSpan DetachedStartupWindow = TimeSpan.FromMilliseconds(300);
 
     public async Task<Result<GodotLaunchOutcome, GodotLaunchError>> LaunchAsync(GodotLaunchRequest request,
         Action<GodotLaunchOutput>? onOutput = null,
@@ -102,10 +103,8 @@ public sealed class GodotLauncher : IGodotLauncher
                     new Win32Exception(Marshal.GetLastPInvokeError()).Message));
         }
 
-        using var process = new Process
-        {
-            StartInfo = CreateStartInfo(request)
-        };
+        using var process = new Process();
+        process.StartInfo = CreateStartInfo(request);
 
         try
         {
@@ -126,6 +125,14 @@ public sealed class GodotLauncher : IGodotLauncher
             if (process.StartInfo.RedirectStandardInput)
             {
                 process.StandardInput.Close();
+            }
+
+            if (await ExitedWhileStartingAsync(process, cancellationToken) is { } earlyExitCode)
+            {
+                return new Result<GodotLaunchOutcome, GodotLaunchError>.Failure(
+                    new GodotLaunchError.ProcessFailed(
+                        request.Target.ExecutablePath,
+                        $"the process exited with code {earlyExitCode} instead of staying open"));
             }
 
             return new Result<GodotLaunchOutcome, GodotLaunchError>.Success(
@@ -203,6 +210,30 @@ public sealed class GodotLauncher : IGodotLauncher
         }
 
         return attachedStartInfo;
+    }
+
+    private static async Task<int?> ExitedWhileStartingAsync(Process process, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var window = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            window.CancelAfter(DetachedStartupWindow);
+            await process.WaitForExitAsync(window.Token);
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            TryKill(process);
+            throw;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static bool StartProcess(Process process, GodotLaunchMode mode)

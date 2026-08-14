@@ -1,3 +1,4 @@
+using Fgvm.Cli;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.Error;
 using Fgvm.Cli.Services;
@@ -17,6 +18,7 @@ public sealed class GodotCommandTests
     private const string InstallationKey = "4.6-stable-standard@linux.x86_64";
     private readonly Mock<IGodotArgumentService> _argumentService = new();
     private readonly TestConsole _console = new();
+    private readonly TestConsole _diagnostics = new();
     private readonly Mock<IGodotLauncher> _launcher = new();
     private readonly Mock<IInstallationRegistry> _registry = new();
 
@@ -112,8 +114,8 @@ public sealed class GodotCommandTests
         var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(() => CreateCommand().Launch(project: true));
 
         Assert.Equal(ExitCodes.GeneralError, exception.ExitCode);
-        Assert.Contains("No project.godot file was detected", _console.Output);
-        Assert.DoesNotContain("Something went wrong", _console.Output);
+        Assert.Contains("No project.godot file was detected", _diagnostics.Output);
+        Assert.DoesNotContain("Something went wrong", _diagnostics.Output);
         _launcher.Verify(x => x.LaunchAsync(
             It.IsAny<GodotLaunchRequest>(),
             It.IsAny<Action<GodotLaunchOutput>?>(),
@@ -177,6 +179,25 @@ public sealed class GodotCommandTests
     }
 
     [Fact]
+    public async Task Launch_InteractiveWithoutInstallations_ReportsFailureAndDoesNotLaunch()
+    {
+        _versionService.Setup(x => x.ResolveVersionForLaunchExplicitAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<VersionResolutionOutcome, VersionResolutionError>.Success(
+                new VersionResolutionOutcome.InteractiveRequired([])));
+
+        var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(() => CreateCommand().Launch(interactive: true));
+
+        Assert.Equal(ExitCodes.GeneralError, exception.ExitCode);
+        Assert.Contains("No Godot versions installed", _diagnostics.Output);
+        Assert.Empty(_console.Output);
+        _launcher.Verify(x => x.LaunchAsync(
+            It.IsAny<GodotLaunchRequest>(),
+            It.IsAny<Action<GodotLaunchOutput>?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _registry.Verify(x => x.RecordLaunch(It.IsAny<string>(), It.IsAny<DateTimeOffset?>()), Times.Never);
+    }
+
+    [Fact]
     public async Task Launch_NonZeroExit_PropagatesGodotExitCode()
     {
         _launcher.Setup(x => x.LaunchAsync(
@@ -192,12 +213,12 @@ public sealed class GodotCommandTests
         var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(() => CreateCommand().Launch(attached: true));
 
         Assert.Equal(42, exception.ExitCode);
-        Assert.Contains("failure", _console.Output);
+        Assert.Contains("failure", _diagnostics.Output);
         _registry.Verify(x => x.RecordLaunch(InstallationKey, null), Times.Once);
     }
 
     [Fact]
-    public async Task Launch_StartFailure_DoesNotRecordLaunch()
+    public async Task Launch_StartFailure_ReportsAndDoesNotRecordLaunch()
     {
         _launcher.Setup(x => x.LaunchAsync(
                 It.IsAny<GodotLaunchRequest>(),
@@ -206,7 +227,7 @@ public sealed class GodotCommandTests
             .ReturnsAsync(new Result<GodotLaunchOutcome, GodotLaunchError>.Failure(
                 new GodotLaunchError.StartFailed(_resolution.ExecutablePath, "missing")));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateCommand().Launch());
+        await Assert.ThrowsAsync<ProcessExitCodeException>(() => CreateCommand().Launch());
 
         _registry.Verify(x => x.RecordLaunch(It.IsAny<string>(), It.IsAny<DateTimeOffset?>()), Times.Never);
     }
@@ -222,7 +243,7 @@ public sealed class GodotCommandTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreateCommand().Launch());
 
-        Assert.Contains("cancelled", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cancelled", _diagnostics.Output, StringComparison.OrdinalIgnoreCase);
         _registry.Verify(x => x.RecordLaunch(It.IsAny<string>(), It.IsAny<DateTimeOffset?>()), Times.Never);
     }
 
@@ -241,6 +262,7 @@ public sealed class GodotCommandTests
             projectManager.Object,
             _registry.Object,
             _console,
+            new DiagnosticConsole(_diagnostics),
             new Mock<ILogger<GodotCommand>>().Object);
     }
 }

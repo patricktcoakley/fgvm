@@ -1,11 +1,13 @@
 using ConsoleAppFramework;
 using Fgvm.Cli.Error;
+using Fgvm.Cli.Progress;
 using Fgvm.Cli.Services;
 using Fgvm.Cli.ViewModels;
 using Fgvm.Environment;
 using Fgvm.Error;
 using Fgvm.Godot;
 using Fgvm.Godot.Export;
+using Fgvm.Services;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -20,6 +22,7 @@ internal sealed class ExportCommand(
     IHostSystem hostSystem,
     TextWriter standardOutput,
     IAnsiConsole console,
+    DiagnosticConsole diagnostics,
     ILogger<ExportCommand> logger
 )
 {
@@ -59,8 +62,9 @@ internal sealed class ExportCommand(
 
             var release = await versionManagementService.PrepareLocalVersionAsync(
                 query is [] ? null : query,
+                outputConsole: json ? diagnostics.AnsiConsole : null,
                 cancellationToken: cancellationToken);
-            await InstallTemplatesAsync(release, cancellationToken);
+            await InstallTemplatesAsync(release, json, cancellationToken);
             var launchTarget = await ResolveLaunchTargetAsync(release, cancellationToken);
 
             var run = await exportRunner.RunAsync(
@@ -87,13 +91,13 @@ internal sealed class ExportCommand(
         }
         catch (ExportRunException exception)
         {
-            console.MarkupLine(Messages.ExportPhaseFailed(exception.Phase, exception.Message));
+            diagnostics.MarkupLine(Messages.ExportPhaseFailed(exception.Phase, exception.Message));
             throw new ProcessExitCodeException(ExitCodes.GeneralError);
         }
         catch (OperationCanceledException)
         {
             logger.LogError("User cancelled the export.");
-            console.MarkupLine(Messages.UserCancelled("export"));
+            diagnostics.MarkupLine(Messages.UserCancelled("export"));
             throw;
         }
         catch (Exception exception) when (exception is not ConfigurationException
@@ -101,7 +105,7 @@ internal sealed class ExportCommand(
                                               and not ArgumentException)
         {
             logger.LogError(exception, "Error exporting the project: {Message}", exception.Message);
-            console.MarkupLine(Messages.SomethingWentWrong("when trying to export the project"));
+            diagnostics.MarkupLine(Messages.SomethingWentWrong("when trying to export the project"));
             throw;
         }
     }
@@ -143,14 +147,19 @@ internal sealed class ExportCommand(
             _ => throw new InvalidOperationException("Unexpected export preset catalog result type.")
         };
 
-    private async Task InstallTemplatesAsync(Release release, CancellationToken cancellationToken)
+    private async Task InstallTemplatesAsync(Release release, bool quiet, CancellationToken cancellationToken)
     {
         Result<TemplateInstallationOutcome, TemplateInstallationError> result;
         try
         {
-            result = await templateOrchestrator.InstallAsync(
-                [release.ReleaseNameWithRuntime],
-                cancellationToken: cancellationToken);
+            result = quiet
+                ? await templateOrchestrator.InstallAsync(
+                    release,
+                    new SilentOperationProgress<TemplateInstallationStage>(),
+                    cancellationToken: cancellationToken)
+                : await templateOrchestrator.InstallAsync(
+                    [release.ReleaseNameWithRuntime],
+                    cancellationToken: cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -158,7 +167,7 @@ internal sealed class ExportCommand(
                 "Export templates for {Release} could not be installed: {Reason}",
                 release.ReleaseNameWithRuntime,
                 exception.Message);
-            console.MarkupLine(Messages.LocalTemplateInstallationFailed(
+            diagnostics.MarkupLine(Messages.LocalTemplateInstallationFailed(
                 release.ReleaseNameWithRuntime,
                 exception.Message));
             throw new ProcessExitCodeException(ExitCodes.GeneralError);
@@ -170,8 +179,14 @@ internal sealed class ExportCommand(
             logger.LogError("Export templates for {Release} could not be installed: {Reason}",
                 release.ReleaseNameWithRuntime,
                 reason);
-            console.MarkupLine(Messages.LocalTemplateInstallationFailed(release.ReleaseNameWithRuntime, reason));
+            diagnostics.MarkupLine(Messages.LocalTemplateInstallationFailed(release.ReleaseNameWithRuntime, reason));
             throw new ProcessExitCodeException(ExitCodes.GeneralError);
+        }
+
+        if (quiet && result is Result<TemplateInstallationOutcome, TemplateInstallationError>.Success(
+                TemplateInstallationOutcome.NewInstallation(var templateVersion, _, ChecksumVerification.Unavailable)))
+        {
+            diagnostics.MarkupLine(Messages.TemplateChecksumUnavailable(templateVersion));
         }
     }
 
