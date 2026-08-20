@@ -1,5 +1,18 @@
 # Changelog
 
+<a name="2.5.0"></a>
+## [2.5.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.5.0) (2026-08-20)
+
+### ✨ Features
+
+* Add Godot export command. ([f32f2dd](https://github.com/patricktcoakley/fgvm/commit/f32f2dd150b874b8e297bb5baf168ab1ac7c6f52))
+* Support installing templates automatically from `export_presets.cfg` using `fgvm local`. ([bb627d2](https://github.com/patricktcoakley/fgvm/commit/bb627d22e82e6fc080f1788c0528f85b9c52e362))
+
+### 🐛 Bug Fixes
+
+* Add digest to installation manifest to handle orphaned installations. ([7c0a76f](https://github.com/patricktcoakley/fgvm/commit/7c0a76f66ea7ef7f0b03fb02b2556b6f0d37e4eb))
+* Stop `fgvm export` from replacing configured export directories. ([8643d53](https://github.com/patricktcoakley/fgvm/commit/8643d5393bde52f6cd36ff91a07fa74066adfdfc))
+
 <a name="2.4.0"></a>
 ## [2.4.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.4.0) (2026-08-05)
 
