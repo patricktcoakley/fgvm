@@ -285,4 +285,25 @@ public class QueryTests
         // When no stable exists, pick the most stable type available (beta > dev)
         Assert.Equal("4.5-beta3-standard", result.ReleaseNameWithRuntime);
     }
+
+    [Fact]
+    public void FindReleaseByQuery_WhenQueryContainsSpecificTwoDigitRelease_AndThreeDigitPointReleaseAvailable_SelectsTwoDigitRelease()
+    {
+        // The order here is important because this is the order returned by the GitHub API
+        var releaseNames = new[]
+        {
+            "4.5.1-stable",
+            "4.5-stable",
+            "4.5.1-rc2",
+            "4.5-rc2",
+        };
+
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.TryFindReleaseByQuery(["4.5-stable"], releaseNames);
+
+        Assert.NotNull(result);
+        // Should pick 4.5-stable-standard, not 4.5.1-stable-standard
+        Assert.Equal("4.5-stable-standard", result.ReleaseNameWithRuntime);
+    }
 }

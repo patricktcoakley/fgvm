@@ -532,6 +532,9 @@ public sealed class ReleaseManager(
             .OrderByDescending(item => releaseSelector(item).Major)
             .ThenByDescending(item => releaseSelector(item).Type)
             .ThenByDescending(item => releaseSelector(item).Minor)
+            // Sort null patch versions first to put two-digit version numbers before three-digit ones
+            // i.e. sort 4.5 before 4.5.1
+            .ThenByDescending(item => releaseSelector(item).Patch is null)
             .ThenByDescending(item => releaseSelector(item).Patch)
             .ThenByDescending(item => releaseSelector(item).RuntimeEnvironment)
             .ThenByDescending(item => releaseSelector(item).ReleaseNameWithRuntime, StringComparer.Ordinal);
