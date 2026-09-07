@@ -89,6 +89,36 @@ public sealed class InstallCommandTests
             Times.Never);
     }
 
+    [Theory]
+    [InlineData("not-found", "could not be found")]
+    [InlineData("checksum", "Checksum mismatch")]
+    [InlineData("failed", "Installation failed: download failed")]
+    public async Task Install_FailureExceptionsContainPlainText(string failureKind, string expectedMessage)
+    {
+        var query = new[] { "4.6-stable-standard" };
+        InstallationError error = failureKind switch
+        {
+            "not-found" => new InstallationError.NotFound(query[0]),
+            "checksum" => new InstallationError.ChecksumMismatch("expected", "actual", "Godot.zip"),
+            _ => new InstallationError.Failed("download failed")
+        };
+        var installationOrchestrator = new Mock<IInstallationOrchestrator>();
+        installationOrchestrator.Setup(x => x.InstallAsync(query, false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(error));
+        var command = CreateCommand(
+            installationOrchestrator.Object,
+            new Mock<ITemplateOrchestrator>().Object,
+            out _);
+
+        var exception = await Record.ExceptionAsync(() =>
+            command.Install(cancellationToken: CancellationToken.None, query: query));
+
+        Assert.NotNull(exception);
+        Assert.Contains(expectedMessage, exception.Message);
+        Assert.DoesNotContain("[red]", exception.Message);
+        Assert.DoesNotContain("[/]", exception.Message);
+    }
+
     [Fact]
     public async Task Install_WithTemplates_WarnsWhenTemplateInstallFails()
     {

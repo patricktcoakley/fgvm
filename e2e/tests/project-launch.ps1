@@ -1,6 +1,24 @@
 Set-StrictMode -Version Latest
 
 Suite "project launch" {
+    Test "forced interactive launch bypasses a legacy pin even with a query" {
+        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        $projectPath = Join-Path $Context.WorkPath "interactive-legacy-pin"
+        New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        $versionFile = Join-Path $projectPath ".fgvm-version"
+        Set-Content -LiteralPath $versionFile -Value "4.5-stable" -NoNewline
+
+        foreach ($arguments in @(@("godot", "-i"), @("godot", "-i", "--query", "4.5"))) {
+            $godot = Run -Cwd $projectPath -Arguments $arguments
+
+            # The harness redirects input, so reaching selection reports an interactive-terminal error
+            Assert.ExitCode 2 $godot "fgvm godot -i with a legacy pin"
+            Assert.Contains "cannot prompt" $godot.Stderr
+            Assert.NotContains ".fgvm-version" $godot.Stderr
+            Assert.Equal "4.5-stable" (File.Read $versionFile)
+        }
+    }
+
     Test "auto-detects project arguments and remains detached for flag-like paths" {
         $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
         $projectPath = Join-Path $Context.WorkPath "my-dev-project game-server"

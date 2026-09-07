@@ -79,18 +79,11 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
                     case Result<string, FileOperationError>.Failure(var readError):
                         return new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(readError, targetDir));
                     case Result<string, FileOperationError>.Success(var contentValue):
-                        var content = contentValue.Trim();
-                        if (!string.IsNullOrEmpty(content))
-                        {
-                            return CreateReleaseLookup(content, createRelease);
-                        }
-
-                        break;
+                        return CreatePinnedReleaseLookup(contentValue.Trim(), createRelease);
                     default:
                         throw new InvalidOperationException("Unexpected Result type");
                 }
 
-                break;
             case Result<bool, FileOperationError>.Success:
                 break;
             default:
@@ -130,6 +123,11 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
     /// <inheritdoc />
     public Result<Unit, ProjectError> CreateVersionFile(string version, string? directory = null)
     {
+        if (Release.TryParseTriplet(version) is null)
+        {
+            return new Result<Unit, ProjectError>.Failure(new ProjectError.InvalidVersion(version));
+        }
+
         var targetDir = directory ?? Directory.GetCurrentDirectory();
         var filePath = Path.Combine(targetDir, VersionFile);
 
@@ -167,10 +165,7 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
             case Result<string, FileOperationError>.Failure(var readError):
                 return new Result<ProjectLookup<Release>, ProjectError>.Failure(ToProjectReadError(readError, targetDir));
             case Result<string, FileOperationError>.Success(var contentValue):
-                var content = contentValue.Trim();
-                return string.IsNullOrEmpty(content)
-                    ? new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing())
-                    : CreateReleaseLookup(content, releaseManager.CreateRelease);
+                return CreatePinnedReleaseLookup(contentValue.Trim(), releaseManager.CreateRelease);
             default:
                 throw new InvalidOperationException("Unexpected Result type");
         }
@@ -269,6 +264,12 @@ public partial class ProjectManager(IReleaseManager releaseManager, IHostSystem 
 
         return new Result<ProjectLookup<Release>, ProjectError>.Success(new ProjectLookup<Release>.Missing());
     }
+
+    private Result<ProjectLookup<Release>, ProjectError> CreatePinnedReleaseLookup(string version,
+        Func<string, Result<Release, ReleaseParseError>> createRelease
+    ) => Release.TryParseTriplet(version) is null
+        ? new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.InvalidVersion(version))
+        : CreateReleaseLookup(version, createRelease);
 
     private Result<ProjectLookup<Release>, ProjectError> CreateReleaseLookup(string version,
         Func<string, Result<Release, ReleaseParseError>> createRelease

@@ -32,6 +32,26 @@
       "gitReference": "mock-3-6"
     }
   ],
+  "comparisonReleases": [
+    {
+      "name": "4.5.1-stable",
+      "version": "4.5.1",
+      "status": "stable",
+      "gitReference": "mock-4-5-1"
+    },
+    {
+      "name": "4.7-dev10",
+      "version": "4.7",
+      "status": "dev10",
+      "gitReference": "mock-dev10"
+    },
+    {
+      "name": "4.6.2-rc20",
+      "version": "4.6.2",
+      "status": "rc20",
+      "gitReference": "mock-rc20"
+    }
+  ],
   "platforms": [
     {
       "platform": "linux-x64",

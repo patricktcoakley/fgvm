@@ -20,7 +20,7 @@ either by putting it somewhere on your `PATH` or, preferably, using a [package m
 - **Export Template Management**: Install, list, and remove Godot export templates for locally installed Godot versions.
 - **Hybrid CLI/TUI Interface**: Simple command-line interface with interactive TUI prompts for easy navigation and selection when you don't specify arguments.
 - **Flexible Query System**: Powerful query system for finding and installing versions using keywords like `latest`, `4 mono`, `3.3 rc`, etc.
-- **Project Aware**: Lock a project to a specific Godot version using a `.fgvm-version` file in the project directory. `fgvm local` can automatically detect a compatible version from `project.godot`
+- **Project Aware**: Lock a project to an exact Godot version using a `.fgvm-version` file in the project directory. `fgvm local` can automatically detect a compatible version from `project.godot`
   or let you manually choose one, will install missing versions when needed, and installs the matching full export-template package when `export_presets.cfg` contains a configured preset. `fgvm godot` uses
   `.fgvm-version` when present, otherwise falls back to the global default, and can launch the current project directly from the terminal.
 - **Smart Argument Handling**: Detection of arguments passed to Godot that contextually switch to an attached mode when necessary to display terminal output.
@@ -328,6 +328,7 @@ but here is a detailed summary of the available commands:
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
   Use `--with-templates` to install the matching official export template package after editor installation succeeds. If template installation fails, fgvm keeps the editor installation and prints a warning.
   Use `--verbose` (or `-V`) to show each download source as it is tried, which is useful when diagnosing a slow or failing download.
+  A complete `major.minor[.patch]-release-runtime` triplet is exact: `fgvm install 4.5-stable-standard` only considers that release, even when `4.5.1` is available, and fails if it is unavailable. Invalid triplets never fall back to fuzzy matching: `4.8-dev-mono` fails because it lacks a prerelease number; use `4.8-dev4-mono` to request dev4 exactly. Shorter queries such as `4.5`, `4.5-stable`, or `4.8-dev`, and separate query terms such as `4.8 dev mono`, retain their existing fuzzy matching.
     - Queries:
         - `latest` or `latest standard` will install the latest stable, and `latest mono` will install the latest .NET stable.
         - `4 mono` will grab the latest stable 4.x .NET release, `3.3 rc` will grab the latest rc of 3.3 standard, `1` would take the last stable version `1`, and so on.
@@ -336,6 +337,7 @@ but here is a detailed summary of the available commands:
         - `fgvm install 4.3 mono` - Install 4.3 stable mono
         - `fgvm i --default latest` - Install latest stable standard and set as default
         - `fgvm install --with-templates 4.4.1` - Install 4.4.1 stable standard and its export templates
+        - `fgvm install 4.5-stable-standard` - Install 4.5 stable standard, or fail if that exact release is unavailable
 - `fgvm godot` or `fgvm g` [`-i|--interactive`] [`-a|--attached`] [`-P|--project`] [`--query <string>`] [`--args <string>`] runs the appropriate Godot version, or resolves the optional query against installed versions and launches that match. With the `--interactive` or `-i` flag, it will prompt the user to launch an installed version, even if a query is supplied. When run in a project directory with a `.fgvm-version`
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
   `project.godot` file is found.
@@ -351,6 +353,7 @@ but here is a detailed summary of the available commands:
   try to find the closest matching version based on the query, including release type (`stable`) and version (`4`, `4.4`), or an exact match (`4.4.1-stable-mono`).
 - `fgvm local [<...strings>]` prepares the Godot toolchain for the current project by creating or updating a `.fgvm-version` file in the current directory. If no `.fgvm-version` file
   exists and no arguments are provided, it will automatically detect the project version from `project.godot` and install the most recent compatible version if not already installed.
+    - An existing `.fgvm-version` must contain a complete triplet, for example `4.5-stable-standard` or `4.5-rc1-mono`. Empty files and shorter names such as `4.5` or `4.5-stable` are rejected; existing two-part pins need their intended runtime appended. If the exact release is unavailable, fgvm fails instead of selecting a newer patch release. Versions inferred from `project.godot` remain compatibility queries.
     - If a list of arguments are provided, it will find the best matching version based on the query (including runtime preferences like `mono` or `standard`) and install it if necessary.
     - If `export_presets.cfg` contains at least one preset with a name, platform, and export path, it also installs the complete official export-template package matching the selected editor. Projects without
       configured export presets retain the version-only behavior.

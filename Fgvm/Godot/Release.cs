@@ -182,6 +182,12 @@ public sealed record Release : IComparable<Release>
         return new Release(major, minor, patch: patch, type: releaseType, runtimeEnvironment: runtime);
     }
 
+    internal static Release? TryParseTriplet(string versionString) =>
+        versionString.Split('-') is [_, _, _] && TryParse(versionString) is { } release &&
+        versionString.Equals(release.ReleaseNameWithRuntime, StringComparison.OrdinalIgnoreCase)
+            ? release
+            : null;
+
     public static bool operator >=(Release left, Release right) =>
         left.CompareTo(right) >= 0;
 

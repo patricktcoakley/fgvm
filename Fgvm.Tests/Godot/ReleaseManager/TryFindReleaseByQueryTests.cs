@@ -84,9 +84,9 @@ public class TryFindReleaseByQueryTests
 
         string[][] invalidTestCases =
         [
-            ["4.5-stabl-mono"], // typo in "stable" - will split to ["4.5", "stabl", "mono"]
-            ["4.5-st-mono"], // incomplete release type - will split to ["4.5", "st", "mono"]
-            ["4.5-invalidtype-mono"] // invalid release type - will split to ["4.5", "invalidtype", "mono"]
+            ["4.5-stabl-mono"], // typo in "stable"
+            ["4.5-st-mono"], // incomplete release type
+            ["4.5-invalidtype-mono"] // invalid release type
         ];
 
         foreach (var query in invalidTestCases)
@@ -178,5 +178,98 @@ public class TryFindReleaseByQueryTests
 
         var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
         Assert.IsType<QueryError.NotFound>(failure.Error);
+    }
+
+    [Theory]
+    [InlineData("4.5-stable-standard")]
+    [InlineData("4.5.1-stable-standard")]
+    [InlineData("4.5-stable-mono")]
+    [InlineData("4.5-rc1-standard")]
+    [InlineData("4.5-rc1-mono")]
+    [InlineData("4.8-dev4-mono")]
+    public void ResolveReleaseQuery_CompleteTripletSelectsOnlyThatRelease(string triplet)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases =
+            ["4.8-dev40", "4.8-dev4", "4.6-stable", "4.5.2-stable", "4.5.1-stable", "4.5-stable", "4.5-rc10", "4.5-rc2", "4.5-rc1"];
+
+        var result = releaseManager.ResolveReleaseQuery([triplet], releases);
+        var withoutPlatform = releaseManager.ResolveReleaseQueryWithoutPlatform([triplet], releases);
+
+        Assert.Equal(triplet, Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
+        Assert.Equal(triplet, Assert.IsType<Result<Release, QueryError>.Success>(withoutPlatform).Value.ReleaseNameWithRuntime);
+    }
+
+    [Theory]
+    [InlineData("4.5-stable-standard")]
+    [InlineData("4.5-stable-mono")]
+    [InlineData("4.5-rc1-mono")]
+    [InlineData("4.8-dev4-mono")]
+    public void ResolveReleaseQuery_MissingTripletDoesNotAcceptAPrefixMatch(string triplet)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["4.8-dev40", "4.5.1-stable", "4.5-rc10"];
+
+        var result = releaseManager.ResolveReleaseQuery([triplet], releases);
+        var withoutPlatform = releaseManager.ResolveReleaseQueryWithoutPlatform([triplet], releases);
+
+        Assert.IsType<QueryError.NotFound>(Assert.IsType<Result<Release, QueryError>.Failure>(result).Error);
+        Assert.IsType<QueryError.NotFound>(Assert.IsType<Result<Release, QueryError>.Failure>(withoutPlatform).Error);
+    }
+
+    [Theory]
+    [InlineData("4.8-dev-mono")]
+    [InlineData("4.5-rc-mono")]
+    [InlineData("4.5-beta-standard")]
+    [InlineData("4.5-alpha-mono")]
+    [InlineData("4.5-stable-unknown")]
+    [InlineData("4.5-stable-")]
+    [InlineData("4.5--mono")]
+    [InlineData("-stable-mono")]
+    [InlineData("4-stable-mono")]
+    [InlineData("4.5.01-stable-mono")]
+    [InlineData("4..5-stable-mono")]
+    [InlineData("4.5-dev0-mono")]
+    [InlineData("4.5-stable-mono-extra")]
+    [InlineData("4.5-stable--mono")]
+    public void ResolveReleaseQuery_InvalidTripletNeverFallsBackToFuzzyMatching(string candidate)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["4.8-dev4", "4.5-stable", "4.5.1-stable", "4.5-rc1", "4.5-beta1", "4.5-alpha1", "4.5-dev1"];
+
+        foreach (var catalog in new[] { releases, Array.Empty<string>() })
+        {
+            var results = new[]
+            {
+                releaseManager.ResolveReleaseQuery([candidate], catalog),
+                releaseManager.ResolveReleaseQueryWithoutPlatform([candidate], catalog)
+            };
+            foreach (var result in results)
+            {
+                var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
+                var invalid = Assert.IsType<QueryError.InvalidQuery>(failure.Error);
+                Assert.Contains(candidate, invalid.Message);
+                Assert.Contains("triplet", invalid.Message);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(new[] { "4.5" }, "4.5.2-stable-standard")]
+    [InlineData(new[] { "4.5-stable" }, "4.5.2-stable-standard")]
+    [InlineData(new[] { "4.5", "stable", "standard" }, "4.5.2-stable-standard")]
+    [InlineData(new[] { "4.5", "rc", "mono" }, "4.5-rc2-mono")]
+    [InlineData(new[] { "4.8-dev" }, "4.8-dev5-standard")]
+    [InlineData(new[] { "4.8", "dev", "mono" }, "4.8-dev5-mono")]
+    public void ResolveReleaseQuery_PartialQueriesKeepFuzzyMatching(string[] query, string expectedRelease)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        string[] releases = ["4.8-dev4", "4.8-dev5", "4.5-stable", "4.5.1-stable", "4.5.2-stable", "4.5-rc1", "4.5-rc2"];
+        var result = releaseManager.ResolveReleaseQuery(query, releases);
+        var withoutPlatform = releaseManager.ResolveReleaseQueryWithoutPlatform(query, releases);
+
+        Assert.Equal(expectedRelease, Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
+        Assert.Equal(expectedRelease, Assert.IsType<Result<Release, QueryError>.Success>(withoutPlatform).Value.ReleaseNameWithRuntime);
     }
 }

@@ -41,6 +41,95 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     }
 
     [Fact]
+    public async Task TripletInstallDoesNotExpandAVersionPrefix()
+    {
+        var result = await fixture.ExecuteCommand(["install", "4.6-stable-standard"]);
+
+        Assert.Equal(ExitCodes.ArgumentError, result.ExitCode);
+        Assert.Contains("Version 4.6-stable-standard could not be found", result.Stderr);
+        Assert.DoesNotContain("[red]", result.Stderr);
+        Assert.DoesNotContain("[/]", result.Stderr);
+        Assert.DoesNotContain("Something went wrong", result.Stderr);
+    }
+
+    [Theory]
+    [InlineData("install", "4.8-dev-mono")]
+    [InlineData("i", "4.5-rc-mono")]
+    [InlineData("local", "4.8-dev-mono")]
+    public async Task InvalidTripletQueriesFailWithoutChangingTheProject(string command, string triplet)
+    {
+        var project = NewTempPath("fgvm-invalid-triplet");
+        const string pin = "4.5-stable-standard";
+
+        try
+        {
+            await fixture.WriteFile(Path.Combine(project, ".fgvm-version"), pin);
+            var result = await fixture.ExecuteCommandInDirectory([command, triplet], project);
+
+            Assert.Equal(ExitCodes.ArgumentError, result.ExitCode);
+            Assert.Contains(triplet, result.Stderr);
+            Assert.Contains("triplet", result.Stderr);
+            Assert.DoesNotContain("Something went wrong", result.Stdout + result.Stderr);
+            Assert.Equal(pin, await fixture.ReadFile(Path.Combine(project, ".fgvm-version")));
+        }
+        finally
+        {
+            await fixture.DeletePath(project);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("4.5")]
+    [InlineData("4.8-dev-mono")]
+    public async Task LocalRejectsNonTripletVersionFiles(string pin)
+    {
+        var project = NewTempPath("fgvm-invalid-pin");
+
+        try
+        {
+            await fixture.WriteFile(Path.Combine(project, ".fgvm-version"), pin);
+            var result = await fixture.ExecuteCommandInDirectory(["local"], project);
+
+            Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
+            Assert.Contains(".fgvm-version", result.Stderr);
+            Assert.Contains("triplet", result.Stderr);
+            Assert.DoesNotContain("Something went wrong", result.Stdout + result.Stderr);
+            Assert.Equal(pin, await fixture.ReadFile(Path.Combine(project, ".fgvm-version")));
+        }
+        finally
+        {
+            await fixture.DeletePath(project);
+        }
+    }
+
+    [Theory]
+    [InlineData("4.5-stable")]
+    [InlineData("4.8-dev4")]
+    public async Task LocalExplainsHowToUpdateAPinWithoutARuntime(string pin)
+    {
+        var project = NewTempPath("fgvm-legacy-pin");
+
+        try
+        {
+            await fixture.WriteFile(Path.Combine(project, ".fgvm-version"), pin);
+            var result = await fixture.ExecuteCommandInDirectory(["local"], project);
+
+            Assert.Equal(ExitCodes.ConfigurationError, result.ExitCode);
+            Assert.Contains(".fgvm-version", result.Stderr);
+            Assert.Contains("requires a runtime", result.Stderr);
+            Assert.Contains($"{pin}-standard", result.Stderr);
+            Assert.Contains($"{pin}-mono", result.Stderr);
+            Assert.DoesNotContain("Something went wrong", result.Stdout + result.Stderr);
+            Assert.Equal(pin, await fixture.ReadFile(Path.Combine(project, ".fgvm-version")));
+        }
+        finally
+        {
+            await fixture.DeletePath(project);
+        }
+    }
+
+    [Fact]
     public async Task DisplaysVersionWithVersionFlag()
     {
         var expected = GetProjectVersion();
