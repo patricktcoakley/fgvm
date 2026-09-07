@@ -205,6 +205,27 @@ public class QueryTests
         Assert.Equal("4.5-stable-standard", result.ReleaseNameWithRuntime);
     }
 
+    [Theory]
+    [InlineData("4.5")]
+    [InlineData("4.5-stable")]
+    public void FindReleaseByQuery_FuzzyMinorQueryStillSelectsLatestStablePatch(string query)
+    {
+        var releaseNames = new[]
+        {
+            "4.5-stable",
+            "4.5.1-stable",
+            "4.5.2-stable",
+            "4.5.3-rc1"
+        };
+
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.TryFindReleaseByQuery([query], releaseNames);
+
+        Assert.NotNull(result);
+        Assert.Equal("4.5.2-stable-standard", result.ReleaseNameWithRuntime);
+    }
+
     [Fact]
     public void FindReleaseByQuery_4_ShouldSelectHighestStableOverNewerUnstable()
     {

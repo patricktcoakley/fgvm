@@ -289,6 +289,8 @@ public sealed class ReleaseManager(
             return new Result<string, CompatibilityError>.Success(exactMatch);
         }
 
+        var minimumVersion = Version.TryParse(projectVersion, out var parsedVersion) ? parsedVersion : null;
+
         // Parse all compatible releases and find the best match
         var compatibleReleases = versions
             .Select(TryCreateRelease)
@@ -300,7 +302,15 @@ public sealed class ReleaseManager(
                 var versionString = $"{release.Major}.{release.Minor}";
                 bool isVersionMatch;
 
-                if (projectVersion.Contains('.'))
+                // If project.godot specifies "4.3.1", use an installed "4.3.1" or a newer patch such as "4.3.2"
+                // Do not use an older patch ("4.3") or a different major/minor version ("4.4" or "5.0")
+                if (minimumVersion is { Build: >= 0 and var minimumPatch, Revision: -1 })
+                {
+                    isVersionMatch = release.Major == minimumVersion.Major &&
+                                     release.Minor == minimumVersion.Minor &&
+                                     (release.Patch ?? 0) >= minimumPatch;
+                }
+                else if (projectVersion.Contains('.'))
                 {
                     // Project version is like "4.3" - match exact major.minor
                     isVersionMatch = versionString == projectVersion;
@@ -430,6 +440,21 @@ public sealed class ReleaseManager(
         Func<string, Release?> createRelease
     )
     {
+        // Handle exact triplet queries
+        if (query is [var candidate] && candidate.Split('-') is [_, _, _, ..])
+        {
+            if (Release.TryParseTriplet(candidate) is not { } exactRelease)
+            {
+                return new Result<Release?, QueryError>.Failure(new QueryError.InvalidQuery(
+                    $"Invalid arguments: `{candidate}`. Use a complete release triplet, e.g. `4.5-stable-standard` or `4.8-dev4-mono`."));
+            }
+
+            return new Result<Release?, QueryError>.Success(
+                releaseNames.Contains(exactRelease.ReleaseName, StringComparer.OrdinalIgnoreCase)
+                    ? createRelease(exactRelease.ReleaseNameWithRuntime)
+                    : null);
+        }
+
         var release = query switch
         {
             // Handle latest stable standard
@@ -466,7 +491,7 @@ public sealed class ReleaseManager(
         Func<string, Release?> createRelease
     )
     {
-        // Split on single arguments to for exact version queries like `4.2-stable-mono` or `4.3-beta2`
+        // Split shorter single-argument queries like `4.2-stable` or `4.3-beta2`
         if (query.Length == 1)
         {
             query = query[0].Split('-', StringSplitOptions.RemoveEmptyEntries);

@@ -115,6 +115,26 @@ config/features=PackedStringArray("4.6", "Forward Plus")
         Assert.Equal "4.6.2-stable-standard" (File.Read (Join-Path $projectPath ".fgvm-version")).Trim()
     }
 
+    Test "project patch requirements reject older installations and accept newer patches" {
+        Add-FixtureInstallation "4.6.2-stable" | Out-Null
+        $projectPath = Join-Path $Context.WorkPath "project-patch"
+        New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        $projectFile = Join-Path $projectPath "project.godot"
+        $versionFile = Join-Path $projectPath ".fgvm-version"
+        Set-Content -LiteralPath $projectFile -Value 'config/features=PackedStringArray("4.6.3")' -NoNewline
+
+        $tooOld = Run -Cwd $projectPath "local"
+
+        Assert.NotEqual 0 $tooOld.ExitCode "An installed patch older than the project requirement must not be pinned."
+        Assert.False (File.Exists $versionFile)
+
+        Set-Content -LiteralPath $projectFile -Value 'config/features=PackedStringArray("4.6.1")' -NoNewline
+        $compatible = Run -Cwd $projectPath "local"
+
+        Assert.ExitCode 0 $compatible "fgvm local with a newer compatible patch installed"
+        Assert.Equal "4.6.2-stable-standard" (File.Read $versionFile).Trim()
+    }
+
     Test "rejects malformed and unavailable local versions" {
         Add-FixtureInstallation "4.6.2-stable" | Out-Null
         $projectPath = Join-Path $Context.WorkPath "invalid-project"

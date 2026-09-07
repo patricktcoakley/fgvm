@@ -161,11 +161,13 @@ public static class Messages
     public static string FailedToInstallProjectVersion(string projectVersion, string runtimeDisplaySuffix) =>
         $"[red]Failed to install {projectVersion}{runtimeDisplaySuffix}.[/]";
 
-    public static string InstallationInstructions(string projectVersion, bool isDotNet) =>
-        $"[dim]Run 'fgvm install {BuildInstallQuery(projectVersion, isDotNet)}' or 'fgvm local {BuildInstallQuery(projectVersion, isDotNet)}' to install it.[/]";
+    public static string InstallationInstructions(string projectVersion, bool isDotNet, bool exact = false) => exact
+        ? $"[dim]Run 'fgvm install {projectVersion}' or 'fgvm local' to install it.[/]"
+        : $"[dim]Run 'fgvm install {BuildInstallQuery(projectVersion, isDotNet)}' or 'fgvm local {BuildInstallQuery(projectVersion, isDotNet)}' to install it.[/]";
 
-    public static string ManualInstallInstructions(string projectVersion, bool isDotNet) =>
-        $"[dim]You can manually install with: fgvm install {BuildInstallQuery(projectVersion, isDotNet)}[/]";
+    public static string ManualInstallInstructions(string projectVersion, bool isDotNet, bool exact = false) => exact
+        ? $"[dim]You can manually install with: fgvm install {projectVersion}[/]"
+        : $"[dim]You can manually install with: fgvm install {BuildInstallQuery(projectVersion, isDotNet)}[/]";
 
     public static string SuccessfullyInstalledAndUsing(string projectVersion, string runtimeDisplaySuffix, string newCompatibleVersion) =>
         $"[green]Successfully installed and using: {projectVersion}{runtimeDisplaySuffix} → {newCompatibleVersion}[/]";

@@ -8,10 +8,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-// Keep this fixture builder intentionally script-like. The e2e test harness is
-// expected to be portable to babashka, so archive and manifest generation should
-// stay explicit and data-driven instead of growing C#-specific infrastructure.
-
 var context = BuildContext.Create(BuildOptions.Parse(args));
 var manifestPath = await new FixtureBuilder(context).BuildAsync();
 Console.WriteLine(manifestPath);
@@ -30,6 +26,15 @@ internal sealed class FixtureBuilder(BuildContext context)
         var manifest = await CreateManifestAsync(recipe, platform, outputs, publishedApps);
 
         await WriteManifestAsync(outputs.ManifestPath, manifest);
+
+        foreach (var release in recipe.ComparisonReleases)
+        {
+            manifest.Releases.Add(release);
+            await AddEditorArtifactsAsync(manifest, release, platform, outputs, publishedApps);
+            await AddTemplateArtifactsAsync(manifest, release, platform, outputs);
+        }
+
+        await WriteManifestAsync(Path.Combine(outputs.PlatformRoot, "comparison-manifest.json"), manifest);
         return outputs.ManifestPath;
     }
 
@@ -555,6 +560,9 @@ internal sealed class FixtureRecipe
 
     [JsonPropertyName("releases")]
     public List<GeneratedFixtureRelease> Releases { get; init; } = [];
+
+    [JsonPropertyName("comparisonReleases")]
+    public List<GeneratedFixtureRelease> ComparisonReleases { get; init; } = [];
 
     [JsonPropertyName("platforms")]
     public List<FixturePlatform> Platforms { get; init; } = [];

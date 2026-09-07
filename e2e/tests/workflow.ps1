@@ -39,6 +39,51 @@ Suite "workflow" {
         Assert.NotEqual ([System.IO.Path]::GetFullPath($older.ExecutablePath)) ([System.IO.Path]::GetFullPath($which.Stdout.Trim()))
     }
 
+    Test "invalid triplets do not install available prereleases" {
+        $install = Run "install" "4.7-dev-mono"
+        $list = Run "list" "--json"
+
+        Assert.ExitCode 2 $install "fgvm install 4.7-dev-mono"
+        Assert.Contains "triplet" $install.Stderr
+        Assert.ExitCode 0 $list "fgvm list --json"
+        Assert.Empty (Json $list.Stdout)
+    }
+
+    Test "shorter queries stay fuzzy while numbered triplets install exactly" {
+        $stable = Run "install" "4.6-stable"
+        $dev = Run "install" "4.7-dev"
+        $mono = Run "install" "4.7-dev1-mono"
+        $list = Run "list" "--json"
+
+        Assert.ExitCode 0 $stable "fgvm install 4.6-stable"
+        Assert.ExitCode 0 $dev "fgvm install 4.7-dev"
+        Assert.ExitCode 0 $mono "fgvm install 4.7-dev1-mono"
+        Assert.ExitCode 0 $list "fgvm list --json"
+        $installed = Json $list.Stdout
+        Assert.Equal 3 $installed.Count
+        Assert.ContainsAll @($installed.name) "4.6.2-stable-standard" "4.7-dev1-standard" "4.7-dev1-mono"
+    }
+
+    Test "missing exact releases fail for install and project pins despite an installed patch" {
+        Add-FixtureInstallation "4.6.2-stable" -Default | Out-Null
+        $projectPath = Join-Path $Context.WorkPath "missing-pin"
+        New-Item -ItemType Directory -Path $projectPath -Force | Out-Null
+        $versionPath = Join-Path $projectPath ".fgvm-version"
+        $pin = "4.6-stable-standard"
+        Set-Content -LiteralPath $versionPath -Value $pin -NoNewline
+
+        $install = Run "install" $pin
+        $local = Run -Cwd $projectPath "local"
+
+        Assert.ExitCode 2 $install "fgvm install with a missing exact release"
+        Assert.ExitCode 2 $local "fgvm local with a missing exact pin"
+        Assert.Contains "Version $pin could not be found" $install.Stderr
+        Assert.Contains "Version $pin could not be found" $local.Stderr
+        Assert.NotContains "[red]" $install.Stderr
+        Assert.NotContains "[red]" $local.Stderr
+        Assert.Equal $pin (File.Read $versionPath)
+    }
+
     Test "selects a seeded mono runtime" {
         $standard = Add-FixtureInstallation "4.6.2-stable" -Default
         $mono = Add-FixtureInstallation "4.6.2-stable" "mono"

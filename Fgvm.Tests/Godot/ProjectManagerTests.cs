@@ -33,7 +33,7 @@ public sealed class ProjectManagerTests : IDisposable
     [Fact]
     public void FindProjectVersion_WithFgvmVersionFile_ReturnsVersionFromFile()
     {
-        const string versionContent = "4.3-stable";
+        const string versionContent = "4.3-stable-standard";
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, versionContent);
 
@@ -45,7 +45,7 @@ public sealed class ProjectManagerTests : IDisposable
     [Fact]
     public void FindProjectVersion_WithFgvmVersionFileContainingWhitespace_ReturnsTrimedVersion()
     {
-        const string versionContent = "  4.3-stable  \n";
+        const string versionContent = "  4.3-stable-standard  \n";
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, versionContent);
 
@@ -54,8 +54,67 @@ public sealed class ProjectManagerTests : IDisposable
         Assert.Equal("4.3-stable-standard", result);
     }
 
+    [Theory]
+    [InlineData("4.5-STABLE-STANDARD", "4.5-stable-standard")]
+    [InlineData("4.5-stable-standard", "4.5-stable-standard")]
+    [InlineData("4.5.1-stable-standard", "4.5.1-stable-standard")]
+    [InlineData("4.5-rc1-standard", "4.5-rc1-standard")]
+    [InlineData("4.5-rc1-mono", "4.5-rc1-mono")]
+    [InlineData("4.8-dev4-mono", "4.8-dev4-mono")]
+    public void FindExplicitProjectInfo_UsesTheSameReleaseIdentityAsExactInstall(string pin, string expectedRelease)
+    {
+        File.WriteAllText(Path.Combine(_tempDirectory, ".fgvm-version"), pin);
+
+        var projectRelease = ProjectLookupToNullable(_projectManager.FindExplicitProjectInfo(_tempDirectory));
+        var exactResult = new ReleaseManagerBuilder().Build().ResolveReleaseQuery(
+            [pin], ["4.8-dev4", "4.8-dev40", "4.5-stable", "4.5.1-stable", "4.5-rc1", "4.5-rc2"]);
+
+        Assert.NotNull(projectRelease);
+        Assert.Equal(expectedRelease, projectRelease.ReleaseNameWithRuntime);
+        var exactRelease = Assert.IsType<Result<Release, QueryError>.Success>(exactResult).Value;
+        Assert.Equal(projectRelease.ReleaseNameWithRuntime, exactRelease.ReleaseNameWithRuntime);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   \n")]
+    [InlineData("4.5")]
+    [InlineData("4.5.1")]
+    [InlineData("4.5-standard")]
+    [InlineData("4.5-rc")]
+    [InlineData("4.5 stable")]
+    [InlineData("4.5-stable")]
+    [InlineData("4.5-rc1")]
+    [InlineData("4.5-rc-standard")]
+    [InlineData("4.8-dev-mono")]
+    [InlineData("4.5-stable-unknown")]
+    [InlineData("4.5-stable-standard-extra")]
+    [InlineData("4..5-stable-standard")]
+    [InlineData("4.5--stable-standard")]
+    [InlineData("4.5.01-stable-standard")]
+    public void VersionFile_RejectsNonTripletsOnReadAndWrite(string pin)
+    {
+        File.WriteAllText(Path.Combine(_tempDirectory, ".fgvm-version"), pin);
+
+        var lookups = new[]
+        {
+            _projectManager.FindExplicitProjectInfo(_tempDirectory),
+            _projectManager.FindProjectInfo(_tempDirectory),
+            _projectManager.FindProjectInfoWithoutPlatform(_tempDirectory)
+        };
+        foreach (var lookup in lookups)
+        {
+            var failure = Assert.IsType<Result<ProjectLookup<Release>, ProjectError>.Failure>(lookup);
+            Assert.IsType<ProjectError.InvalidVersion>(failure.Error);
+        }
+
+        var writeFailure = Assert.IsType<Result<Unit, ProjectError>.Failure>(_projectManager.CreateVersionFile(pin, _tempDirectory));
+        Assert.IsType<ProjectError.InvalidVersion>(writeFailure.Error);
+        Assert.Equal(pin, File.ReadAllText(Path.Combine(_tempDirectory, ".fgvm-version")));
+    }
+
     [Fact]
-    public void FindProjectVersion_WithEmptyFgvmVersionFile_FallsBackToProjectGodot()
+    public void FindProjectVersion_WithEmptyFgvmVersionFile_DoesNotFallBackToProjectGodot()
     {
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, "   \n");
@@ -69,9 +128,10 @@ public sealed class ProjectManagerTests : IDisposable
 
         File.WriteAllText(projectFilePath, projectContent);
 
-        var result = FindProjectVersionValue(_tempDirectory);
+        var result = _projectManager.FindProjectInfo(_tempDirectory);
 
-        Assert.Equal("4.3-stable-standard", result);
+        var failure = Assert.IsType<Result<ProjectLookup<Release>, ProjectError>.Failure>(result);
+        Assert.IsType<ProjectError.InvalidVersion>(failure.Error);
     }
 
     [Fact]
@@ -136,15 +196,18 @@ public sealed class ProjectManagerTests : IDisposable
     [Fact]
     public void FindProjectInfo_WithFgvmVersionFile_ReturnsReleaseWithoutDotNet()
     {
-        const string versionContent = "4.3-stable";
+        const string versionContent = "4.3-stable-standard";
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
         File.WriteAllText(versionFilePath, versionContent);
 
         var result = FindProjectInfoValue(_tempDirectory);
+        var explicitResult = ProjectLookupToNullable(_projectManager.FindExplicitProjectInfo(_tempDirectory));
 
         Assert.NotNull(result);
         Assert.Equal("4.3-stable-standard", result.ReleaseNameWithRuntime);
         Assert.False(result.IsDotNet);
+        Assert.NotNull(explicitResult);
+        Assert.Equal("4.3-stable-standard", explicitResult.ReleaseNameWithRuntime);
     }
 
     [Fact]
@@ -240,10 +303,12 @@ public sealed class ProjectManagerTests : IDisposable
         File.WriteAllText(projectFilePath, projectContent);
 
         var result = FindProjectInfoValue(_tempDirectory);
+        var explicitResult = ProjectLookupToNullable(_projectManager.FindExplicitProjectInfo(_tempDirectory));
 
         Assert.NotNull(result);
         Assert.Equal("4.3-stable-standard", result.ReleaseNameWithRuntime);
         Assert.False(result.IsDotNet);
+        Assert.Null(explicitResult);
     }
 
     [Theory]
@@ -310,21 +375,21 @@ public sealed class ProjectManagerTests : IDisposable
     [Fact]
     public void CreateVersionFile_CreatesFileWithCorrectContent()
     {
-        const string version = "4.3-stable";
+        const string version = "4.3-stable-standard";
 
         CreateVersionFile(version, _tempDirectory);
 
         var filePath = Path.Combine(_tempDirectory, ".fgvm-version");
         Assert.True(File.Exists(filePath));
         var content = File.ReadAllText(filePath);
-        Assert.Equal($"4.3-stable{System.Environment.NewLine}", content);
+        Assert.Equal($"4.3-stable-standard{System.Environment.NewLine}", content);
     }
 
     [Fact]
     public void FindProjectInfo_PrioritizesFgvmVersionFileOverProjectGodot()
     {
         var versionFilePath = Path.Combine(_tempDirectory, ".fgvm-version");
-        File.WriteAllText(versionFilePath, "4.4-dev5");
+        File.WriteAllText(versionFilePath, "4.4-dev5-standard");
 
         var projectFilePath = Path.Combine(_tempDirectory, "project.godot");
         const string projectContent = """

@@ -6,6 +6,7 @@
         <Nullable>enable</Nullable>
         <LangVersion>14</LangVersion>
         <IsPackable>false</IsPackable>
+        <IsTestProject>false</IsTestProject>
         <RootNamespace>Fgvm.Tests.Fixtures</RootNamespace>
     </PropertyGroup>
 

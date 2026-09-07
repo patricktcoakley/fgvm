@@ -1,10 +1,12 @@
 using System.Runtime.InteropServices;
+using System.Security;
 using Fgvm.Cli;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
 using Fgvm.Godot;
 using Fgvm.Progress;
 using Fgvm.Services;
+using Fgvm.Tests.Godot.ReleaseManager;
 using Fgvm.Tests.Progress;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
@@ -117,8 +119,8 @@ public class VersionManagementServiceTests
     [Fact]
     public async Task ResolveVersionForLaunchAsync_WithProjectVersion_ReturnsCorrectResult()
     {
-        const string projectVersion = "4.3.0";
-        const string compatibleVersion = "4.3.0-stable-standard";
+        const string projectVersion = "4.5.0";
+        const string compatibleVersion = "4.5.1-stable-standard";
         var installedVersions = new[] { compatibleVersion };
 
         // Mock project info for this test
@@ -131,9 +133,11 @@ public class VersionManagementServiceTests
             .Returns(ProjectFound(projectRelease));
 
         SetupInstallations(installedVersions);
+        var releaseManager = new ReleaseManagerBuilder().Build();
         _mockReleaseManager.Setup(x =>
-                x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
-            .Returns(compatibleVersion);
+                x.FindCompatibleVersionResult(It.IsAny<string>(), false, installedVersions))
+            .Returns((string version, bool isDotNet, IEnumerable<string> installed) =>
+                releaseManager.FindCompatibleVersionResult(version, isDotNet, installed));
 
         var mockRelease = CreateMockRelease(compatibleVersion);
         _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
@@ -167,7 +171,7 @@ public class VersionManagementServiceTests
             .Returns(ProjectFound(projectRelease));
 
         SetupInstallations(installedVersions);
-        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectVersion, false, installedVersions))
             .Returns(CompatibleVersion(null));
 
         var result = await _service.ResolveVersionForLaunchAsync();
@@ -216,7 +220,7 @@ public class VersionManagementServiceTests
 
         SetupInstallations(installedVersions);
         _mockReleaseManager.Setup(x =>
-                x.FindCompatibleVersionResult(projectRelease.ReleaseNameWithRuntime, false, installedVersions))
+                x.FindCompatibleVersionResult(projectVersion, false, installedVersions))
             .Returns(compatibleVersion);
 
         var mockRelease = CreateMockRelease(compatibleVersion, execName);
@@ -235,6 +239,29 @@ public class VersionManagementServiceTests
         Assert.True(found.IsProjectVersion);
     }
 
+    [Theory]
+    [InlineData(false, "4.5-stable")]
+    [InlineData(true, "4.5-stable")]
+    [InlineData(false, "invalid")]
+    [InlineData(true, "invalid")]
+    public async Task ResolveVersionForLaunch_ForceInteractiveDoesNotReadThePin(bool explicitOnly, string pin)
+    {
+        string[] installed = ["4.5-stable-standard", "4.5.1-stable-standard"];
+        SetupInstallations(installed);
+        var invalidPin = new Result<ProjectLookup<Release>, ProjectError>.Failure(new ProjectError.InvalidVersion(pin));
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>())).Returns(invalidPin);
+        _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>())).Returns(invalidPin);
+
+        var result = explicitOnly
+            ? await _service.ResolveVersionForLaunchExplicitAsync(forceInteractive: true)
+            : await _service.ResolveVersionForLaunchAsync(forceInteractive: true);
+
+        var success = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(result);
+        Assert.Equal(installed, Assert.IsType<VersionResolutionOutcome.InteractiveRequired>(success.Value).AvailableVersions);
+        _mockProjectManager.Verify(x => x.FindExplicitProjectInfo(It.IsAny<string>()), Times.Never);
+        _mockProjectManager.Verify(x => x.FindProjectInfo(It.IsAny<string>()), Times.Never);
+    }
+
     [Fact]
     public async Task ResolveEffectiveVersionAsync_WithExplicitProjectVersion_ReturnsProjectVersionWithoutOutput()
     {
@@ -249,10 +276,6 @@ public class VersionManagementServiceTests
         SetupInstallations(installedVersions);
         _mockInstallationRegistry.Setup(x => x.GetDefault())
             .Returns(new Result<Installation, InstallationRegistryError>.Success(defaultInstallation));
-        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(localVersion,
-                false,
-                It.Is<IEnumerable<string>>(versions => versions.SequenceEqual(installedVersions))))
-            .Returns(localVersion);
         _mockReleaseManager.Setup(x => x.CreateRelease(localVersion))
             .Returns(CreateMockRelease(localVersion));
 
@@ -264,6 +287,181 @@ public class VersionManagementServiceTests
         Assert.Contains(localVersion, success.Value.ExecutablePath);
         Assert.Empty(_console.Output);
         _mockInstallationRegistry.Verify(x => x.GetDefault(), Times.Never);
+        _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IEnumerable<string>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveEffectiveVersionAsync_ExplicitPinDoesNotAcceptANewerPatch()
+    {
+        const string pinnedVersion = "4.5-stable-standard";
+        const string nearbyVersion = "4.5.1-stable-standard";
+        var projectRelease = CreateMockRelease(pinnedVersion);
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        SetupInstallations([nearbyVersion]);
+
+        var result = await _service.ResolveEffectiveVersionAsync();
+
+        var failure = Assert.IsType<Result<VersionResolutionOutcome.Found, VersionResolutionError>.Failure>(result);
+        var notFound = Assert.IsType<VersionResolutionError.NotFound>(failure.Error);
+        Assert.Equal(pinnedVersion, notFound.Version);
+        _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IEnumerable<string>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveVersionForLaunchExplicitAsync_UsesTheExactPinnedInstallation()
+    {
+        const string pinnedVersion = "4.5-stable-standard";
+        const string nearbyVersion = "4.5.1-stable-standard";
+        var projectRelease = CreateMockRelease(pinnedVersion);
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        SetupInstallations([nearbyVersion, pinnedVersion]);
+        SetupReleaseParsing([nearbyVersion, pinnedVersion]);
+
+        var result = await _service.ResolveVersionForLaunchExplicitAsync();
+
+        var success = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(result);
+        var found = Assert.IsType<VersionResolutionOutcome.Found>(success.Value);
+        Assert.Equal(pinnedVersion, found.VersionName);
+        _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IEnumerable<string>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveVersionForLaunchAsync_ExplicitPinDoesNotUseANearbyInstalledPatch()
+    {
+        const string pinnedVersion = "4.5-stable-standard";
+        const string nearbyVersion = "4.5.1-stable-standard";
+        var projectRelease = CreateMockRelease(pinnedVersion);
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        SetupInstallations([nearbyVersion]);
+
+        var result = await _service.ResolveVersionForLaunchAsync();
+
+        var failure = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Failure>(result);
+        var notFound = Assert.IsType<VersionResolutionError.NotFound>(failure.Error);
+        Assert.Equal(pinnedVersion, notFound.Version);
+        Assert.Contains($"fgvm install {pinnedVersion}", _diagnosticConsole.Output);
+        _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IEnumerable<string>>()), Times.Never);
+        _mockInstallationService.Verify(x => x.InstallReleaseAsync(
+            It.IsAny<Release>(),
+            It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+            It.IsAny<bool>(),
+            It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _mockProjectManager.Verify(x => x.FindProjectInfo(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveVersionForLaunchExplicitAsync_InstallsOnlyTheExactPinWhenConfirmed()
+    {
+        const string pinnedVersion = "4.5-stable-standard";
+        const string nearbyVersion = "4.5.1-stable-standard";
+        var projectRelease = CreateMockRelease(pinnedVersion);
+        var pinnedInstallation = CreateInstallation(pinnedVersion);
+        var query = new[] { pinnedVersion };
+        var releaseNames = new[] { "4.5-stable", "4.5.1-stable" };
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        SetupInstallationsSequence(
+            [nearbyVersion],
+            [nearbyVersion],
+            [nearbyVersion],
+            [nearbyVersion, pinnedVersion]);
+        _mockInstallationRegistry.SetupSequence(x => x.FindByReleaseName(pinnedVersion))
+            .Returns(new Result<Installation, InstallationRegistryError>.Failure(
+                new InstallationRegistryError.NotFound(pinnedVersion)))
+            .Returns(new Result<Installation, InstallationRegistryError>.Success(pinnedInstallation));
+        _mockInstallationService.Setup(x => x.FetchReleaseNames(
+                It.IsAny<CancellationToken>(), ReleaseFetchMode.UseCache))
+            .ReturnsAsync(releaseNames);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(
+                It.Is<string[]>(value => value.SequenceEqual(query)),
+                It.Is<string[]>(available => available.SequenceEqual(releaseNames))))
+            .Returns(new Result<Release, QueryError>.Success(projectRelease));
+        _mockInstallationService.Setup(x => x.InstallReleaseAsync(
+                projectRelease,
+                It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                false,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
+                new InstallationOutcome.NewInstallation(pinnedVersion, new ChecksumVerification.Verified())));
+        _mockReleaseManager.Setup(x => x.CreateRelease(pinnedVersion))
+            .Returns(ReleaseSuccess(projectRelease));
+        _console.Interactive();
+        _console.Input.PushKey(ConsoleKey.Enter);
+
+        var result = await _service.ResolveVersionForLaunchExplicitAsync();
+
+        var success = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(result);
+        var found = Assert.IsType<VersionResolutionOutcome.Found>(success.Value);
+        Assert.Equal(pinnedVersion, found.VersionName);
+        _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IEnumerable<string>>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(true, "standard")]
+    [InlineData(true, "mono")]
+    [InlineData(false, "standard")]
+    [InlineData(false, "mono")]
+    public async Task ResolveVersionForLaunchAsync_AutoInstallFailurePreservesTheRequestedVersionInDiagnostics(bool exact, string runtime)
+    {
+        var projectVersion = $"4.5-stable-{runtime}";
+        var projectRelease = CreateMockRelease(projectVersion);
+        string[] query = (exact, runtime) switch
+        {
+            (true, _) => [projectVersion],
+            (false, "mono") => ["4.5", "mono"],
+            _ => ["4.5"]
+        };
+        SetupInstallations([$"4.6-stable-{runtime}"]);
+        if (exact)
+        {
+            _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+                .Returns(ProjectFound(projectRelease));
+        }
+        else
+        {
+            _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
+                .Returns(ProjectFound(projectRelease));
+            _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult("4.5", projectRelease.IsDotNet, It.IsAny<IEnumerable<string>>()))
+                .Returns(CompatibleVersion(null));
+        }
+
+        _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>(), ReleaseFetchMode.UseCache))
+            .ReturnsAsync(new[] { projectRelease.ReleaseName });
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(
+                It.Is<string[]>(value => value.SequenceEqual(query)), It.IsAny<string[]>()))
+            .Returns(new Result<Release, QueryError>.Success(projectRelease));
+        _mockInstallationService.Setup(x => x.InstallReleaseAsync(
+                projectRelease, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(new InstallationError.Failed("network unavailable")));
+        _console.Interactive();
+        _console.Input.PushKey(ConsoleKey.Enter);
+
+        var result = exact
+            ? await _service.ResolveVersionForLaunchExplicitAsync()
+            : await _service.ResolveVersionForLaunchAsync();
+
+        var failure = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Failure>(result);
+        Assert.Contains("network unavailable", Assert.IsType<VersionResolutionError.Failed>(failure.Error).Reason);
+        Assert.Contains($"You can manually install with: fgvm install {projectVersion}", _diagnosticConsole.Output);
+        Assert.DoesNotContain("4.6", _diagnosticConsole.Output);
+        _mockInstallationService.Verify(x => x.InstallReleaseAsync(
+                projectRelease, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), false, false, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _mockProjectManager.Verify(x => x.CreateVersionFile(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -389,7 +587,7 @@ public class VersionManagementServiceTests
     [Fact]
     public void CreateOrUpdateVersionFile_CallsProjectManager()
     {
-        const string version = "4.3.0-stable";
+        const string version = "4.3.0-stable-standard";
         var directory = Path.GetTempPath();
 
         var versionFilePath = Path.Combine(directory, ".fgvm-version");
@@ -534,6 +732,269 @@ public class VersionManagementServiceTests
         Assert.Contains("Installing", _console.Output);
         Assert.Contains("Successfully installed", _console.Output);
         Assert.Contains("`.fgvm-version` file in current directory", _console.Output);
+    }
+
+    [Theory]
+    [InlineData("4.5")]
+    [InlineData("4.5-stable")]
+    public async Task SetLocalVersionAsync_WritesTheResolvedReleaseInsteadOfTheQuery(string query)
+    {
+        const string resolvedVersion = "4.5.1-stable-standard";
+        string[] installedVersions = ["4.5-stable-standard", resolvedVersion];
+        SetupInstallations(installedVersions);
+        SetupReleaseParsing(installedVersions);
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()))
+            .Returns((string[] versionQuery, string[] releases) => releaseManager.ResolveReleaseQuery(versionQuery, releases));
+        _mockProjectManager.Setup(x => x.CreateVersionFile(resolvedVersion, It.IsAny<string>()))
+            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
+
+        var result = await _service.SetLocalVersionAsync([query]);
+
+        Assert.Equal(resolvedVersion, result.ReleaseNameWithRuntime);
+        _mockProjectManager.Verify(x => x.CreateVersionFile(resolvedVersion, It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SetLocalVersionAsync_ExistingPinInstallsThatExactRelease()
+    {
+        const string pinnedVersion = "4.5-stable-standard";
+        const string nearbyVersion = "4.5.1-stable-standard";
+        var projectRelease = CreateMockRelease(pinnedVersion);
+        var installResult = new Result<InstallationOutcome, InstallationError>.Success(
+            new InstallationOutcome.NewInstallation(pinnedVersion, new ChecksumVerification.Verified()));
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        _mockProjectManager.Setup(x => x.CreateVersionFile(pinnedVersion, It.IsAny<string>()))
+            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
+        SetupInstallations([nearbyVersion]);
+        _mockInstallationService.Setup(x => x.InstallByQueryAsync(
+                It.Is<string[]>(query => query.SequenceEqual(new[] { pinnedVersion })),
+                It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                false,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(installResult);
+        _mockReleaseManager.Setup(x => x.CreateRelease(pinnedVersion))
+            .Returns(ReleaseSuccess(projectRelease));
+
+        var result = await _service.SetLocalVersionAsync();
+
+        Assert.Equal(pinnedVersion, result.ReleaseNameWithRuntime);
+        _mockInstallationService.Verify(x => x.InstallByQueryAsync(
+            It.Is<string[]>(query => query.SequenceEqual(new[] { pinnedVersion })),
+            It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+            false,
+            false,
+            It.IsAny<CancellationToken>()), Times.Once);
+        _mockProjectManager.Verify(x => x.FindProjectInfo(It.IsAny<string>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("4.5-stable-standard", "4.5.1-stable-standard")]
+    [InlineData("4.5.0-stable-standard", "4.5.1-stable-standard")]
+    [InlineData("4.5-stable-mono", "4.5.1-stable-mono")]
+    [InlineData("4.5.1-stable-standard", "4.5.2-stable-standard")]
+    [InlineData("4.5.1-stable-mono", "4.5.2-stable-mono")]
+    public async Task SetLocalVersionAsync_ProjectGodotStillAcceptsACompatiblePatch(string projectVersion, string compatibleVersion)
+    {
+        var projectRelease = CreateMockRelease(projectVersion);
+        var compatibleRelease = CreateMockRelease(compatibleVersion);
+        var installedVersions = new[] { compatibleVersion, projectRelease.IsDotNet ? "4.5.2-stable-standard" : "4.5.2-stable-mono" };
+
+        _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        _mockProjectManager.Setup(x => x.CreateVersionFile(compatibleVersion, It.IsAny<string>()))
+            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
+        SetupInstallations(installedVersions);
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(It.IsAny<string>(), It.IsAny<bool>(), installedVersions))
+            .Returns((string version, bool isDotNet, IEnumerable<string> installed) =>
+                releaseManager.FindCompatibleVersionResult(version, isDotNet, installed));
+        _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
+            .Returns(ReleaseSuccess(compatibleRelease));
+
+        var result = await _service.SetLocalVersionAsync();
+
+        Assert.Equal(compatibleVersion, result.ReleaseNameWithRuntime);
+        var launchResult = await _service.ResolveVersionForLaunchAsync();
+        var launchSuccess = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Success>(launchResult);
+        Assert.Equal(compatibleVersion, Assert.IsType<VersionResolutionOutcome.Found>(launchSuccess.Value).VersionName);
+        _mockInstallationService.Verify(x => x.InstallByQueryAsync(
+            It.IsAny<string[]>(),
+            It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+            It.IsAny<bool>(),
+            It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("standard")]
+    [InlineData("mono")]
+    public async Task ProjectPatchRequirementDoesNotUseAnOlderInstalledVersion(string runtime)
+    {
+        var required = $"4.3.1-stable-{runtime}";
+        var installed = $"4.3-stable-{runtime}";
+        var projectRelease = CreateMockRelease(required);
+        SetupInstallations([installed]);
+        SetupReleaseParsing([installed, required]);
+        _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>())).Returns(ProjectFound(projectRelease));
+        _mockProjectManager.Setup(x => x.CreateVersionFile(required, It.IsAny<string>()))
+            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IEnumerable<string>>()))
+            .Returns((string version, bool isDotNet, IEnumerable<string> versions) =>
+                releaseManager.FindCompatibleVersionResult(version, isDotNet, versions));
+        _mockInstallationService.Setup(x => x.InstallByQueryAsync(
+                It.Is<string[]>(query => query.SequenceEqual(new[] { "4.3.1", "stable", runtime })),
+                It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(
+                new InstallationOutcome.NewInstallation(required, new ChecksumVerification.Verified())));
+
+        var launch = await _service.ResolveVersionForLaunchAsync();
+
+        var failure = Assert.IsType<Result<VersionResolutionOutcome, VersionResolutionError>.Failure>(launch);
+        Assert.Equal(required, Assert.IsType<VersionResolutionError.NotFound>(failure.Error).Version);
+
+        var local = await _service.SetLocalVersionAsync();
+
+        Assert.Equal(required, local.ReleaseNameWithRuntime);
+        _mockProjectManager.Verify(x => x.CreateVersionFile(required, It.IsAny<string>()), Times.Once);
+        _mockProjectManager.Verify(x => x.CreateVersionFile(installed, It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SetLocalVersionAsync_ProjectGodotInstallsACompatiblePatch()
+    {
+        const string projectVersion = "4.5-stable-mono";
+        const string compatibleVersion = "4.5.1-stable-mono";
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        _mockProjectManager.Setup(x => x.FindProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(CreateMockRelease(projectVersion)));
+        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult("4.5", true, It.IsAny<IEnumerable<string>>()))
+            .Returns(new Result<string, CompatibilityError>.Failure(new CompatibilityError.NoInstalledVersions()));
+        _mockReleaseManager.Setup(x => x.CreateRelease(compatibleVersion))
+            .Returns(ReleaseSuccess(CreateMockRelease(compatibleVersion)));
+        _mockProjectManager.Setup(x => x.CreateVersionFile(compatibleVersion, It.IsAny<string>()))
+            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
+        _mockInstallationService.Setup(x => x.InstallByQueryAsync(
+                It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), false, false,
+                It.IsAny<CancellationToken>()))
+            .Returns((string[] query, IProgress<OperationProgress<InstallationStage>> _, bool _, bool _, CancellationToken _) =>
+            {
+                var resolution = releaseManager.ResolveReleaseQuery(query, ["4.5-stable", "4.5.1-stable"]);
+                var release = Assert.IsType<Result<Release, QueryError>.Success>(resolution).Value;
+                return Task.FromResult<Result<InstallationOutcome, InstallationError>>(
+                    new Result<InstallationOutcome, InstallationError>.Success(
+                        new InstallationOutcome.NewInstallation(release.ReleaseNameWithRuntime, new ChecksumVerification.Verified())));
+            });
+
+        var result = await _service.SetLocalVersionAsync();
+
+        Assert.Equal(compatibleVersion, result.ReleaseNameWithRuntime);
+        _mockProjectManager.Verify(x => x.CreateVersionFile(compatibleVersion, It.IsAny<string>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("network", "network unavailable")]
+    [InlineData("checksum", "Checksum mismatch")]
+    [InlineData("not-found", "could not be found")]
+    [InlineData("invalid-query", "invalid query")]
+    public async Task SetLocalVersionAsync_ExactPinInstallationFailureDoesNotReplaceThePin(string failureKind, string expectedMessage)
+    {
+        const string pinnedVersion = "4.5-stable-standard";
+        const string nearbyVersion = "4.5.1-stable-standard";
+        var projectRelease = CreateMockRelease(pinnedVersion);
+        InstallationError error = failureKind switch
+        {
+            "checksum" => new InstallationError.ChecksumMismatch("expected", "actual", "Godot.zip"),
+            "not-found" => new InstallationError.NotFound(pinnedVersion),
+            "invalid-query" => new InstallationError.InvalidQuery(expectedMessage),
+            _ => new InstallationError.Failed(expectedMessage)
+        };
+
+        _mockProjectManager.Setup(x => x.FindExplicitProjectInfo(It.IsAny<string>()))
+            .Returns(ProjectFound(projectRelease));
+        SetupInstallations([nearbyVersion]);
+        _mockInstallationService.Setup(x => x.InstallByQueryAsync(
+                It.Is<string[]>(query => query.SequenceEqual(new[] { pinnedVersion })),
+                It.IsAny<IProgress<OperationProgress<InstallationStage>>>(),
+                false,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(error));
+
+        var exception = await Record.ExceptionAsync(() => _service.SetLocalVersionAsync());
+
+        switch (failureKind)
+        {
+            case "checksum":
+                Assert.IsType<SecurityException>(exception);
+                break;
+            case "not-found" or "invalid-query":
+                Assert.IsType<ArgumentException>(exception);
+                break;
+            default:
+                Assert.IsType<InvalidOperationException>(exception);
+                Assert.Contains(pinnedVersion, exception.Message);
+                break;
+        }
+
+        Assert.NotNull(exception);
+        Assert.Contains(expectedMessage, exception.Message);
+        Assert.DoesNotContain("[red]", exception.Message);
+        Assert.DoesNotContain("[/]", exception.Message);
+        _mockProjectManager.Verify(x => x.CreateVersionFile(
+            It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _mockReleaseManager.Verify(x => x.FindCompatibleVersionResult(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<IEnumerable<string>>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("4.5", false)]
+    [InlineData("4.5-stable", false)]
+    [InlineData("4.5-stable-standard", false)]
+    [InlineData("4.5-stable-standard", true)]
+    public async Task SetLocalVersionAsync_InstallationFailureOnlyOffersAnotherVersionForFuzzyQueries(string query, bool checksumFailure)
+    {
+        const string installedVersion = "4.6-stable-standard";
+        SetupInstallations([installedVersion]);
+        SetupReleaseParsing([installedVersion]);
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(It.IsAny<string[]>(), It.IsAny<string[]>()))
+            .Returns((string[] versionQuery, string[] releases) => releaseManager.ResolveReleaseQuery(versionQuery, releases));
+        _mockProjectManager.Setup(x => x.CreateVersionFile(installedVersion, It.IsAny<string>()))
+            .Returns(new Result<Unit, ProjectError>.Success(Unit.Value));
+        _mockInstallationService.Setup(x => x.InstallByQueryAsync(
+                It.Is<string[]>(value => value.SequenceEqual(new[] { query })),
+                It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(checksumFailure
+                ? new InstallationError.ChecksumMismatch("expected", "actual", "Godot.zip")
+                : new InstallationError.Failed("network unavailable")));
+        _console.Interactive();
+        _console.Input.PushKey(ConsoleKey.Enter);
+
+        var exception = await Record.ExceptionAsync(() => _service.SetLocalVersionAsync([query]));
+
+        if (query == "4.5-stable-standard")
+        {
+            if (checksumFailure)
+            {
+                Assert.Contains("Godot.zip", Assert.IsType<SecurityException>(exception).Message);
+            }
+            else
+            {
+                Assert.Contains("network unavailable", Assert.IsType<InvalidOperationException>(exception).Message);
+            }
+
+            _mockProjectManager.Verify(x => x.CreateVersionFile(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+        else
+        {
+            Assert.Null(exception);
+            _mockProjectManager.Verify(x => x.CreateVersionFile(installedVersion, It.IsAny<string>()), Times.Once);
+        }
     }
 
     [Fact]
@@ -771,8 +1232,11 @@ public class VersionManagementServiceTests
         var postInstallInstalled = new[] { installedVersion };
 
         SetupInstallationsSequence(initialInstalled, initialInstalled, postInstallInstalled);
-        _mockReleaseManager.Setup(x => x.FindCompatibleVersionResult(projectVersion, false, It.IsAny<IEnumerable<string>>()))
-            .Returns(CompatibleVersion(null));
+        _mockReleaseManager.SetupSequence(x => x.FindCompatibleVersionResult(
+                projectVersion, false, It.IsAny<IEnumerable<string>>()))
+            .Returns(CompatibleVersion(null))
+            .Returns(new Result<string, CompatibilityError>.Failure(
+                new CompatibilityError.NoInstalledVersions()));
 
         _mockInstallationService.Setup(x =>
                 x.InstallByQueryAsync(It.IsAny<string[]>(), It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
@@ -787,6 +1251,7 @@ public class VersionManagementServiceTests
         var resolutionFailed = Assert.IsType<CompatibleVersionError.ResolutionFailed>(failure.Error);
         Assert.Equal(projectVersion, resolutionFailed.ProjectVersion);
         Assert.Equal(installedVersion, resolutionFailed.InstalledVersion);
+        Assert.IsType<CompatibilityError.NoInstalledVersions>(resolutionFailed.Error);
     }
 
     [Fact]

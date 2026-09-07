@@ -107,6 +107,44 @@ public class InstallationServiceTests
         releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData("4.8-dev-mono")]
+    [InlineData("4.5-stable-")]
+    public async Task InstallByQueryAsync_InvalidTripletDoesNotRefreshOrDownload(string candidate)
+    {
+        var releaseManager = new Godot.ReleaseManager.ReleaseManagerBuilder().Build();
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Success(["4.8-dev4", "4.5-stable"]));
+        var service = CreateService(releaseManager, releaseCatalog.Object);
+
+        var result = await service.InstallByQueryAsync([candidate], new Progress<OperationProgress<InstallationStage>>());
+
+        var failure = Assert.IsType<Result<InstallationOutcome, InstallationError>.Failure>(result);
+        Assert.Contains(candidate, Assert.IsType<InstallationError.InvalidQuery>(failure.Error).Message);
+        releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()), Times.Never);
+        releaseCatalog.Verify(x => x.FindOrHydrateArtifact(It.IsAny<Release>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InstallByQueryAsync_MissingTripletDoesNotInstallANearbyPatchAfterRefresh()
+    {
+        var releaseManager = new Godot.ReleaseManager.ReleaseManagerBuilder().Build();
+        var releaseCatalog = new Mock<IReleaseCatalog>();
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.UseCache, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Success(["4.5.1-stable"]));
+        releaseCatalog.Setup(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Success(["4.5.2-stable"]));
+        var service = CreateService(releaseManager, releaseCatalog.Object);
+
+        var result = await service.InstallByQueryAsync(["4.5-stable-standard"], new Progress<OperationProgress<InstallationStage>>());
+
+        var failure = Assert.IsType<Result<InstallationOutcome, InstallationError>.Failure>(result);
+        Assert.Equal("4.5-stable-standard", Assert.IsType<InstallationError.NotFound>(failure.Error).Version);
+        releaseCatalog.Verify(x => x.ReadReleaseIds(ReleaseFetchMode.ForceRemote, It.IsAny<CancellationToken>()), Times.Once);
+        releaseCatalog.Verify(x => x.FindOrHydrateArtifact(It.IsAny<Release>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task InstallReleaseAsync_MissingCatalogArtifact_ContinuesWithUnavailableChecksum()
     {

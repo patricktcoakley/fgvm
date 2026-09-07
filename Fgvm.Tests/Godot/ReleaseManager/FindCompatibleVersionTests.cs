@@ -51,6 +51,25 @@ public class FindCompatibleVersionTests
     }
 
     [Theory]
+    [InlineData("4.3.1", false, "4.3-stable-standard", false)]
+    [InlineData("4.3.2", false, "4.3.1-stable-standard", false)]
+    [InlineData("4.3.1", false, "4.3.1-stable-standard", true)]
+    [InlineData("4.3.1", false, "4.3.2-stable-standard", true)]
+    [InlineData("4.3.1", false, "4.4-stable-standard", false)]
+    [InlineData("4.3.1", false, "4.3.2-stable-mono", false)]
+    [InlineData("4.3.1", true, "4.3-stable-mono", false)]
+    [InlineData("4.3.1", true, "4.3.2-stable-mono", true)]
+    [InlineData("4.3.0", false, "4.3-stable-standard", true)]
+    public void FindCompatibleVersion_RequiredPatchIsALowerBound(string required, bool isDotNet, string installed, bool compatible)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.FindCompatibleVersion(required, isDotNet, [installed]);
+
+        Assert.Equal(compatible ? installed : null, result);
+    }
+
+    [Theory]
     [InlineData("5.0", false)]
     [InlineData("5.0", true)]
     [InlineData("3.4", false)]
