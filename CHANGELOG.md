@@ -1,5 +1,17 @@
 # Changelog
 
+<a name="2.6.0"></a>
+## [2.6.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.6.0) (2026-09-08)
+
+### ✨ Features
+
+* Add exact-version support for Godot triplets. ([f8893d9](https://github.com/patricktcoakley/fgvm/commit/f8893d931e125fc1efc5da0136f060b11f093a51))
+
+### 🐛 Bug Fixes
+
+* Migrate off of GitHub API to use `git-upload-pack` in order avoid rate limiting. ([96d5ed6](https://github.com/patricktcoakley/fgvm/commit/96d5ed68b1bf6b7e458ad1832a268c250d5b6343))
+* Revert detached process behavior. ([ade7f87](https://github.com/patricktcoakley/fgvm/commit/ade7f874642a990c5b5549a37d1bf7b8b67c21fc))
+
 <a name="2.5.0"></a>
 ## [2.5.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.5.0) (2026-08-20)
 
