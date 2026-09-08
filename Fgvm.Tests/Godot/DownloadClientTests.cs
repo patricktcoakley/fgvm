@@ -66,6 +66,37 @@ public sealed class DownloadClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ListReleases_GitHubReturnsRateLimit_PropagatesResponseDetails()
+    {
+        const string url = "https://github.com/godotengine/godot-builds.git/info/refs?service=git-upload-pack";
+        const string responseBody = "{\"message\":\"API rate limit exceeded for 203.0.113.1.\"}";
+        var mockHandler = new Mock<HttpMessageHandler>();
+        mockHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.Is<HttpRequestMessage>(request => MatchesUnauthenticatedRequest(
+                    request,
+                    url,
+                    "application/x-git-upload-pack-advertisement")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.Forbidden,
+                Content = new StringContent(responseBody)
+            });
+
+        var result = await CreateDownloadClient(mockHandler).ListReleases(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        var requestFailure = Assert.IsType<NetworkError.RequestFailure>(failure.Error);
+        Assert.Equal(url, requestFailure.Url);
+        Assert.Equal(HttpStatusCode.Forbidden, requestFailure.StatusCode);
+        Assert.Equal(responseBody, requestFailure.Body);
+        Assert.Contains("403 (Forbidden)", requestFailure.ToString(), StringComparison.Ordinal);
+        Assert.Contains("API rate limit exceeded", requestFailure.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ListReleases_GitAdvertisementWithoutOptionalLineFeeds_ReturnsReleaseNames()
     {
         var downloadClient = CreateDownloadClient(CreateMockHttpHandler(
