@@ -99,6 +99,18 @@ Suite "godot launch" {
         }
     }
 
+    Test "reports an immediately exiting detached process as launched" {
+        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
+
+        $godot = Run "godot" "--args" "--fgvm-mock-delay-ms 0"
+        File.WaitFor $seeded.MockInvocationPath
+        $invocation = Read-MockInvocation $seeded.MockInvocationPath
+        Process.WaitForExit $invocation.ProcessId
+
+        Assert.ExitCode 0 $godot "fgvm detached Godot launch"
+        Assert.Contains "PID" $godot.Stdout
+    }
+
     Test "does not record a launch when godot fails to start" {
         $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
         Remove-Item -LiteralPath $seeded.ExecutablePath -Force

@@ -86,7 +86,7 @@ public sealed class GodotLauncherTests
     }
 
     [Fact]
-    public async Task LaunchAsync_DetachedImmediateSuccessfulExit_ReturnsProcessFailure()
+    public async Task LaunchAsync_DetachedImmediateExit_ReturnsProcessId()
     {
         var launcher = new GodotLauncher();
         var (executable, arguments) = ShellCommand("exit 0", "exit /b 0");
@@ -94,10 +94,9 @@ public sealed class GodotLauncherTests
 
         var result = await launcher.LaunchAsync(request);
 
-        var failure = Assert.IsType<Result<GodotLaunchOutcome, GodotLaunchError>.Failure>(result);
-        var processFailed = Assert.IsType<GodotLaunchError.ProcessFailed>(failure.Error);
-        Assert.Equal(request.Target.ExecutablePath, processFailed.ExecutablePath);
-        Assert.Contains("code 0", processFailed.Reason, StringComparison.Ordinal);
+        var success = Assert.IsType<Result<GodotLaunchOutcome, GodotLaunchError>.Success>(result);
+        var detached = Assert.IsType<GodotLaunchOutcome.Detached>(success.Value);
+        Assert.True(detached.ProcessId > 0);
     }
 
     [Fact]
@@ -109,31 +108,6 @@ public sealed class GodotLauncherTests
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => launcher.LaunchAsync(request, cancellationToken: cancellation.Token));
-    }
-
-    [Fact]
-    public async Task LaunchAsync_DetachedCancellation_TerminatesTheStartedProcess()
-    {
-        var markerPath = Path.Combine(Path.GetTempPath(), $"fgvm-detached-cancellation-{Guid.NewGuid():N}");
-        try
-        {
-            var launcher = new GodotLauncher();
-            var (executable, arguments) = ShellCommand(
-                $"sleep 1; printf reached > \"{markerPath}\"; sleep 30",
-                $"ping -n 2 127.0.0.1 > nul & echo reached > \"{markerPath}\" & ping -n 30 127.0.0.1 > nul");
-            var request = CreateRequest(executable, arguments, GodotLaunchMode.Detached);
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                launcher.LaunchAsync(request, cancellationToken: cancellation.Token));
-            await Task.Delay(TimeSpan.FromMilliseconds(1500));
-
-            Assert.False(File.Exists(markerPath));
-        }
-        finally
-        {
-            File.Delete(markerPath);
-        }
     }
 
     private static GodotLaunchRequest CreateRequest(string executable, string arguments, GodotLaunchMode mode) =>
