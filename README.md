@@ -73,7 +73,6 @@ fgvm --version
 
 Install mise first using the [mise installation docs](https://mise.jdx.dev/installing-mise.html); Windows users can use Scoop or winget there.
 
-For now, use the full `github:patricktcoakley/fgvm` tool name. The shorter `mise use -g fgvm` form will only work after fgvm is added to mise's registry.
 
 #### Scoop (Windows)
 
@@ -307,28 +306,36 @@ You can run `fgvm godot -i` to pick another installation to launch, or use `fgvm
 Godot installation availability is separate from fgvm's own release matrix. fgvm selects Godot artifacts for the detected operating system and CPU architecture, so older Godot releases may not be
 available on newer targets, particularly macOS ARM64. Downloading an artifact for a different target is not currently supported.
 
+### Version Queries and Project Pins
+
+Short version queries are fuzzy: `4.5`, `4.5 stable`, and `4.5-stable` select the latest stable 4.5 patch. A complete `major.minor[.patch]-release-runtime` triplet is exact and must match an available release.
+Numbered prereleases must include their number in a triplet, so use `4.8-dev4-mono` instead of `4.8-dev-mono`.
+
+In addition, `.fgvm-version` must contain an exact triplet, and existing pins such as `4.5-stable` need either `-standard` or `-mono` appended. Running `fgvm local` with a fuzzy query writes the resolved triplet; versions detected from `project.godot`
+remain compatible within the same major and minor version, but fgvm will not select a patch older than the project requests.
+
 ### Commands
 
-All of this is also available in the `--help` section of the app:
+Command and option summaries are also available through the built-in help:
 
 ```shell
 fgvm --help
 ```
 
-but here is a detailed summary of the available commands:
+Run `fgvm <command> --help` for command-specific syntax. The sections below provide the additional behavior and examples that are not included in the generated help.
 
 > **Note:** Many commands support short-form aliases for faster usage (e.g., `fgvm i` for `fgvm install`, `fgvm g` for `fgvm godot`).
 
-> **Note:** Due to earlier dependency choices and not wanting to break the API if possible, options come before the query on every command that takes a `[<...strings>]` query, so `fgvm install --default 4.4.1` rather than `fgvm install 4.4.1 --default`.
+> **Note:** Commands with queries accept a variable number of words, so options must come before the query on those commands. Use `fgvm install --default 4.4.1` rather than `fgvm install 4.4.1 --default`, for example.
 > Everything after the query starts is read as another query word, so a trailing option never takes effect: some commands reject it as an invalid query word, and others ignore it and exit `0`.
 
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
-- `fgvm install` or `fgvm i` `[<...strings>]` [`-D|--default`] [`--with-templates`] [`-V|--verbose`] will prompt the user to install a version if no arguments are supplied, or will
+- `fgvm install` or `fgvm i` [`-D|--default`] [`--with-templates`] [`-V|--verbose`] `[<...strings>]` will prompt the user to install a version if no arguments are supplied, or will
   try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
   Use `--with-templates` to install the matching official export template package after editor installation succeeds. If template installation fails, fgvm keeps the editor installation and prints a warning.
   Use `--verbose` (or `-V`) to show each download source as it is tried, which is useful when diagnosing a slow or failing download.
-  A complete `major.minor[.patch]-release-runtime` triplet is exact: `fgvm install 4.5-stable-standard` only considers that release, even when `4.5.1` is available, and fails if it is unavailable. Invalid triplets never fall back to fuzzy matching: `4.8-dev-mono` fails because it lacks a prerelease number; use `4.8-dev4-mono` to request dev4 exactly. Shorter queries such as `4.5`, `4.5-stable`, or `4.8-dev`, and separate query terms such as `4.8 dev mono`, retain their existing fuzzy matching.
+  See [Version Queries and Project Pins](#version-queries-and-project-pins) for how fuzzy queries and exact triplets are resolved.
     - Queries:
         - `latest` or `latest standard` will install the latest stable, and `latest mono` will install the latest .NET stable.
         - `4 mono` will grab the latest stable 4.x .NET release, `3.3 rc` will grab the latest rc of 3.3 standard, `1` would take the last stable version `1`, and so on.
@@ -346,20 +353,20 @@ but here is a detailed summary of the available commands:
     - Optionally, pass in arguments to the Godot executable directly using `--args` followed by a separate value, such as `fgvm godot --query "4.6 mono" --args "--headless"` or `fgvm godot --args "--version"`. Multiple arguments should be
       passed as a quoted string, such as `--args "--headless -v"`. Do not use `--args="..."`; that form is rejected by the CLI parser.
     - Use `--project` or `-P` with explicit arguments to add the detected project path, such as `fgvm godot -P --args "--dump-extension-api --quit"`.
-    - Use the `--attached` or `-a` flag to force Godot connected to the terminal for output; by default, Godot runs in detached mode and will launch in a separate instance. Using an argument detection
+    - Use the `--attached` or `-a` flag to force Godot connected to the terminal for output; by default, Godot runs independently in detached mode and remains open after fgvm or the terminal exits. Using an argument detection
       system, certain arguments (like `--version`, `--help`, `--headless`) automatically trigger this mode since they would otherwise be useless without printing to standard out.
     - The command will only read existing `.fgvm-version` files for version selection, and does not create or modify version files. Use `fgvm local` to manage `.fgvm-version` files.
 - `fgvm set [<...strings>]` prompts the user to set an installed version of Godot if no arguments are supplied, or will
   try to find the closest matching version based on the query, including release type (`stable`) and version (`4`, `4.4`), or an exact match (`4.4.1-stable-mono`).
 - `fgvm local [<...strings>]` prepares the Godot toolchain for the current project by creating or updating a `.fgvm-version` file in the current directory. If no `.fgvm-version` file
   exists and no arguments are provided, it will automatically detect the project version from `project.godot` and install the most recent compatible version if not already installed.
-    - An existing `.fgvm-version` must contain a complete triplet, for example `4.5-stable-standard` or `4.5-rc1-mono`. Empty files and shorter names such as `4.5` or `4.5-stable` are rejected; existing two-part pins need their intended runtime appended. If the exact release is unavailable, fgvm fails instead of selecting a newer patch release. Versions inferred from `project.godot` remain compatibility queries.
+    - Existing `.fgvm-version` files follow the exact-pin rules described in [Version Queries and Project Pins](#version-queries-and-project-pins).
     - If a list of arguments are provided, it will find the best matching version based on the query (including runtime preferences like `mono` or `standard`) and install it if necessary.
     - If `export_presets.cfg` contains at least one preset with a name, platform, and export path, it also installs the complete official export-template package matching the selected editor. Projects without
       configured export presets retain the version-only behavior.
     - fgvm validates the preset metadata it uses before the editor or `.fgvm-version` is changed. An unreadable file or malformed relevant field stops `local` with a configuration error containing the file and line when available; target-specific option values remain Godot's responsibility.
     - If editor preparation succeeds but template installation fails or is cancelled, `local` exits non-zero and explicitly reports that the selected editor and `.fgvm-version` remain in place for a retry.
-- `fgvm export` `[<...strings>]` [`-o|--output <path>`] [`-a|--archive`] [`-j|--json`] [`--manifest <path>`] prepares the matching editor and export templates, imports the project once, and exports every named preset in `export_presets.cfg` in declaration order.
+- `fgvm export` [`-o|--output <path>`] [`-a|--archive`] [`-j|--json`] [`--manifest <path>`] `[<...strings>]` prepares the matching editor and export templates, imports the project once, and exports every named preset in `export_presets.cfg` in declaration order.
     - Without `--output`, each preset's configured `export_path` is honored. A preset with a blank path receives an isolated fallback beneath `dist/<preset>/`. Platforms unknown to fgvm remain usable when they declare an explicit path; Godot is responsible for validating the platform and its SDK requirements.
     - A directory reached through a configured `export_path` belongs to the project, so fgvm writes this run's files into it and overwrites only the files it produces. Anything else is left alone, including output from an earlier export that the current run no longer produces. Export beneath `dist/` or `--output` when a run must leave nothing stale behind. A macOS `.app` bundle is the export itself rather than a directory shared with it, so it is still replaced whole.
     - `--output <path>` gives every preset an isolated directory beneath that root and atomically replaces those directories after successful exports, preventing stale files from an earlier run. Because fgvm must choose a valid file name, this mode supports Godot's built-in Windows Desktop, Linux/Linux/X11, macOS, Web, Android, and iOS platform names.
@@ -367,20 +374,20 @@ but here is a detailed summary of the available commands:
     - Every successful run writes a small versioned handoff manifest to `.fgvm-export.json`; `--manifest <path>` changes that location. It contains a unique run ID, the resolved Godot version, and each preset's export mode, final path, and kind. `--json` or `-j` also writes the same document to standard output and sends human-readable progress and errors to standard error, making it safe for scripts.
     - Options must appear before the optional version query, for example `fgvm export --archive --manifest artifacts.json 4.6 mono`.
 - `fgvm which` `[<...strings>]` displays the executable path for the effective Godot installation in the current directory: `.fgvm-version` first, then the global default. If query arguments are supplied, it resolves them against installed versions instead. The command prints only the executable path on success and exits non-zero when no version can be resolved.
-- `fgvm remove` or `fgvm r` `[<...strings>]` [`--with-templates`] prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
+- `fgvm remove` or `fgvm r` [`--with-templates`] `[<...strings>]` prompts the user to select multiple installations to delete, or optionally takes a query to filter down to specific versions to delete. If there is only one match, it
   will delete it directly. If there are multiple matches, it will prompt the user to select which ones to delete.
     - For example, if you wanted to list all of the `4.y.z` versions to remove, you could just do `fgvm r 4` to list all of the 4 major releases. However, if you remove a specific version, like
       `4.4.1-stable-mono`, it will just delete that version directly. Deleting the currently set version will unset it and you will need to set a new one.
     - Use `--with-templates` to also remove the export templates matching each removed editor, such as `fgvm remove --with-templates 4.4.1`. Without it, removing an editor leaves its export
       templates in place, and you would need `fgvm template remove` to clean them up separately.
 - `fgvm logs` [`--json`] [`-l|--level <string>`] [`-m|--message <string>`] displays all of the logs, or optionally takes a level or message filter. Use `--json` to output in JSON format.
-- `fgvm search` or `fgvm s` `[<...strings>]` [`-j|--json`] [`-F|--no-cache`] takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
+- `fgvm search` or `fgvm s` [`-j|--json`] [`-F|--no-cache`] `[<...strings>]` takes an optional query to search available Godot versions. Use `--json` or `-j` to output in JSON format,
   and `--no-cache` or `-F` to force a remote refresh instead of using the local release cache.
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
         - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2-rc3`
 - `fgvm template` or `fgvm t` manages Godot export templates.
-    - `fgvm template install` or `fgvm template i` `[<...strings>]` [`--force`] [`-V|--verbose`] installs the official export template package for an installed Godot version. With no query, fgvm prompts from local Godot installations. With a query, it resolves against local Godot installations only, such as `fgvm template install 4.4.1` or `fgvm template install 4.4.1 mono`. Use `--force` to replace export templates that are already installed for the selected version, and `--verbose` (or `-V`) to show each download source as it is tried.
+    - `fgvm template install` or `fgvm template i` [`--force`] [`-V|--verbose`] `[<...strings>]` installs the official export template package for an installed Godot version. With no query, fgvm prompts from local Godot installations. With a query, it resolves against local Godot installations only, such as `fgvm template install 4.4.1` or `fgvm template install 4.4.1 mono`. Use `--force` to replace export templates that are already installed for the selected version, and `--verbose` (or `-V`) to show each download source as it is tried.
     - `fgvm template list` or `fgvm template l` [`-j|--json`] lists installed export template directories.
     - `fgvm template remove` or `fgvm template r` `[<...strings>]` removes installed export template directories. With no query, fgvm prompts from installed export templates. With a query, it removes the exact match directly or prompts when multiple installed templates match.
     - Template commands manage full official TPZ packages. They do not install or remove individual export target files inside a package.
@@ -393,7 +400,7 @@ Godot export templates are installed separately from fgvm-managed editor binarie
 | --- | --- |
 | Windows | `%APPDATA%\Godot\export_templates` |
 | macOS | `~/Library/Application Support/Godot/export_templates` |
-| Linux/BSD | `${XDG_DATA_HOME:-~/.local/share}/godot/export_templates` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/godot/export_templates` |
 
 Installed template directories use Godot's template version format, such as `4.4.1.stable` or `4.4.1.stable.mono`.
 
@@ -415,9 +422,7 @@ Template installation queries intentionally resolve against local Godot editor i
 
 ### Project Version Management
 
-fgvm supports project-specific version management through `.fgvm-version` files. Here's how it works:
-
-#### Setting up a project version:
+Use `fgvm local` to write an exact `.fgvm-version` pin. Without a query, it detects the version from `project.godot`; with a query, it resolves that query first.
 
 ```bash
 # Navigate to your project directory
@@ -446,11 +451,7 @@ fgvm godot -i                 # Interactive selection from installed versions
 fgvm g -i                     # Same as above
 ```
 
-#### Workflow:
-
-1. **`fgvm local`** - Creates/updates `.fgvm-version` file for project-specific version management
-2. **`fgvm godot`** (or `fgvm g`) - Respects `.fgvm-version` file if present, otherwise uses global default
-3. **`fgvm set`** - Sets the global default version used when no `.fgvm-version` exists
+See [Version Queries and Project Pins](#version-queries-and-project-pins) for the required pin format and migration from older pins.
 
 ### Environment Variables
 
