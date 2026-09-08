@@ -123,6 +123,8 @@ config/features=PackedStringArray("4.6", "Forward Plus")
         $unavailable = Run -Cwd $projectPath "local" "9.999"
 
         Assert.ExitCode 2 $unavailable "fgvm local 9.999"
+        Assert.Contains "Version 9.999 could not be found" $unavailable.Stderr
+        Assert.NotContains "[red]" $unavailable.Stderr
 
         Set-Content -LiteralPath (Join-Path $projectPath ".fgvm-version") -Value "not-a-version" -NoNewline
         $godot = Run -Cwd $projectPath "godot" "--args" "--version"

@@ -151,13 +151,21 @@ public sealed class SearchCommandTests
         var releaseManager = new Mock<IReleaseManager>();
         releaseManager.Setup(x => x.SearchRemoteReleases(It.IsAny<string[]>(), It.IsAny<ReleaseFetchMode>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<IEnumerable<string>, NetworkError>.Failure(
-                new NetworkError.RequestFailure("https://api.github.com/repos", HttpStatusCode.Forbidden, "rate limit")));
+                new NetworkError.RequestFailure(
+                    "https://[::1]/godot-builds.git/info/refs?service=git-upload-pack",
+                    HttpStatusCode.Forbidden,
+                    "API rate limit exceeded [shared IP]")));
 
-        var command = CreateCommand(releaseManager.Object, out _);
+        var command = CreateCommand(releaseManager.Object, out var console);
+        console.Profile.Width = 500;
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => command.Search());
 
         Assert.Contains("403 (Forbidden)", error.Message);
+        Assert.Contains("API rate limit exceeded [shared IP]", error.Message, StringComparison.Ordinal);
+        Assert.Contains("403 (Forbidden)", console.Output, StringComparison.Ordinal);
+        Assert.Contains("https://[::1]", console.Output, StringComparison.Ordinal);
+        Assert.Contains("API rate limit exceeded [shared IP]", console.Output, StringComparison.Ordinal);
     }
 
     private static SearchCommand CreateCommand(IReleaseManager releaseManager, out TestConsole console)

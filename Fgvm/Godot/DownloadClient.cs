@@ -1,7 +1,10 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Fgvm.Extensions;
 using Fgvm.Godot.Download;
 using Fgvm.Types;
 using Microsoft.Extensions.Logging;
@@ -63,8 +66,10 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
     private readonly DownloadSource _gitHubBuildsManifest = new("https://raw.githubusercontent.com/godotengine/godot-builds/main/releases");
     private readonly DownloadSource _gitHubBuildsRelease = new("https://github.com/godotengine/godot-builds/releases/download");
 
-    private readonly DownloadSource _gitHubBuildsReleaseIndex =
-        new("https://api.github.com/repos/godotengine/godot-builds/contents/releases");
+    private readonly DownloadSource _gitHubBuildsReleaseIndex = new(
+        "https://github.com/godotengine/godot-builds.git/info/refs?service=git-upload-pack",
+        "application/x-git-upload-pack-advertisement"
+    );
 
     private readonly DownloadSource _gitHubRelease = new("https://github.com/godotengine/godot/releases/download");
     private readonly DownloadSource _godotDownloadApi = new("https://downloads.godotengine.org/");
@@ -82,20 +87,16 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
             case Result<string, NetworkError>.Failure(var error):
                 return new Result<IEnumerable<string>, NetworkError>.Failure(error);
 
-            case Result<string, NetworkError>.Success(var jsonString):
-                try
+            case Result<string, NetworkError>.Success(var content):
+                if (ParseReleaseIndex(content) is { } releases)
                 {
-                    var releases = JsonSerializer.Deserialize(jsonString, DownloadJsonContext.Default.ListReleaseIndexFile) ?? [];
-                    releases.Reverse();
-                    return new Result<IEnumerable<string>, NetworkError>.Success(
-                        releases.Select<ReleaseIndexFile, string>(release => release.ReleaseName));
+                    return new Result<IEnumerable<string>, NetworkError>.Success(releases);
                 }
-                catch (Exception ex)
-                {
-                    logger.LogError("Failed to list releases: {Message}", ex.Message);
-                    return new Result<IEnumerable<string>, NetworkError>.Failure(
-                        new NetworkError.ConnectionFailure(ex.Message));
-                }
+
+                const string errorMessage = "GitHub returned an invalid or incomplete Godot release index";
+                logger.LogError("Failed to list releases: {Message}", errorMessage);
+                return new Result<IEnumerable<string>, NetworkError>.Failure(
+                    new NetworkError.ConnectionFailure(errorMessage));
 
             default:
                 throw new InvalidOperationException("Unexpected Result type");
@@ -266,6 +267,102 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
         _gitHubBuildsRelease.WithPath($"{godotRelease.ReleaseName}/{filename}")
     ];
 
+    private static string[]? ParseReleaseIndex(string content)
+    {
+        ReadOnlySpan<byte> remaining = Encoding.UTF8.GetBytes(content);
+
+        // Git smart HTTP advertisements begin with a service announcement followed by a flush line
+        if (!TryReadGitPktLine(ref remaining, out var serviceAnnouncement, out var isFlushLine) ||
+            isFlushLine ||
+            !TrimTrailingLineFeed(serviceAnnouncement).SequenceEqual("# service=git-upload-pack"u8) ||
+            !TryReadGitPktLine(ref remaining, out _, out isFlushLine) ||
+            !isFlushLine)
+        {
+            return null;
+        }
+
+        var tagReferencePrefix = "refs/tags/"u8;
+        var releases = new List<string>();
+        while (TryReadGitPktLine(ref remaining, out var referenceLine, out isFlushLine))
+        {
+            if (isFlushLine)
+            {
+                return remaining.IsEmpty && releases.Count > 0 ? [.. releases] : null;
+            }
+
+            if (!TryReadReferenceName(referenceLine, out var referenceName))
+            {
+                return null;
+            }
+
+            if (referenceName.StartsWith(tagReferencePrefix) && !referenceName.EndsWith("^{}"u8))
+            {
+                releases.Add(Encoding.UTF8.GetString(referenceName[tagReferencePrefix.Length..]));
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryReadGitPktLine(ref ReadOnlySpan<byte> remaining,
+        out ReadOnlySpan<byte> payload,
+        out bool isFlushLine
+    )
+    {
+        const int gitPktLineHeaderLength = 4;
+        // Git's pkt-line limit is 16 bytes below 64 KiB and includes the four-byte hexadecimal length prefix
+        const int maximumGitPktLineLength = checked((int)(64 * ByteSize.Kibibyte - 16));
+
+        payload = default;
+        isFlushLine = false;
+        if (remaining.Length < gitPktLineHeaderLength ||
+            !int.TryParse(remaining[..gitPktLineHeaderLength], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture,
+                out var pktLineLength))
+        {
+            return false;
+        }
+
+        if (pktLineLength == 0)
+        {
+            remaining = remaining[gitPktLineHeaderLength..];
+            isFlushLine = true;
+            return true;
+        }
+
+        if (pktLineLength is < gitPktLineHeaderLength or > maximumGitPktLineLength ||
+            remaining.Length < pktLineLength)
+        {
+            return false;
+        }
+
+        payload = remaining[gitPktLineHeaderLength..pktLineLength];
+        remaining = remaining[pktLineLength..];
+        return true;
+    }
+
+    private static bool TryReadReferenceName(ReadOnlySpan<byte> referenceLine, out ReadOnlySpan<byte> referenceName)
+    {
+        referenceName = default;
+        var line = TrimTrailingLineFeed(referenceLine);
+        var separator = line.IndexOf((byte)' ');
+        if (separator <= 0)
+        {
+            return false;
+        }
+
+        referenceName = line[(separator + 1)..];
+        var capabilitiesStart = referenceName.IndexOf((byte)0);
+        if (capabilitiesStart >= 0)
+        {
+            referenceName = referenceName[..capabilitiesStart];
+        }
+
+        return !referenceName.IsEmpty;
+    }
+
+    private static ReadOnlySpan<byte> TrimTrailingLineFeed(ReadOnlySpan<byte> line) =>
+        line is [.., (byte)'\n'] ? line[..^1] : line;
+
     private DownloadSource GodotDownloadApiArchive(string filename, Release godotRelease)
     {
         var slug = GetDownloadSlug(filename, godotRelease);
@@ -298,17 +395,23 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
     private static string Escape(string value) =>
         Uri.EscapeDataString(value);
 
-    private sealed record DownloadSource(string Url)
+    private sealed record DownloadSource(string Url, string? AcceptMediaType = null)
     {
-        public DownloadSource WithPath(string relativePath) => new(Url: $"{Url.TrimEnd('/')}/{relativePath.TrimStart('/')}");
+        public DownloadSource WithPath(string relativePath) =>
+            new(Url: $"{Url.TrimEnd('/')}/{relativePath.TrimStart('/')}", AcceptMediaType: AcceptMediaType);
 
-        public DownloadSource WithQuery(string query) => new(Url: $"{Url}?{query}");
+        public DownloadSource WithQuery(string query) => new(Url: $"{Url}?{query}", AcceptMediaType: AcceptMediaType);
 
         public HttpRequestMessage CreateRequest() => CreateRequest(range: null);
 
         public HttpRequestMessage CreateRequest(RangeHeaderValue? range)
         {
             var request = new HttpRequestMessage(HttpMethod.Get, Url);
+            if (AcceptMediaType is { } acceptMediaType)
+            {
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(acceptMediaType));
+            }
+
             if (range is not null)
             {
                 request.Headers.Range = range;
@@ -320,7 +423,7 @@ public sealed class DownloadClient(HttpClient httpClient, ILogger<DownloadClient
 }
 
 /// <summary>
-///     Entry from the godot-builds release index.
+///     Represents an entry from the legacy JSON-backed godot-builds release index.
 /// </summary>
 public sealed class ReleaseIndexFile
 {
@@ -333,7 +436,5 @@ public sealed class ReleaseIndexFile
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
-[JsonSerializable(typeof(ReleaseIndexFile))]
-[JsonSerializable(typeof(List<ReleaseIndexFile>))]
 [JsonSerializable(typeof(GodotReleaseManifest))]
 internal partial class DownloadJsonContext : JsonSerializerContext;

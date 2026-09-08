@@ -106,6 +106,8 @@ Suite "release catalog" {
 
         Assert.ExitCode 1 $search "fgvm search without fixture or cache"
         Assert.Contains "Something went wrong" $search.Stdout
+        Assert.Contains "Network error" $search.Stdout
+        Assert.Contains "manifest was not found" $search.Stdout
         Assert.False (File.Exists $Context.ReleasesPath)
     }
 }

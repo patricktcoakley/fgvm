@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
@@ -296,6 +297,23 @@ public sealed class InstallationOrchestratorTests : IDisposable
                     false,
                     It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ReleaseRequestFailure_ReportsTheRemoteFailure()
+    {
+        _mockInstallationService.Setup(x => x.FetchReleaseNames(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<string[], NetworkError>.Failure(
+                new NetworkError.RequestFailure(
+                    "https://github.com/godotengine/godot-builds.git/info/refs?service=git-upload-pack",
+                    HttpStatusCode.Forbidden,
+                    "API rate limit exceeded")));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => _orchestrator.InstallAsync(["4.6"]));
+
+        Assert.Contains("Unable to fetch available Godot releases", error.Message, StringComparison.Ordinal);
+        Assert.Contains("403 (Forbidden)", error.Message, StringComparison.Ordinal);
+        Assert.Contains("API rate limit exceeded", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

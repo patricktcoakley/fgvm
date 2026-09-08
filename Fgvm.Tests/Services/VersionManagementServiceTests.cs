@@ -1078,6 +1078,27 @@ public class VersionManagementServiceTests
     }
 
     [Fact]
+    public async Task SetLocalVersionAsync_InstallationNotFound_ThrowsPlainTextArgumentException()
+    {
+        var query = new[] { "9.999" };
+
+        SetupInstallations([]);
+        _mockReleaseManager.Setup(x => x.ResolveReleaseQuery(query, Array.Empty<string>()))
+            .Returns(QueryNotFound(query[0]));
+        _mockInstallationService.Setup(x =>
+                x.InstallByQueryAsync(query, It.IsAny<IProgress<OperationProgress<InstallationStage>>>(), It.IsAny<bool>(),
+                    false,
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(
+                new InstallationError.NotFound(query[0])));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => _service.SetLocalVersionAsync(query));
+
+        Assert.Equal("Version 9.999 could not be found for Linux x64", exception.Message);
+        Assert.DoesNotContain("[red]", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SetLocalVersionAsync_NoQueryProvided_PromptsForVersion()
     {
         const string selectedVersion = "4.3.0-stable";

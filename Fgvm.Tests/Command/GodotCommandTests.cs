@@ -198,6 +198,27 @@ public sealed class GodotCommandTests
     }
 
     [Fact]
+    public async Task Launch_ProjectAutoInstallNetworkFailure_RendersBracketedDetails()
+    {
+        const string reason =
+            "Unable to fetch available Godot releases: Request failed with 403 (Forbidden). Response: API rate limit exceeded [shared IP]";
+        _versionService.Setup(x => x.ResolveVersionForLaunchExplicitAsync(false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<VersionResolutionOutcome, VersionResolutionError>.Failure(
+                new VersionResolutionError.Failed(reason)));
+
+        var exception = await Assert.ThrowsAsync<ProcessExitCodeException>(() => CreateCommand().Launch());
+
+        Assert.Equal(ExitCodes.GeneralError, exception.ExitCode);
+        Assert.Contains(reason, _diagnostics.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("[red]", _diagnostics.Output, StringComparison.Ordinal);
+        _launcher.Verify(x => x.LaunchAsync(
+            It.IsAny<GodotLaunchRequest>(),
+            It.IsAny<Action<GodotLaunchOutput>?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _registry.Verify(x => x.RecordLaunch(It.IsAny<string>(), It.IsAny<DateTimeOffset?>()), Times.Never);
+    }
+
+    [Fact]
     public async Task Launch_NonZeroExit_PropagatesGodotExitCode()
     {
         _launcher.Setup(x => x.LaunchAsync(

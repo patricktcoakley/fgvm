@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security;
 using Fgvm.Cli.Command;
 using Fgvm.Cli.Services;
 using Fgvm.Environment;
@@ -102,13 +103,80 @@ public sealed class InstallCommandTests
                 false,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(
-                new TemplateInstallationError.Failed("Download failed for export templates.")));
+                new TemplateInstallationError.Failed(
+                    "Request failed with 403 (Forbidden). Response: API rate limit exceeded [shared IP]")));
         var command = CreateCommand(installationOrchestrator.Object, templateOrchestrator.Object, out var console);
+        console.Profile.Width = 500;
 
         await command.Install(withTemplates: true, cancellationToken: CancellationToken.None, query: query);
 
         Assert.Contains($"Godot {releaseName} is installed", console.Output);
-        Assert.Contains("Export template installation failed", console.Output);
+        Assert.Contains("export template installation failed", console.Output);
+        Assert.Contains("API rate limit exceeded [shared IP]", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Install_WhenInstallationFails_DoesNotRenderMessageMarkupLiterally()
+    {
+        var query = new[] { "4.6.2" };
+        var installationOrchestrator = CreateFailedInstallationOrchestrator(
+            query,
+            new InstallationError.Failed("Download from [mirror] failed"));
+        var command = CreateCommand(
+            installationOrchestrator.Object,
+            new Mock<ITemplateOrchestrator>().Object,
+            out var console);
+        console.Profile.Width = 500;
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            command.Install(cancellationToken: CancellationToken.None, query: query));
+
+        Assert.Equal("Installation failed: Download from [mirror] failed", error.Message);
+        Assert.Contains("Installation failed: Download from [mirror] failed", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("[red]", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Install_WhenVersionIsNotFound_ThrowsPlainTextArgumentException()
+    {
+        var query = new[] { "[9.999]" };
+        var installationOrchestrator = CreateFailedInstallationOrchestrator(
+            query,
+            new InstallationError.NotFound(query[0]));
+        var command = CreateCommand(
+            installationOrchestrator.Object,
+            new Mock<ITemplateOrchestrator>().Object,
+            out _);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            command.Install(cancellationToken: CancellationToken.None, query: query));
+
+        Assert.Equal("Version [9.999] could not be found for Linux x64", error.Message);
+        Assert.DoesNotContain("[red]", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Install_WhenChecksumMismatches_DoesNotRenderMessageMarkupLiterally()
+    {
+        var query = new[] { "4.6.2" };
+        var installationOrchestrator = CreateFailedInstallationOrchestrator(
+            query,
+            new InstallationError.ChecksumMismatch("expected", "actual", "Godot [fixture].zip"));
+        var command = CreateCommand(
+            installationOrchestrator.Object,
+            new Mock<ITemplateOrchestrator>().Object,
+            out var console);
+        console.Profile.Width = 500;
+
+        var error = await Assert.ThrowsAsync<SecurityException>(() =>
+            command.Install(cancellationToken: CancellationToken.None, query: query));
+
+        Assert.Contains("Checksum mismatch for Godot [fixture].zip!", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Expected: expected", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Actual:   actual", error.Message, StringComparison.Ordinal);
+        Assert.Contains("corrupted download or security issue", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Checksum mismatch for Godot [fixture].zip", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("[red]", console.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -128,6 +196,28 @@ public sealed class InstallCommandTests
         templateOrchestrator.Verify(x =>
                 x.InstallAsync(It.IsAny<string[]>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task Install_WhenReleaseLookupFails_ShowsTheFailureDetails()
+    {
+        var query = new[] { "4.6" };
+        var installationOrchestrator = new Mock<IInstallationOrchestrator>();
+        installationOrchestrator.Setup(x => x.InstallAsync(query, false, false, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException(
+                "Unable to fetch available Godot releases: Request to https://[::1] failed with 403 (Forbidden)"));
+        var command = CreateCommand(
+            installationOrchestrator.Object,
+            new Mock<ITemplateOrchestrator>().Object,
+            out var console);
+        console.Profile.Width = 500;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            command.Install(cancellationToken: CancellationToken.None, query: query));
+
+        Assert.Contains("Unable to fetch available Godot releases", console.Output, StringComparison.Ordinal);
+        Assert.Contains("https://[::1]", console.Output, StringComparison.Ordinal);
+        Assert.Contains("403 (Forbidden)", console.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -161,6 +251,14 @@ public sealed class InstallCommandTests
         var installationOrchestrator = new Mock<IInstallationOrchestrator>();
         installationOrchestrator.Setup(x => x.InstallAsync(query, false, verbose, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Success(outcome));
+        return installationOrchestrator;
+    }
+
+    private static Mock<IInstallationOrchestrator> CreateFailedInstallationOrchestrator(string[] query, InstallationError error)
+    {
+        var installationOrchestrator = new Mock<IInstallationOrchestrator>();
+        installationOrchestrator.Setup(x => x.InstallAsync(query, false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Result<InstallationOutcome, InstallationError>.Failure(error));
         return installationOrchestrator;
     }
 
