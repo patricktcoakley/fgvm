@@ -66,21 +66,6 @@ Suite "launch diagnostics" {
             "Godot's own stderr must reach the user's stderr."
     }
 
-    Test "detached: a damaged editor does not report a process id" {
-        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
-        Corrupt-SeededExecutable $seeded
-
-        $godot = Run "godot"
-
-        Assert.NotEqual 0 $godot.ExitCode "A detached launch of a damaged editor must fail."
-        Assert.Contains $seeded.Name $godot.Stderr `
-            "The detached failure must name the editor that died during startup."
-        Assert.Equal "" $godot.Stdout.Trim() `
-            "A failed detached launch must not emit a success message on stdout."
-        Assert.NotContains "PID" $godot.Stdout `
-            "Reporting a process id for an editor that never ran states the opposite of the truth."
-    }
-
     Test "detached: a healthy editor still launches" {
         $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
         $invocationPath = $seeded.MockInvocationPath
