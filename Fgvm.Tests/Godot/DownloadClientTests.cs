@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Fgvm.Extensions;
 using Fgvm.Godot;
 using Fgvm.Godot.Download;
 using Fgvm.Types;
@@ -12,6 +14,10 @@ namespace Fgvm.Tests.Godot;
 
 public sealed class DownloadClientTests : IDisposable
 {
+    private const int GitPktLineHeaderLength = 4;
+    private const int MaximumGitPktLineLength = checked((int)(64 * ByteSize.Kibibyte - 16));
+    private const string GitObjectId = "0123456789abcdef0123456789abcdef01234567";
+    private const string GitTagReferencePrefix = "refs/tags/";
     private readonly Mock<ILogger<DownloadClient>> _mockLogger = new();
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fgvm-download-client-tests", Guid.NewGuid().ToString("N"));
     private readonly Release _testRelease = new(4, 3, "linux_x86_64", 0, ReleaseType.Stable());
@@ -30,7 +36,7 @@ public sealed class DownloadClientTests : IDisposable
     }
 
     [Fact]
-    public async Task ListReleases_GitHubIndexSucceeds_ReturnsReleaseNamesNewestFirst()
+    public async Task ListReleases_GitAdvertisementSucceeds_ReturnsReleaseNames()
     {
         var mockHandler = new Mock<HttpMessageHandler>();
         mockHandler.Protected()
@@ -38,18 +44,17 @@ public sealed class DownloadClientTests : IDisposable
                 "SendAsync",
                 ItExpr.Is<HttpRequestMessage>(request => MatchesUnauthenticatedRequest(
                     request,
-                    "https://api.github.com/repos/godotengine/godot-builds/contents/releases")),
+                    "https://github.com/godotengine/godot-builds.git/info/refs?service=git-upload-pack",
+                    "application/x-git-upload-pack-advertisement")),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = new StringContent(
-                    """
-                    [
-                      { "name": "godot-4.4-stable.json" },
-                      { "name": "godot-4.5-dev1.json" }
-                    ]
-                    """)
+                Content = new StringContent(GitAdvertisement(
+                    "refs/heads/main",
+                    "refs/tags/4.4-stable",
+                    "refs/tags/4.5-dev1",
+                    "refs/tags/4.5-dev1^{}"))
             });
 
         var downloadClient = CreateDownloadClient(mockHandler);
@@ -57,13 +62,94 @@ public sealed class DownloadClientTests : IDisposable
         var result = await downloadClient.ListReleases(CancellationToken.None);
 
         var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
-        Assert.Equal(["4.5-dev1", "4.4-stable"], success.Value);
+        Assert.Equal(["4.4-stable", "4.5-dev1"], success.Value);
     }
 
     [Fact]
-    public async Task ListReleases_InvalidJson_ReturnsConnectionFailure()
+    public async Task ListReleases_GitAdvertisementWithoutOptionalLineFeeds_ReturnsReleaseNames()
     {
-        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, "{ nope"));
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(
+            HttpStatusCode.OK,
+            GitAdvertisement(false, "refs/tags/4.5-stable")));
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
+        Assert.Equal("4.5-stable", Assert.Single(success.Value));
+    }
+
+    [Fact]
+    public async Task ListReleases_InvalidGitAdvertisement_ReturnsConnectionFailure()
+    {
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, "not a Git advertisement"));
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        var error = Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+        Assert.Contains("invalid or incomplete", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ListReleases_TruncatedGitAdvertisement_ReturnsConnectionFailure()
+    {
+        var advertisement = GitAdvertisement("refs/tags/4.5-stable");
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(HttpStatusCode.OK, advertisement[..^1]));
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+    }
+
+    [Fact]
+    public async Task ListReleases_InvalidGitPktLineLength_ReturnsConnectionFailure()
+    {
+        var advertisement = GitAdvertisement("refs/tags/4.5-stable");
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(
+            HttpStatusCode.OK,
+            $"001f{advertisement[4..]}"));
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+    }
+
+    [Fact]
+    public async Task ListReleases_MaximumGitPktLineLength_ReturnsReleaseName()
+    {
+        var releaseName = ReleaseNameForGitPktLineLength(MaximumGitPktLineLength);
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(
+            HttpStatusCode.OK,
+            GitAdvertisement($"{GitTagReferencePrefix}{releaseName}")));
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var success = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Success>(result);
+        Assert.Equal(releaseName, Assert.Single(success.Value));
+    }
+
+    [Fact]
+    public async Task ListReleases_GitPktLineOverMaximumLength_ReturnsConnectionFailure()
+    {
+        var releaseName = ReleaseNameForGitPktLineLength(MaximumGitPktLineLength + 1);
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(
+            HttpStatusCode.OK,
+            GitAdvertisement($"{GitTagReferencePrefix}{releaseName}")));
+
+        var result = await downloadClient.ListReleases(CancellationToken.None);
+
+        var failure = Assert.IsType<Result<IEnumerable<string>, NetworkError>.Failure>(result);
+        Assert.IsType<NetworkError.ConnectionFailure>(failure.Error);
+    }
+
+    [Fact]
+    public async Task ListReleases_GitAdvertisementWithoutReleaseTags_ReturnsConnectionFailure()
+    {
+        var downloadClient = CreateDownloadClient(CreateMockHttpHandler(
+            HttpStatusCode.OK,
+            GitAdvertisement("refs/heads/main")));
 
         var result = await downloadClient.ListReleases(CancellationToken.None);
 
@@ -342,8 +428,49 @@ public sealed class DownloadClientTests : IDisposable
         return mockHandler;
     }
 
-    private static bool MatchesUnauthenticatedRequest(HttpRequestMessage request, string url) =>
-        request.RequestUri?.ToString() == url && request.Headers.Authorization == null;
+    private static string GitAdvertisement(params string[] references) =>
+        GitAdvertisement(true, references);
+
+    private static string GitAdvertisement(bool includeLineFeeds, params string[] references)
+    {
+        var lineFeed = includeLineFeeds ? "\n" : string.Empty;
+        var advertisement = new StringBuilder()
+            .Append(GitPktLine($"# service=git-upload-pack{lineFeed}"))
+            .Append("0000")
+            .Append(GitPktLine($"{GitObjectId} HEAD\0multi_ack thin-pack{lineFeed}"));
+
+        foreach (var reference in references)
+        {
+            advertisement.Append(GitPktLine($"{GitObjectId} {reference}{lineFeed}"));
+        }
+
+        return advertisement.Append("0000").ToString();
+    }
+
+    private static string GitPktLine(string payload)
+    {
+        var packetLength = Encoding.UTF8.GetByteCount(payload) + GitPktLineHeaderLength;
+        return $"{packetLength.ToString("x4", CultureInfo.InvariantCulture)}{payload}";
+    }
+
+    private static string ReleaseNameForGitPktLineLength(int pktLineLength)
+    {
+        const int referenceLineSeparatorsLength = 2;
+        var releaseNameLength = pktLineLength -
+                                GitPktLineHeaderLength -
+                                GitObjectId.Length -
+                                referenceLineSeparatorsLength -
+                                GitTagReferencePrefix.Length;
+        return new string('v', releaseNameLength);
+    }
+
+    private static bool MatchesUnauthenticatedRequest(HttpRequestMessage request,
+        string url,
+        string? acceptMediaType = null
+    ) =>
+        request.RequestUri?.ToString() == url &&
+        request.Headers.Authorization == null &&
+        (acceptMediaType is null || request.Headers.Accept.Any(mediaType => mediaType.MediaType == acceptMediaType));
 
     private sealed class RecordingProgress : IProgress<DownloadProgress>
     {

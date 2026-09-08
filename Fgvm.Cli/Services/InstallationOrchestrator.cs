@@ -237,8 +237,9 @@ public sealed class InstallationOrchestrator(
             Result<string[], NetworkError>.Success(var releaseNames) => releaseNames,
             Result<string[], NetworkError>.Failure(NetworkError.ManifestRefreshFailure(var releaseNames)) =>
                 UseCachedReleaseNames(releaseNames),
-            Result<string[], NetworkError>.Failure =>
-                throw new InvalidOperationException("Unable to fetch available Godot releases."),
+            Result<string[], NetworkError>.Failure(var error) =>
+                throw new InvalidOperationException(
+                    $"Unable to fetch available Godot releases: {Messages.NetworkFailure(error)}"),
             _ => throw new InvalidOperationException("Unexpected Result type")
         };
     }

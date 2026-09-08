@@ -16,6 +16,14 @@ Suite "workflow" {
         Assert.Empty (Json $list.Stdout) "Invalid operations should not install versions."
     }
 
+    Test "install reports a missing valid version without markup" {
+        $install = Run "install" "9.999"
+
+        Assert.ExitCode 2 $install "fgvm install should reject a valid version that does not exist."
+        Assert.Contains "Version 9.999 could not be found" $install.Stderr
+        Assert.NotContains "[red]" $install.Stderr
+    }
+
     Test "selects a seeded version with a partial query" {
         $stable = Add-FixtureInstallation "4.6.2-stable"
         $older = Add-FixtureInstallation "4.5-stable" -Default

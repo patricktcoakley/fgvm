@@ -83,7 +83,7 @@ public sealed class InstallCommand(
         {
             logger.LogError(e, "Error downloading and installing Godot.");
             console.MarkupLine(
-                Messages.SomethingWentWrong($"when trying to install Godot: {e.Message}", pathService)
+                Messages.SomethingWentWrong($"when trying to install Godot: {Markup.Escape(e.Message)}", pathService)
             );
 
             throw;
@@ -130,13 +130,14 @@ public sealed class InstallCommand(
                 throw new ArgumentException(invalid.Message);
 
             case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.NotFound notFound):
-                throw new ArgumentException(Messages.InstallationNotFound(notFound.Version, hostSystem));
+                throw new ArgumentException(Markup.Remove(Messages.InstallationNotFound(notFound.Version, hostSystem)));
 
             case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.ChecksumMismatch mismatch):
-                throw new SecurityException(Messages.ChecksumMismatch(mismatch.FileName, mismatch.Expected, mismatch.Actual));
+                throw new SecurityException(
+                    Markup.Remove(Messages.ChecksumMismatch(mismatch.FileName, mismatch.Expected, mismatch.Actual)));
 
             case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.Failed failed):
-                throw new InvalidOperationException(Messages.InstallationFailed(failed.Reason));
+                throw new InvalidOperationException(Markup.Remove(Messages.InstallationFailed(failed.Reason)));
 
             default:
                 throw new Exception(Messages.UnknownInstallationResultType);
@@ -160,14 +161,8 @@ public sealed class InstallCommand(
         return templateResult switch
         {
             Result<TemplateInstallationOutcome, TemplateInstallationError>.Success => null,
-            Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.InvalidQuery invalid) =>
-                invalid.Message,
-            Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.NotFound notFound) =>
-                Messages.TemplateInstallationNotFound(notFound.Version),
-            Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.ChecksumMismatch mismatch) =>
-                Messages.ChecksumMismatch(mismatch.FileName, mismatch.Expected, mismatch.Actual),
-            Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(TemplateInstallationError.Failed failed) =>
-                Messages.TemplateInstallationFailed(failed.Reason),
+            Result<TemplateInstallationOutcome, TemplateInstallationError>.Failure(var error) =>
+                TemplateInstallationResult.DescribeError(error),
             _ => "Unknown template installation result type."
         };
     }

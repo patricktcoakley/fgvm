@@ -1001,7 +1001,7 @@ public class VersionManagementService(
                 break;
             case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.NotFound notFound):
                 outputConsole.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
-                throw new ArgumentException(Messages.InstallationNotFound(notFound.Version, hostSystem));
+                throw new ArgumentException(Markup.Remove(Messages.InstallationNotFound(notFound.Version, hostSystem)));
             case Result<InstallationOutcome, InstallationError>.Failure(InstallationError.InvalidQuery invalidQuery):
                 outputConsole.MarkupLine(Messages.FailedToInstallMatching(string.Join(" ", query)));
                 throw new ArgumentException(invalidQuery.Message);

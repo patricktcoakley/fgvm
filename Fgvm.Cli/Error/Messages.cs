@@ -1,4 +1,5 @@
 using Fgvm.Environment;
+using Fgvm.Types;
 using Spectre.Console;
 
 namespace Fgvm.Cli.Error;
@@ -92,6 +93,15 @@ public static class Messages
     public static string UserCancelled(string what) => $"[red]User cancelled {what} operation :prohibited:[/]";
 
     // Errors
+    public static string NetworkFailure(NetworkError error) => error switch
+    {
+        NetworkError.RequestFailure requestFailure => requestFailure.ToString(),
+        NetworkError.ConnectionFailure(var message, _) => $"Network error: {message}",
+        NetworkError.CacheReadFailure(var fileError) => $"Release cache read error: {fileError}",
+        NetworkError.CacheWriteFailure(var fileError) => $"Release cache write error: {fileError}",
+        _ => "Unknown network error"
+    };
+
     public static string GodotLaunchFailed(string reason) => $"[red]Could not run Godot: {reason.EscapeMarkup()}[/]";
 
     public static string GodotExited(int exitCode) => $"[red]Godot exited with code {exitCode}.[/]";
@@ -113,9 +123,10 @@ public static class Messages
     public static string AlreadyInstalled(string releaseNameWithRuntime) => $"[yellow]{releaseNameWithRuntime} is already installed[/]";
 
     public static string InstallationNotFound(string version, IHostSystem hostSystem) =>
-        $"[red]Version {version} could not be found for {hostSystem.SystemInfo.CurrentOS.ToDisplayString()} {hostSystem.SystemInfo.CurrentArch.ToDisplayString()}[/]";
+        $"[red]Version {Markup.Escape(version)} could not be found for " +
+        $"{hostSystem.SystemInfo.CurrentOS.ToDisplayString()} {hostSystem.SystemInfo.CurrentArch.ToDisplayString()}[/]";
 
-    public static string InstallationFailed(string reason) => $"[red]Installation failed: {reason}[/]";
+    public static string InstallationFailed(string reason) => $"[red]Installation failed: {Markup.Escape(reason)}[/]";
     public static string InstallationSuccessBase(string releaseNameWithRuntime) =>
         $"[green]Finished installing {releaseNameWithRuntime}! :party_popper:[/]";
     public static string SuccessfullyInstalled(string releaseNameWithRuntime) =>
@@ -131,7 +142,7 @@ public static class Messages
     public static string VersionResolutionNotFound(string version, IHostSystem hostSystem) =>
         $"[red]Version {version} could not be found for {hostSystem.SystemInfo.CurrentOS.ToDisplayString()} {hostSystem.SystemInfo.CurrentArch.ToDisplayString()}[/]";
 
-    public static string VersionResolutionFailed(string reason) => $"[red]Version resolution failed: {reason}[/]";
+    public static string VersionResolutionFailed(string reason) => $"[red]Version resolution failed: {Markup.Escape(reason)}[/]";
     public static string InvalidVersion(string version) => $"[red]The version '{version}' is invalid[/]";
     public static string InvalidProjectVersion(string compatibleVersion) => $"[red]Invalid project version: {compatibleVersion}[/]";
     public static string SuccessfullySetVersion(string releaseNameWithRuntime) =>
@@ -198,7 +209,10 @@ public static class Messages
         $"[orange1]Warning: Checksum unavailable for {releaseNameWithRuntime}. Installation continued without verification.[/]";
 
     public static string ChecksumMismatch(string fileName, string expected, string actual) =>
-        $"[red]Checksum mismatch for {fileName}![/]\n[red]Expected: {expected}[/]\n[red]Actual:   {actual}[/]\n[red]This could indicate a corrupted download or security issue.[/]";
+        $"[red]Checksum mismatch for {Markup.Escape(fileName)}![/]\n" +
+        $"[red]Expected: {Markup.Escape(expected)}[/]\n" +
+        $"[red]Actual:   {Markup.Escape(actual)}[/]\n" +
+        "[red]This could indicate a corrupted download or security issue.[/]";
 
     // Export
     public static string ExportingTarget(string preset) => $"[dim]Exporting {Markup.Escape(preset)}...[/]";
@@ -226,7 +240,8 @@ public static class Messages
     public static string LocalTemplateInstallationCancelled(string releaseNameWithRuntime) =>
         $"[orange1]Set local version to {Markup.Escape(releaseNameWithRuntime)}, but export template installation was cancelled.[/]";
     public static string OptionalTemplateInstallationFailed(string releaseNameWithRuntime, string reason) =>
-        $"[orange1]Godot {releaseNameWithRuntime} is installed, but export template installation failed: {reason}[/]";
+        $"[orange1]Godot {Markup.Escape(releaseNameWithRuntime)} is installed, but export template installation failed: " +
+        $"{Markup.Escape(reason)}[/]";
     public static string OptionalTemplateInstallationCancelled(string releaseNameWithRuntime) =>
         $"[orange1]Godot {releaseNameWithRuntime} is installed. Export templates were skipped.[/]";
     public static string NoTemplatesMatchingQuery(string query) =>
