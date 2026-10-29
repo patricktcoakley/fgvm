@@ -73,8 +73,17 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
             (RuntimeEnvironment.Mono, 3, Architecture.X64) when release.Minor <= 3 => "mono_osx.64",
             (RuntimeEnvironment.Mono, 3, Architecture.Arm64 or Architecture.X64) when release.Minor > 3 => "mono_osx.universal",
 
-            (RuntimeEnvironment.Mono, 4, Architecture.Arm64 or Architecture.X64) => "mono_macos.universal",
-            (RuntimeEnvironment.Standard, 4, Architecture.Arm64 or Architecture.X64) => "macos.universal",
+            (RuntimeEnvironment.Mono, 4, Architecture.Arm64 or Architecture.X64) when release.Minor < 8 => "mono_macos.universal",
+            (RuntimeEnvironment.Standard, 4, Architecture.Arm64 or Architecture.X64) when release.Minor < 8 => "macos.universal",
+
+            (RuntimeEnvironment.Mono, 4, Architecture.Arm64 or Architecture.X64) when release is { Minor: 8, Type: not null, Type.Value: "dev" } => "mono_macos.universal",
+            (RuntimeEnvironment.Standard, 4, Architecture.Arm64 or Architecture.X64) when release is { Minor: 8, Type: not null, Type.Value: "dev" } => "macos.universal",
+
+            (RuntimeEnvironment.Mono, 4, Architecture.Arm64) when release.Minor >= 8  => "mono_macos.arm64",
+            (RuntimeEnvironment.Standard, 4, Architecture.Arm64) when release.Minor >= 8 => "macos.arm64",
+
+            (RuntimeEnvironment.Mono, 4, Architecture.X64) when release.Minor >= 8  => "mono_macos.x86_64",
+            (RuntimeEnvironment.Standard, 4, Architecture.X64) when release.Minor >= 8 => "macos.x86_64",
             _ => null
         };
     }
