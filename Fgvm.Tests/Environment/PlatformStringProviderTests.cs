@@ -47,6 +47,32 @@ public class PlatformStringProviderTests
     }
 
     [Theory]
+    [InlineData("4.7-stable", RuntimeEnvironment.Standard, Architecture.Arm64, "macos.universal")]
+    [InlineData("4.7-stable", RuntimeEnvironment.Mono, Architecture.X64, "mono_macos.universal")]
+    [InlineData("4.8-dev7", RuntimeEnvironment.Standard, Architecture.Arm64, "macos.universal")]
+    [InlineData("4.8-dev7", RuntimeEnvironment.Mono, Architecture.X64, "mono_macos.universal")]
+    [InlineData("4.8-alpha1", RuntimeEnvironment.Standard, Architecture.X64, "macos.universal")]
+    [InlineData("4.8-beta1", RuntimeEnvironment.Standard, Architecture.Arm64, "macos.arm64")]
+    [InlineData("4.8-beta1", RuntimeEnvironment.Standard, Architecture.X64, "macos.x86_64")]
+    [InlineData("4.8-beta1", RuntimeEnvironment.Mono, Architecture.Arm64, "mono_macos.arm64")]
+    [InlineData("4.8-beta1", RuntimeEnvironment.Mono, Architecture.X64, "mono_macos.x86_64")]
+    [InlineData("4.8-rc1", RuntimeEnvironment.Mono, Architecture.Arm64, "mono_macos.arm64")]
+    [InlineData("4.8-stable", RuntimeEnvironment.Standard, Architecture.X64, "macos.x86_64")]
+    [InlineData("4.9-dev1", RuntimeEnvironment.Standard, Architecture.Arm64, "macos.arm64")]
+    public void MacOS_SelectsPackageForReleaseAndArchitecture(string version, RuntimeEnvironment runtime,
+        Architecture arch, string expected)
+    {
+        var release = Release.TryParse($"{version}-{runtime.Name()}");
+        Assert.NotNull(release);
+
+        var provider = new PlatformStringProvider(new SystemInfo(OS.MacOS, arch));
+        var result = provider.GetPlatformString(release);
+        var success = Assert.IsType<Result<string, PlatformError>.Success>(result);
+
+        Assert.Equal(expected, success.Value);
+    }
+
+    [Theory]
     [InlineData(RuntimeEnvironment.Mono, 3, Architecture.X64, "mono_x11_64")]
     [InlineData(RuntimeEnvironment.Mono, 3, Architecture.X86, "mono_x11_32")]
     [InlineData(RuntimeEnvironment.Mono, 3, Architecture.Arm, null)] // Should return Failure
@@ -136,6 +162,8 @@ public class PlatformStringProviderTests
     [Theory]
     [InlineData(null, "unknown")]
     [InlineData("mono_macos.universal", "macos.universal")]
+    [InlineData("mono_macos.arm64", "macos.arm64")]
+    [InlineData("mono_macos.x86_64", "macos.x86_64")]
     [InlineData("mono_osx.universal", "osx.universal")]
     [InlineData("mono_osx.64", "osx.64")]
     [InlineData("mono_osx64", "osx.64")]

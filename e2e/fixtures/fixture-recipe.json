@@ -34,6 +34,18 @@
   ],
   "comparisonReleases": [
     {
+      "name": "4.8-dev7",
+      "version": "4.8",
+      "status": "dev7",
+      "gitReference": "mock-4-8-dev7"
+    },
+    {
+      "name": "4.8-beta1",
+      "version": "4.8",
+      "status": "beta1",
+      "gitReference": "mock-4-8-beta1"
+    },
+    {
       "name": "4.5.1-stable",
       "version": "4.5.1",
       "status": "stable",
@@ -133,14 +145,32 @@
           "runtime": "standard",
           "platform": "macos-x64",
           "executableName": "Godot.app",
-          "zipName": "Godot_v{release}_macos.universal.zip"
+          "zipName": "Godot_v{release}_macos.universal.zip",
+          "excludedReleases": ["4.8-beta1"]
         },
         {
           "target": "mono_macos.universal",
           "runtime": "mono",
           "platform": "macos-x64",
           "executableName": "Godot_mono.app",
-          "zipName": "Godot_v{release}_mono_macos.universal.zip"
+          "zipName": "Godot_v{release}_mono_macos.universal.zip",
+          "excludedReleases": ["4.8-beta1"]
+        },
+        {
+          "target": "macos.x86_64",
+          "runtime": "standard",
+          "platform": "macos-x64",
+          "executableName": "Godot.app",
+          "zipName": "Godot_v{release}_macos.x86_64.zip",
+          "onlyReleases": ["4.8-beta1"]
+        },
+        {
+          "target": "mono_macos.x86_64",
+          "runtime": "mono",
+          "platform": "macos-x64",
+          "executableName": "Godot_mono.app",
+          "zipName": "Godot_v{release}_mono_macos.x86_64.zip",
+          "onlyReleases": ["4.8-beta1"]
         }
       ]
     },
@@ -154,14 +184,32 @@
           "runtime": "standard",
           "platform": "macos-arm64",
           "executableName": "Godot.app",
-          "zipName": "Godot_v{release}_macos.universal.zip"
+          "zipName": "Godot_v{release}_macos.universal.zip",
+          "excludedReleases": ["4.8-beta1"]
         },
         {
           "target": "mono_macos.universal",
           "runtime": "mono",
           "platform": "macos-arm64",
           "executableName": "Godot_mono.app",
-          "zipName": "Godot_v{release}_mono_macos.universal.zip"
+          "zipName": "Godot_v{release}_mono_macos.universal.zip",
+          "excludedReleases": ["4.8-beta1"]
+        },
+        {
+          "target": "macos.arm64",
+          "runtime": "standard",
+          "platform": "macos-arm64",
+          "executableName": "Godot.app",
+          "zipName": "Godot_v{release}_macos.arm64.zip",
+          "onlyReleases": ["4.8-beta1"]
+        },
+        {
+          "target": "mono_macos.arm64",
+          "runtime": "mono",
+          "platform": "macos-arm64",
+          "executableName": "Godot_mono.app",
+          "zipName": "Godot_v{release}_mono_macos.arm64.zip",
+          "onlyReleases": ["4.8-beta1"]
         }
       ]
     },
