@@ -66,6 +66,7 @@ function NewSyntheticResult {
 function WriteResultsFile {
     param(
         [Parameter(Mandatory = $true, Position = 0)]
+        [AllowEmptyCollection()]
         [object[]] $Results,
 
         [Parameter(Position = 1)]
@@ -351,6 +352,10 @@ $failures = @($results | Where-Object { -not $_.Passed })
 WriteResultsFile $results $ResultsPath
 
 if ($results.Count -eq 0) {
+    if ($NoSummary -and -not [string]::IsNullOrWhiteSpace($ResultsPath)) {
+        return
+    }
+
     throw "No e2e tests were registered by files in $testSource."
 }
 
