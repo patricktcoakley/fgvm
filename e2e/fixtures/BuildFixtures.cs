@@ -99,6 +99,11 @@ internal sealed class FixtureBuilder(BuildContext context)
     {
         foreach (var fixture in platform.Fixtures)
         {
+            if (!fixture.AppliesTo(release.Name))
+            {
+                continue;
+            }
+
             var zipName = fixture.ExpandZipName(release.Name);
             var executableName = fixture.ExpandExecutableName(release.Name);
             var zipPath = Path.Combine(outputs.ZipsRoot, zipName);
@@ -603,6 +608,16 @@ internal sealed class FixtureArtifactRecipe
 
     [JsonPropertyName("zipName")]
     public required string ZipName { get; init; }
+
+    [JsonPropertyName("onlyReleases")]
+    public List<string>? OnlyReleases { get; init; }
+
+    [JsonPropertyName("excludedReleases")]
+    public List<string>? ExcludedReleases { get; init; }
+
+    public bool AppliesTo(string releaseName) =>
+        (OnlyReleases is null || OnlyReleases.Contains(releaseName, StringComparer.Ordinal)) &&
+        ExcludedReleases?.Contains(releaseName, StringComparer.Ordinal) != true;
 
     public string ExpandExecutableName(string releaseName) => Expand(ExecutableName, releaseName);
 

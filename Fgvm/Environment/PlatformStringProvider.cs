@@ -57,6 +57,11 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
 
     private static string? GetMacOSPlatformString(Release release, Architecture arch)
     {
+        // Godot began distributing per-architecture macOS binaries with 4.8 beta 1.
+        var packageArchitecture = release.Minor < 8 || release is { Minor: 8, Type.Value: "dev" or "alpha" }
+            ? "universal"
+            : arch == Architecture.Arm64 ? "arm64" : "x86_64";
+
         return (release.RuntimeEnvironment, release.Major, arch) switch
         {
             (RuntimeEnvironment.Standard, 1, Architecture.X86) => "osx.32",
@@ -73,8 +78,8 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
             (RuntimeEnvironment.Mono, 3, Architecture.X64) when release.Minor <= 3 => "mono_osx.64",
             (RuntimeEnvironment.Mono, 3, Architecture.Arm64 or Architecture.X64) when release.Minor > 3 => "mono_osx.universal",
 
-            (RuntimeEnvironment.Mono, 4, Architecture.Arm64 or Architecture.X64) => "mono_macos.universal",
-            (RuntimeEnvironment.Standard, 4, Architecture.Arm64 or Architecture.X64) => "macos.universal",
+            (RuntimeEnvironment.Mono, 4, Architecture.Arm64 or Architecture.X64) => $"mono_macos.{packageArchitecture}",
+            (RuntimeEnvironment.Standard, 4, Architecture.Arm64 or Architecture.X64) => $"macos.{packageArchitecture}",
             _ => null
         };
     }
