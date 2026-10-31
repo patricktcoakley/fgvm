@@ -8,8 +8,7 @@ on:
   pull_request:
     branches:
       - main
-    types:
-      - auto_merge_enabled
+    types: [opened, synchronize, reopened, auto_merge_enabled]
   merge_group:
     types: [checks_requested]
 
@@ -66,7 +65,7 @@ jobs:
           echo "Changed files:"
           sed 's/^/  /' changed-files.txt
 
-          if grep -Eq '^(Fgvm|Fgvm[.]Cli|Fgvm[.]Tests|Fgvm[.]Tests[.]Integration|e2e|scripts)/|^(Fgvm[.]slnx|global[.]json|mise[.]toml|[.]config/dotnet-tools[.]json)$' changed-files.txt; then
+          if grep -Eq '^(Fgvm|Fgvm[.]Cli|Fgvm[.]Tests|Fgvm[.]Tests[.]Integration|e2e|scripts)/|^[.]github/workflows/test-all-platforms[.]yml$|^(Fgvm[.]slnx|global[.]json|mise[.]toml|[.]config/dotnet-tools[.]json)$' changed-files.txt; then
             echo "run-tests=true" >> "$GITHUB_OUTPUT"
           else
             echo "run-tests=false" >> "$GITHUB_OUTPUT"
@@ -80,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-latest, macos-14]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-latest, macos-15]
     steps:
       - uses: actions/checkout@v6
 
