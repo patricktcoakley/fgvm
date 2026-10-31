@@ -60,7 +60,9 @@ public sealed class PlatformStringProvider(SystemInfo systemInfo)
         // Godot began distributing per-architecture macOS binaries with 4.8 beta 1.
         var packageArchitecture = release.Minor < 8 || release is { Minor: 8, Type.Value: "dev" or "alpha" }
             ? "universal"
-            : arch == Architecture.Arm64 ? "arm64" : "x86_64";
+            : arch == Architecture.Arm64
+                ? "arm64"
+                : "x86_64";
 
         return (release.RuntimeEnvironment, release.Major, arch) switch
         {

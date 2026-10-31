@@ -59,8 +59,11 @@ public class PlatformStringProviderTests
     [InlineData("4.8-rc1", RuntimeEnvironment.Mono, Architecture.Arm64, "mono_macos.arm64")]
     [InlineData("4.8-stable", RuntimeEnvironment.Standard, Architecture.X64, "macos.x86_64")]
     [InlineData("4.9-dev1", RuntimeEnvironment.Standard, Architecture.Arm64, "macos.arm64")]
-    public void MacOS_SelectsPackageForReleaseAndArchitecture(string version, RuntimeEnvironment runtime,
-        Architecture arch, string expected)
+    public void MacOS_SelectsPackageForReleaseAndArchitecture(string version,
+        RuntimeEnvironment runtime,
+        Architecture arch,
+        string expected
+    )
     {
         var release = Release.TryParse($"{version}-{runtime.Name()}");
         Assert.NotNull(release);
