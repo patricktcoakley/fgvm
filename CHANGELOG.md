@@ -1,5 +1,12 @@
 # Changelog
 
+<a name="2.6.1"></a>
+## [2.6.1](https://github.com/patricktcoakley/fgvm/releases/tag/v2.6.1) (2026-10-31)
+
+### 🐛 Bug Fixes
+
+* Update macOS release support for official per-architecture binaries as of 4.8 beta 1. ([f51772e](https://github.com/patricktcoakley/fgvm/commit/f51772e1954c1f124eb49c941944d66b18ddd017))
+
 <a name="2.6.0"></a>
 ## [2.6.0](https://github.com/patricktcoakley/fgvm/releases/tag/v2.6.0) (2026-09-08)
 
