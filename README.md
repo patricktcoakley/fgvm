@@ -4,7 +4,7 @@
 
 > [!IMPORTANT]
 > This project was previously known as `gdvm`, but as of 2.0 has now been renamed to `fgvm`. Most users won't be significantly impacted,
-> but some changes were breaking and will require users to switch over to `fgvm`; please see [this section](#migrating-from-gdvm) for information on how to migrate.
+> but some changes were breaking and will require users to switch over to `fgvm`; please see [this section](#migrating-from-the-original-gdvm) for information on how to migrate.
 
 ## Introduction
 
@@ -308,10 +308,10 @@ available on newer targets, particularly macOS ARM64. Downloading an artifact fo
 
 ### Version Queries and Project Pins
 
-Short version queries are fuzzy: `4.5`, `4.5 stable`, and `4.5-stable` select the latest stable 4.5 patch. A complete `major.minor[.patch]-release-runtime` triplet is exact and must match an available release.
-Numbered prereleases must include their number in a triplet, so use `4.8-dev4-mono` instead of `4.8-dev-mono`.
+Version queries are case-insensitive. When selecting a release, short queries are fuzzy: `4.5`, `4.5 stable`, and `4.5-stable` select the latest stable 4.5 patch when available. In search, `4.5-stable` lists only the base 4.5 release, while `4.5 stable` also lists patches. For numbered prereleases, `4.8 beta 1` and `4.8 beta1` both request `beta1`, not `beta10`.
+A complete `major.minor[.patch]-release-runtime` triplet is exact and must match an available release. Numbered prereleases must include their number in a triplet, so use `4.8-dev4-mono` instead of `4.8-dev-mono`.
 
-In addition, `.fgvm-version` must contain an exact triplet, and existing pins such as `4.5-stable` need either `-standard` or `-mono` appended. Running `fgvm local` with a fuzzy query writes the resolved triplet; versions detected from `project.godot`
+In addition, `.fgvm-version` must contain an exact triplet. Replace older pins such as `4.5-stable` with the full release you intend to use, such as `4.5.2-stable-standard`; appending `-standard` to `4.5-stable` would pin `4.5-stable-standard`, not the latest 4.5 patch. Running `fgvm local` with a fuzzy query writes the resolved triplet; versions detected from `project.godot`
 remain compatible within the same major and minor version, but fgvm will not select a patch older than the project requests.
 
 ### Commands
@@ -331,7 +331,7 @@ Run `fgvm <command> --help` for command-specific syntax. The sections below prov
 
 - `fgvm list` or `fgvm l` [`--json`] will list locally installed Godot versions. Use `--json` to output in JSON format.
 - `fgvm install` or `fgvm i` [`-D|--default`] [`--with-templates`] [`-V|--verbose`] `[<...strings>]` will prompt the user to install a version if no arguments are supplied, or will
-  try to find the closest matching version based on the query, defaulting to "stable" if no other release type is supplied.
+  try to find the closest matching version based on the query. A major-only query such as `4` selects stable releases; a minor or patch query prefers stable when available but can select a prerelease.
   It will automatically set the installed version as the default if it's the first installation. Use `--default` (or `-D`) to explicitly set the installed version as the default regardless of whether other versions are already installed.
   Use `--with-templates` to install the matching official export template package after editor installation succeeds. If template installation fails, fgvm keeps the editor installation and prints a warning.
   Use `--verbose` (or `-V`) to show each download source as it is tried, which is useful when diagnosing a slow or failing download.
@@ -340,10 +340,10 @@ Run `fgvm <command> --help` for command-specific syntax. The sections below prov
         - `latest` or `latest standard` will install the latest stable, and `latest mono` will install the latest .NET stable.
         - `4 mono` will grab the latest stable 4.x .NET release, `3.3 rc` will grab the latest rc of 3.3 standard, `1` would take the last stable version `1`, and so on.
     - Examples:
-        - `fgvm install 4.3` - Install 4.3 stable
-        - `fgvm install 4.3 mono` - Install 4.3 stable mono
+        - `fgvm install 4.3` - Install the preferred 4.3.x release, including a newer patch when available
+        - `fgvm install 4.3 mono` - Install the preferred 4.3.x .NET release
         - `fgvm i --default latest` - Install latest stable standard and set as default
-        - `fgvm install --with-templates 4.4.1` - Install 4.4.1 stable standard and its export templates
+        - `fgvm install --with-templates 4.4.1` - Install the matching 4.4.1 editor and its export templates
         - `fgvm install 4.5-stable-standard` - Install 4.5 stable standard, or fail if that exact release is unavailable
 - `fgvm godot` or `fgvm g` [`-i|--interactive`] [`-a|--attached`] [`-P|--project`] [`--query <string>`] [`--args <string>`] runs the appropriate Godot version, or resolves the optional query against installed versions and launches that match. With the `--interactive` or `-i` flag, it will prompt the user to launch an installed version, even if a query is supplied. When run in a project directory with a `.fgvm-version`
   file, it will use that project-specific version. If no `.fgvm-version` file exists, it will use the global default version. The command will automatically detect and launch the project if a
@@ -386,6 +386,7 @@ Run `fgvm <command> --help` for command-specific syntax. The sections below prov
     - Queries:
         - `4` would filter all 4.x releases, including "stable", "dev", etc.
         - `4.2-rc` would only list the `4.2` `rc` releases, but `4.2 rc` would list all `4.2.x` releases with the `rc` release type, including `4.2.2-rc3`
+        - `4.8-beta1` would only list `4.8` `beta1` releases; `4.8 beta1` can also list a `4.8.x-beta1` patch release. Neither query matches `beta10`.
 - `fgvm template` or `fgvm t` manages Godot export templates.
     - `fgvm template install` or `fgvm template i` [`--force`] [`-V|--verbose`] `[<...strings>]` installs the official export template package for an installed Godot version. With no query, fgvm prompts from local Godot installations. With a query, it resolves against local Godot installations only, such as `fgvm template install 4.4.1` or `fgvm template install 4.4.1 mono`. Use `--force` to replace export templates that are already installed for the selected version, and `--verbose` (or `-V`) to show each download source as it is tried.
     - `fgvm template list` or `fgvm template l` [`-j|--json`] lists installed export template directories.
@@ -455,7 +456,7 @@ See [Version Queries and Project Pins](#version-queries-and-project-pins) for th
 
 ### Environment Variables
 
-- **`FGVM_HOME`**: Customize the installation directory for fgvm. By default, fgvm uses `~/fgvm/` (macOS/Linux) or `$env:USERPROFILE\fgvm\` (Windows). Setting this variable allows you to use a different location:
+- **`FGVM_HOME`**: Customize the installation directory for fgvm. By default, fgvm uses `~/fgvm/` (macOS/Linux) or `$env:USERPROFILE\fgvm\` (Windows). The value must be an absolute path. Setting this variable allows you to use a different location:
 
   macOS/Linux:
     ```bash

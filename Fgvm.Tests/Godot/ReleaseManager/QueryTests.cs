@@ -19,6 +19,111 @@ public class QueryTests
         Assert.Equal(expected, success.Value);
     }
 
+    [Fact]
+    public void FilterReleasesByQuery_NormalizesMixedCaseQueryWithoutChangingInput()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] query = ["4.2", "RC"];
+
+        var result = releaseManager.FilterReleasesByQuery(query, ["4.2-rc2", "4.2-stable"]);
+
+        Assert.Equal(["4.2-rc2"], result);
+        Assert.Equal(["4.2", "RC"], query);
+    }
+
+    [Fact]
+    public void FilterReleasesByQuery_LeadingHyphenDoesNotBecomeAVersion()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        Assert.Empty(releaseManager.FilterReleasesByQuery(["-1"], ["1.0-stable"]));
+    }
+
+    [Fact]
+    public void FilterReleasesByQuery_DoubleHyphenDoesNotBecomeAReleaseQuery()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        Assert.Empty(releaseManager.FilterReleasesByQuery(["4.8-beta--1"], ["4.8-beta1"]));
+    }
+
+    [Theory]
+    [InlineData("beta-")]
+    [InlineData("4.5-stable-")]
+    public void FilterReleasesByQuery_MalformedTrailingHyphenDoesNotSelectARelease(string query)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        Assert.Empty(releaseManager.FilterReleasesByQuery([query], ["4.5-stable", "4.5-beta1"]));
+    }
+
+    [Theory]
+    [InlineData("beta", "1")]
+    [InlineData("beta1", null)]
+    public void FilterReleasesByQuery_NumberedPrereleaseMatchesOnlyItsNumber(string type, string? number)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["4.8-beta10", "4.8-beta2", "4.8-beta1"];
+        string[] query = number is null ? ["4.8", type] : ["4.8", type, number];
+
+        var result = releaseManager.FilterReleasesByQuery(query, releases);
+
+        Assert.Equal(["4.8-beta1"], result);
+    }
+
+    [Fact]
+    public void FilterReleasesByQuery_HyphenatedVersionExcludesPatchReleases()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["4.2.2-rc3", "4.2-rc2", "4.2-rc1"];
+
+        Assert.Equal(["4.2-rc2", "4.2-rc1"], releaseManager.FilterReleasesByQuery(["4.2-rc"], releases));
+        Assert.Equal(releases, releaseManager.FilterReleasesByQuery(["4.2", "rc"], releases));
+    }
+
+    [Theory]
+    [InlineData("4", new[] { "4.50-stable", "4.5.1-stable", "4.5-stable" })]
+    [InlineData("4.5", new[] { "4.5.1-stable", "4.5-stable" })]
+    public void FilterReleasesByQuery_VersionPrefixStopsAtSegmentBoundary(string version, string[] expected)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["40.1-stable", "4.50-stable", "4.5.1-stable", "4.5-stable"];
+
+        Assert.Equal(expected, releaseManager.FilterReleasesByQuery([version], releases));
+    }
+
+    [Theory]
+    [InlineData("rc")]
+    [InlineData("beta")]
+    [InlineData("alpha")]
+    [InlineData("dev")]
+    public void FilterReleasesByQuery_TypeBeforeMajorVersionPreservesVersionFilter(string type)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = [$"4.1-{type}2", $"3.1-{type}4"];
+
+        var result = releaseManager.FilterReleasesByQuery([type, "4"], releases);
+
+        Assert.Equal([$"4.1-{type}2"], result);
+    }
+
+    [Theory]
+    [InlineData("beta", "4.8-beta1")]
+    [InlineData("beta", "4.8-beta1", "mono")]
+    [InlineData("beta", "4.8-beta", "1", "mono")]
+    [InlineData("rc", "4.8-rc1")]
+    [InlineData("alpha", "4.8-alpha1")]
+    [InlineData("dev", "4.8-dev1")]
+    public void FilterReleasesByQuery_HyphenatedPrereleaseMatchesOnlyItsNumber(string type, params string[] query)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = [$"4.8.1-{type}1-mono", $"4.8-{type}10-mono", $"4.8-{type}2-mono", $"4.8-{type}1-mono"];
+
+        var result = releaseManager.FilterReleasesByQuery(query, releases);
+
+        Assert.Equal([$"4.8-{type}1-mono"], result);
+    }
+
     [InlineData(new[] { "latest" }, "4.2-stable-standard")]
     [InlineData(new[] { "latest", "mono" }, "4.2-stable-mono")]
     [InlineData(new[] { "latest", "standard" }, "4.2-stable-standard")]

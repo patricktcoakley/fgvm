@@ -195,6 +195,17 @@ public class CliIntegrationTests(TestFixture fixture) : IClassFixture<TestFixtur
     }
 
     [Fact]
+    public async Task SearchCommandAcceptsMixedCaseQuery()
+    {
+        var result = await fixture.ExecuteCommand(["search", "--json", StableVersionQuery, "STABLE"]);
+
+        await fixture.AssertSuccessfulExecutionAsync(result);
+        using var document = JsonDocument.Parse(result.Stdout.Trim());
+        Assert.Contains(document.RootElement.EnumerateArray(),
+            item => item.ToString().Contains(StableRelease, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task SearchCommandCreatesReleasesJsonWhenMissing()
     {
         var home = NewTempPath("fgvm-cache-missing");
