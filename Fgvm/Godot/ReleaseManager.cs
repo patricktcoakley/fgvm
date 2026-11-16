@@ -344,32 +344,15 @@ public sealed class ReleaseManager(
         Func<string, Release?> createRelease
     )
     {
-        // Extract runtime environment filter (mono/standard)
-        var runtimeFilter = query.Length > 0
-            ? query.FirstOrDefault(x => x.Equals("mono", StringComparison.OrdinalIgnoreCase) ||
-                                        x.Equals("standard", StringComparison.OrdinalIgnoreCase), string.Empty)
-            : string.Empty;
-
-        // Extract release type filter (stable/rc/beta/alpha/dev)
-        var releaseType = query.Length > 0
-            ? query.FirstOrDefault(x => ReleaseType.Prefixes
-                .Any(prefix => x.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)), string.Empty)
-            : string.Empty;
-
-        // Extract version filter (anything that's not runtime or release type)
-        var possibleVersion = query.Length > 0
-            ? query.Where(x => !x.Equals(releaseType, StringComparison.OrdinalIgnoreCase) &&
-                               !x.Equals(runtimeFilter, StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault(string.Empty)
-            : string.Empty;
+        var parsedQuery = ParseReleaseQuery(NormalizeQuery(query));
 
         var filteredNames = releaseNames
-            .Where(x => string.IsNullOrEmpty(possibleVersion) || x.StartsWith(possibleVersion, StringComparison.OrdinalIgnoreCase))
-            .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType, StringComparison.OrdinalIgnoreCase))
-            .Where(x => string.IsNullOrEmpty(runtimeFilter) || x.Contains(runtimeFilter, StringComparison.OrdinalIgnoreCase));
-        var filtered = ResolveReleases(filteredNames, createRelease);
+            .Where(x => x.StartsWith(parsedQuery.Version, StringComparison.OrdinalIgnoreCase))
+            .Where(x => parsedQuery.RuntimeFilter.Length == 0 ||
+                        x.Contains(parsedQuery.RuntimeFilter, StringComparison.OrdinalIgnoreCase));
+        var filtered = ResolveReleases(filteredNames, createRelease)
+            .Where(x => MatchesReleaseQuery(x.Release, parsedQuery));
 
-        // Display/search paths use the natural Release ordering. Selection paths use explicit preference ordering.
         var sorted = chronological
             ? filtered.OrderByDescending(x => x.Release)
             : OrderBySelectionPreference(filtered, x => x.Release);
@@ -440,13 +423,15 @@ public sealed class ReleaseManager(
         Func<string, Release?> createRelease
     )
     {
+        var normalizedQuery = NormalizeQuery(query);
+
         // Handle exact triplet queries
-        if (query is [var candidate] && candidate.Split('-') is [_, _, _, ..])
+        if (normalizedQuery is [var candidate] && candidate.Split('-') is [_, _, _, ..])
         {
             if (Release.TryParseTriplet(candidate) is not { } exactRelease)
             {
                 return new Result<Release?, QueryError>.Failure(new QueryError.InvalidQuery(
-                    $"Invalid arguments: `{candidate}`. Use a complete release triplet, e.g. `4.5-stable-standard` or `4.8-dev4-mono`."));
+                    $"Invalid arguments: `{query[0]}`. Use a complete release triplet, e.g. `4.5-stable-standard` or `4.8-dev4-mono`."));
             }
 
             return new Result<Release?, QueryError>.Success(
@@ -455,7 +440,7 @@ public sealed class ReleaseManager(
                     : null);
         }
 
-        var release = query switch
+        var release = normalizedQuery switch
         {
             // Handle latest stable standard
             ["latest"] => TryFilterLatest("stable", "standard", releaseNames, createRelease),
@@ -477,11 +462,11 @@ public sealed class ReleaseManager(
             return new Result<Release?, QueryError>.Success(release);
         }
 
-        return query switch
+        return normalizedQuery switch
         {
             ["latest"] or ["latest", _] or ["latest", _, _] =>
                 new Result<Release?, QueryError>.Success(null),
-            _ => TryFilterRelease(query, releaseNames, createRelease)
+            _ => TryFilterRelease(normalizedQuery, releaseNames, createRelease)
         };
     }
 
@@ -491,13 +476,10 @@ public sealed class ReleaseManager(
         Func<string, Release?> createRelease
     )
     {
-        // Split shorter single-argument queries like `4.2-stable` or `4.3-beta2`
-        if (query.Length == 1)
-        {
-            query = query[0].Split('-', StringSplitOptions.RemoveEmptyEntries);
-        }
+        // Only complete triplets resolve exactly; partial queries such as `4.5-stable` include newer 4.5 patches.
+        var parsedQuery = ParseReleaseQuery(query) with { ExactVersion = false };
 
-        var invalidArgs = ArgumentValidator.GetInvalidArguments(query);
+        var invalidArgs = ArgumentValidator.GetInvalidArguments(parsedQuery.Tokens);
         if (invalidArgs.Count > 0)
         {
             return new Result<Release?, QueryError>.Failure(
@@ -505,39 +487,107 @@ public sealed class ReleaseManager(
                     $"Invalid arguments: {string.Join(", ", invalidArgs)}. Valid arguments are version numbers (e.g. `4`, `4.2`), release types ( {string.Join(", ", ReleaseType.Prefixes.Select(p => $"`{p}`"))}), and runtime environments (`mono`, `standard`)."));
         }
 
-        var runtime = query
-            .FirstOrDefault(x => x is "mono" or "standard")?.ToLowerInvariant() == "mono"
+        var runtime = parsedQuery.RuntimeFilter is "mono"
             ? RuntimeEnvironment.Mono
             : RuntimeEnvironment.Standard;
 
-        // Default to `stable` when release type isn't provided
-        var releaseType = query
-                              .FirstOrDefault(x => ReleaseType.Prefixes
-                                  .Any(prefix => x.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-                          ?? "";
-
-        // Get the possible version query by filtering out the release type and runtime
-        var possibleVersion = query
-            .Except([runtime.Name(), releaseType], StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault("");
-
-        if (possibleVersion.Length == 1 && releaseType.Length == 0)
+        if (parsedQuery.Type.Length == 0 && int.TryParse(parsedQuery.Version, out _))
         {
-            releaseType = "stable";
+            parsedQuery = parsedQuery with { Type = "stable" };
         }
 
-        // Try to find the first release that matches the criteria
         var candidates = releaseNames
-            .Where(x => x.StartsWith(possibleVersion))
-            .Where(x => string.IsNullOrEmpty(releaseType) || x.Contains(releaseType))
+            .Where(x => x.StartsWith(parsedQuery.Version))
             .Select(releaseName => createRelease($"{releaseName}-{runtime.Name()}"))
-            .OfType<Release>();
+            .OfType<Release>()
+            .Where(release => MatchesReleaseQuery(release, parsedQuery));
 
         var release = OrderBySelectionPreference(candidates, candidate => candidate).FirstOrDefault();
 
         return new Result<Release?, QueryError>.Success(release);
     }
 
+    private static string[] NormalizeQuery(string[] query) =>
+        Array.ConvertAll(query, static token => token.ToLowerInvariant());
+
+    private static ParsedReleaseQuery ParseReleaseQuery(string[] query)
+    {
+        // The hyphen in `4.2-rc` limits search to version `4.2`; `4.2 rc` also matches patch releases.
+        var exactVersion = false;
+        var hasVersionBeforeType = false;
+        List<string> tokens = [];
+
+        foreach (var part in query)
+        {
+            var hasHyphen = part.Contains('-');
+            var startsWithVersion = part.Length > 0 && char.IsDigit(part[0]);
+            if (hasHyphen && (!startsWithVersion || part.Contains("--") ||
+                              (part.EndsWith('-') && part.IndexOf('-') < part.Length - 1)))
+            {
+                tokens.Add(part);
+                continue;
+            }
+
+            exactVersion |= startsWithVersion && hasHyphen;
+            foreach (var token in part.Split('-', StringSplitOptions.RemoveEmptyEntries))
+            {
+                // Join `rc 1` into `rc1` only after a version; in `rc 4`, the `4` is the version.
+                if (hasVersionBeforeType && tokens.Count > 0 &&
+                    ReleaseType.Prefixes.AsSpan(1).Contains(tokens[^1], StringComparer.Ordinal) &&
+                    token.All(c => c is >= '0' and <= '9'))
+                {
+                    tokens[^1] += token;
+                    continue;
+                }
+
+                tokens.Add(token);
+                hasVersionBeforeType |= char.IsDigit(token[0]);
+            }
+        }
+
+        string? runtime = null;
+        string? type = null;
+        string? version = null;
+
+        foreach (var token in tokens)
+        {
+            if (runtime is null && token is ("mono" or "standard"))
+            {
+                runtime = token;
+            }
+            else if (type is null && ReleaseType.Prefixes.Any(prefix => token.StartsWith(prefix, StringComparison.Ordinal)))
+            {
+                type = token;
+            }
+            else if (version is null && token != runtime && token != type)
+            {
+                version = token;
+            }
+
+            if (runtime is not null && type is not null && version is not null)
+            {
+                break;
+            }
+        }
+
+        return new ParsedReleaseQuery([.. tokens], version ?? "", type ?? "", runtime ?? "", exactVersion);
+    }
+
+    private static bool MatchesReleaseQuery(Release release, ParsedReleaseQuery query)
+    {
+        var versionMatches = query.Version.Length == 0 ||
+                             release.Version.StartsWith(query.Version, StringComparison.OrdinalIgnoreCase) &&
+                             (release.Version.Length == query.Version.Length ||
+                              !query.ExactVersion && release.Version[query.Version.Length] == '.');
+        if (!versionMatches)
+        {
+            return false;
+        }
+
+        return query.Type.Length == 0 || release.Type is { } type &&
+            (query.Type.Equals(type.Value, StringComparison.OrdinalIgnoreCase) ||
+             query.Type.Equals(type.ToString(), StringComparison.OrdinalIgnoreCase));
+    }
 
     private Release? TryFilterLatest(string type,
         string runtime,
@@ -560,4 +610,12 @@ public sealed class ReleaseManager(
             .ThenByDescending(item => releaseSelector(item).Patch)
             .ThenByDescending(item => releaseSelector(item).RuntimeEnvironment)
             .ThenByDescending(item => releaseSelector(item).ReleaseNameWithRuntime, StringComparer.Ordinal);
+
+    private readonly record struct ParsedReleaseQuery(
+        string[] Tokens,
+        string Version,
+        string Type,
+        string RuntimeFilter,
+        bool ExactVersion
+    );
 }

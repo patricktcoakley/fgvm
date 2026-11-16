@@ -39,6 +39,7 @@ public class TryFindReleaseByQueryTests
         [
             ["4", "invalidarg"],
             ["4", "five", "xi"],
+            ["4.5", "stable", "mono", "invalidarg"],
             ["invalidversion", "mono"],
             ["4.2", "unknowntype"],
             ["stable", "badruntime"]
@@ -158,6 +159,31 @@ public class TryFindReleaseByQueryTests
         Assert.Equal("4.2-stable-standard", success.Value.ReleaseNameWithRuntime);
     }
 
+    [Theory]
+    [InlineData(new[] { "LATEST", "MONO" }, "4.2-stable-mono")]
+    [InlineData(new[] { "4.2-STABLE-MONO" }, "4.2-stable-mono")]
+    [InlineData(new[] { "4", "RC" }, "4.1-rc2-standard")]
+    public void ResolveReleaseQuery_NormalizesMixedCaseQuery(string[] query, string expected)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery(query, TestReleases.ToArray());
+
+        Assert.Equal(expected, Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
+    }
+
+    [Theory]
+    [InlineData("MONO", "STANDARD")]
+    [InlineData("RC", "BETA")]
+    public void ResolveReleaseQuery_ConflictingFiltersWithoutVersionDoNotSelectARelease(string first, string second)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery([first, second], TestReleases.ToArray());
+
+        Assert.IsType<QueryError.NotFound>(Assert.IsType<Result<Release, QueryError>.Failure>(result).Error);
+    }
+
     [Fact]
     public void ResolveReleaseQuery_InvalidQuery_ReturnsInvalidQueryFailure()
     {
@@ -178,6 +204,129 @@ public class TryFindReleaseByQueryTests
 
         var failure = Assert.IsType<Result<Release, QueryError>.Failure>(result);
         Assert.IsType<QueryError.NotFound>(failure.Error);
+    }
+
+    [Theory]
+    [InlineData("rc")]
+    [InlineData("beta")]
+    [InlineData("alpha")]
+    [InlineData("dev")]
+    public void ResolveReleaseQuery_SplitPrereleaseNumber_SelectsExactRelease(string type)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = [$"4.8-{type}10", $"4.8-{type}2", $"4.8-{type}1"];
+
+        var result = releaseManager.ResolveReleaseQuery(["4.8", type, "1"], releases);
+
+        Assert.Equal($"4.8-{type}1-standard",
+            Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
+    }
+
+    [Theory]
+    [InlineData("+1")]
+    [InlineData(" 1")]
+    [InlineData("-1")]
+    public void ResolveReleaseQuery_SplitPrereleaseNumberRejectsNonDigitCharacters(string number)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery(["4.8", "beta", number], ["4.8-beta1"]);
+
+        Assert.IsType<QueryError.InvalidQuery>(Assert.IsType<Result<Release, QueryError>.Failure>(result).Error);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("2147483648")]
+    public void ResolveReleaseQuery_InvalidSplitPrereleaseNumberDoesNotSelectAnotherRelease(string number)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery(["4.8", "beta", number], ["4.8-beta1"]);
+
+        Assert.IsType<QueryError.NotFound>(Assert.IsType<Result<Release, QueryError>.Failure>(result).Error);
+    }
+
+    [Theory]
+    [InlineData("rc")]
+    [InlineData("beta")]
+    [InlineData("alpha")]
+    [InlineData("dev")]
+    public void ResolveReleaseQuery_TypeBeforeMajorVersionPreservesVersionFilter(string type)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = [$"4.1-{type}2", $"3.1-{type}4"];
+
+        var result = releaseManager.ResolveReleaseQuery([type, "4"], releases);
+
+        Assert.Equal($"4.1-{type}2-standard",
+            Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
+    }
+
+    [Theory]
+    [InlineData("4.8-beta1", "mono")]
+    [InlineData("4.8-beta", "1", "mono")]
+    public void ResolveReleaseQuery_HyphenatedPrereleaseWithRuntime_SelectsExactRelease(params string[] query)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["4.8-beta10", "4.8-beta2", "4.8-beta1"];
+
+        var result = releaseManager.ResolveReleaseQuery(query, releases);
+        var withoutPlatform = releaseManager.ResolveReleaseQueryWithoutPlatform(query, releases);
+
+        Assert.Equal("4.8-beta1-mono", Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
+        Assert.Equal("4.8-beta1-mono", Assert.IsType<Result<Release, QueryError>.Success>(withoutPlatform).Value.ReleaseNameWithRuntime);
+    }
+
+    [Theory]
+    [InlineData("4.8", "beta1")]
+    [InlineData("4.8-beta1", "mono")]
+    public void ResolveReleaseQuery_NumberedPrereleaseDoesNotMatchLongerNumber(params string[] query)
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+
+        var result = releaseManager.ResolveReleaseQuery(query, ["4.8-beta10"]);
+
+        Assert.IsType<QueryError.NotFound>(Assert.IsType<Result<Release, QueryError>.Failure>(result).Error);
+    }
+
+    [Fact]
+    public void ResolveReleaseQuery_ExactTripletKeepsBaseReleaseWhilePartialQuerySelectsLatestPatch()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["4.5.1-stable", "4.5-stable"];
+
+        var partial = releaseManager.ResolveReleaseQuery(["4.5-stable"], releases);
+        var exact = releaseManager.ResolveReleaseQuery(["4.5-stable-standard"], releases);
+        var missingExact = releaseManager.ResolveReleaseQuery(["4.5-stable-standard"], ["4.5.1-stable"]);
+
+        Assert.Equal("4.5.1-stable-standard", Assert.IsType<Result<Release, QueryError>.Success>(partial).Value.ReleaseNameWithRuntime);
+        Assert.Equal("4.5-stable-standard", Assert.IsType<Result<Release, QueryError>.Success>(exact).Value.ReleaseNameWithRuntime);
+        Assert.IsType<QueryError.NotFound>(Assert.IsType<Result<Release, QueryError>.Failure>(missingExact).Error);
+    }
+
+    [Fact]
+    public void ResolveReleaseQuery_MinorQueryDoesNotSelectAnotherMinor()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["4.50-stable", "4.5.1-stable", "4.5-stable"];
+
+        var result = releaseManager.ResolveReleaseQuery(["4.5"], releases);
+
+        Assert.Equal("4.5.1-stable-standard",
+            Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
+    }
+
+    [Fact]
+    public void ResolveReleaseQuery_MajorQueryUsesStablePreferenceForTwoDigitMajor()
+    {
+        var releaseManager = new ReleaseManagerBuilder().Build();
+        string[] releases = ["10.1-rc1", "10.0-stable"];
+
+        var result = releaseManager.ResolveReleaseQuery(["10"], releases);
+
+        Assert.Equal("10.0-stable-standard",
+            Assert.IsType<Result<Release, QueryError>.Success>(result).Value.ReleaseNameWithRuntime);
     }
 
     [Theory]
