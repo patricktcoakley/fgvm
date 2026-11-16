@@ -484,7 +484,7 @@ See [Version Queries and Project Pins](#version-queries-and-project-pins) for th
 
 ### Build
 
-Building the project requires the .NET 10 SDK. Publishing the Native AOT executable also requires the native compiler toolchain for the target platform: Visual Studio with the Desktop development
+Building the project requires the .NET 11 SDK. Publishing the Native AOT executable also requires the native compiler toolchain for the target platform: Visual Studio with the Desktop development
 with C++ workload on Windows, Xcode Command Line Tools on macOS, or Clang and the required development libraries on Linux. See the [.NET Native AOT prerequisites](https://learn.microsoft.com/dotnet/core/deploying/native-aot/#prerequisites)
 for platform-specific setup.
 
@@ -497,7 +497,7 @@ dotnet restore
 dotnet publish Fgvm.Cli/Fgvm.Cli.csproj -c Release -r <RID>
 ```
 
-Use one of the release RIDs: `win-x64`, `osx-x64`, `osx-arm64`, `linux-x64`, or `linux-arm64`. The executable is written to `Fgvm.Cli/bin/Release/net10.0/<RID>/publish/`.
+Use one of the release RIDs: `win-x64`, `osx-x64`, `osx-arm64`, `linux-x64`, or `linux-arm64`. The executable is written to `Fgvm.Cli/bin/Release/net11.0/<RID>/publish/`.
 
 This repo also includes an optional [mise](https://mise.jdx.dev/) setup for installing the expected .NET SDK and running common development tasks:
 
@@ -526,7 +526,7 @@ mise run test:integration
 mise run test:e2e:detailed
 ```
 
-Without mise, install the .NET 10 SDK and PowerShell 7, make sure `dotnet` and `pwsh` are on your `PATH`, and run the equivalent preparation and test commands directly:
+Without mise, install the .NET 11 SDK and PowerShell 7, make sure `dotnet` and `pwsh` are on your `PATH`, and run the equivalent preparation and test commands directly:
 
 ```shell
 dotnet restore

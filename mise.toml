@@ -1,5 +1,5 @@
 [tools]
-dotnet = "10.0.302"
+dotnet = "11.0.100"
 powershell = "7.5.4"
 
 [tasks.test]

@@ -1,7 +1,7 @@
 // Test-only CLI composition root published as a .NET file-based app.
-#:property TargetFramework=net10.0
-#:property RuntimeFrameworkVersion=10.0.10
-#:property LangVersion=14
+#:property TargetFramework=net11.0
+#:property RuntimeFrameworkVersion=11.0.0
+#:property LangVersion=15
 #:property AssemblyName=fgvm-test-host
 #:property Version=2.4.0
 #:property PublishAot=true

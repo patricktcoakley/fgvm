@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFramework>net11.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <LangVersion>14</LangVersion>
+        <LangVersion>15</LangVersion>
         <Authors>Patrick T Coakley</Authors>
         <PackageProjectUrl>https://github.com/patricktcoakley/fgvm</PackageProjectUrl>
         <PackageLicenseUrl>https://github.com/patricktcoakley/fgvm/blob/main/LICENSE</PackageLicenseUrl>
@@ -12,8 +12,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9"/>
-        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9"/>
+        <PackageReference Include="Microsoft.Extensions.Http" Version="11.0.0"/>
     </ItemGroup>
 
     <ItemGroup>
