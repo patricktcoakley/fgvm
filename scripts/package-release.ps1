@@ -26,7 +26,7 @@ Returns the artifact name, artifact path, and checksum path.
 .EXAMPLE
 ./scripts/package-release.ps1 `
     -Rid osx-arm64 `
-    -Source ./Fgvm.Cli/bin/Release/net10.0/osx-arm64/publish/fgvm
+    -Source ./Fgvm.Cli/bin/Release/net11.0/osx-arm64/publish/fgvm
 
 Creates fgvm-osx-arm64.tar.gz and fgvm-osx-arm64.tar.gz.sha256 in the current
 directory.
@@ -34,7 +34,7 @@ directory.
 .EXAMPLE
 ./scripts/package-release.ps1 `
     -Rid win-x64 `
-    -Source ./Fgvm.Cli/bin/Release/net10.0/win-x64/publish/fgvm.exe `
+    -Source ./Fgvm.Cli/bin/Release/net11.0/win-x64/publish/fgvm.exe `
     -OutputDirectory ./artifacts
 
 Creates the Windows ZIP archive and checksum in ./artifacts.

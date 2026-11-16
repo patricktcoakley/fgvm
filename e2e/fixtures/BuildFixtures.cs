@@ -1,5 +1,5 @@
-#:property TargetFramework=net10.0
-#:property LangVersion=14
+#:property TargetFramework=net11.0
+#:property LangVersion=15
 
 using System.Diagnostics;
 using System.IO.Compression;
