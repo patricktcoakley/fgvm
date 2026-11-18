@@ -123,33 +123,14 @@ internal static class CommandRunner
 {
     public static async Task RunAsync(string fileName, IReadOnlyList<string> arguments)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = fileName,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true
-        };
-
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start {fileName}.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync();
-
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-        if (process.ExitCode == 0)
+        var output = await Process.RunAndCaptureTextAsync(fileName, arguments);
+        if (output.ExitStatus.ExitCode == 0)
         {
             return;
         }
 
         throw new InvalidOperationException(
-            $"{fileName} {string.Join(' ', arguments)} failed with exit code {process.ExitCode}.{Environment.NewLine}{stdout}{Environment.NewLine}{stderr}");
+            $"{fileName} {string.Join(' ', arguments)} failed with exit code {output.ExitStatus.ExitCode}.{Environment.NewLine}{output.StandardOutput}{Environment.NewLine}{output.StandardError}");
     }
 }
 
