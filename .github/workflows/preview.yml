@@ -22,7 +22,7 @@ permissions: {}
 jobs:
   authorize:
     name: Authorize and validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
@@ -55,7 +55,7 @@ jobs:
   test:
     name: Test
     needs: authorize
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -85,15 +85,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             rid: linux-x64
           - os: ubuntu-24.04-arm
             rid: linux-arm64
           - os: windows-latest
             rid: win-x64
-          - os: macos-15-intel
+          - os: macos-26-intel
             rid: osx-x64
-          - os: macos-15
+          - os: macos-26
             rid: osx-arm64
     env:
       FGVM_PREVIEW_RID: ${{ matrix.rid }}
@@ -123,7 +123,7 @@ jobs:
   release:
     name: Publish prerelease
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
