@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Fgvm.Cli.Services;
 using Fgvm.Types;
 
@@ -36,14 +37,16 @@ public sealed class GodotLauncherTests
         Assert.Throws<InvalidOperationException>(() => GodotLaunchTarget.FromResolution(resolution));
     }
 
-    [Fact]
-    public async Task LaunchAsync_MissingExecutable_ReturnsStartFailure()
+    [Theory]
+    [InlineData(GodotLaunchMode.Attached)]
+    [InlineData(GodotLaunchMode.Detached)]
+    public async Task LaunchAsync_MissingExecutable_ReturnsStartFailure(GodotLaunchMode mode)
     {
         var launcher = new GodotLauncher();
         var request = CreateRequest(
             Path.Combine(Path.GetTempPath(), $"missing-godot-{Guid.NewGuid():N}"),
             "",
-            GodotLaunchMode.Attached);
+            mode);
 
         var result = await launcher.LaunchAsync(request);
 
@@ -67,8 +70,9 @@ public sealed class GodotLauncherTests
         var success = Assert.IsType<Result<GodotLaunchOutcome, GodotLaunchError>.Success>(result);
         var exited = Assert.IsType<GodotLaunchOutcome.Exited>(success.Value);
         Assert.Equal(7, exited.ExitCode);
-        Assert.Contains(output, item => item is GodotLaunchOutput.StandardOutput(var line) && line.Trim() == "hello");
-        Assert.Contains(output, item => item is GodotLaunchOutput.StandardError(var line) && line.Trim() == "oops");
+        Assert.Equal("hello", Assert.Single(output.OfType<GodotLaunchOutput.StandardOutput>()).Line.Trim());
+        Assert.Equal("oops", Assert.Single(output.OfType<GodotLaunchOutput.StandardError>()).Line.Trim());
+        Assert.Equal(2, output.Count);
     }
 
     [Fact]
@@ -99,6 +103,41 @@ public sealed class GodotLauncherTests
         Assert.True(detached.ProcessId > 0);
     }
 
+    [Theory]
+    [InlineData(GodotLaunchMode.Attached)]
+    [InlineData(GodotLaunchMode.Detached)]
+    public void CreateStartInfo_UsesExpectedProcessSettings(GodotLaunchMode mode)
+    {
+        var arguments = new[] { "plain", "two words", "quote\"inside" };
+        var request = new GodotLaunchRequest(
+            new GodotLaunchTarget(
+                "4.6-stable-standard@test",
+                "4.6-stable-standard",
+                Path.Combine(Path.GetTempPath(), "Mock Godot"),
+                Path.Combine(Path.GetTempPath(), "working directory")),
+            arguments,
+            mode);
+
+        var startInfo = GodotLauncher.CreateStartInfo(request);
+
+        Assert.Equal(request.Target.ExecutablePath, startInfo.FileName);
+        Assert.Equal(request.Target.WorkingDirectory, startInfo.WorkingDirectory);
+        Assert.Equal(arguments, startInfo.ArgumentList);
+        Assert.Equal(mode == GodotLaunchMode.Detached, startInfo.StartDetached);
+        Assert.False(startInfo.UseShellExecute);
+        Assert.False(startInfo.RedirectStandardInput);
+        Assert.Equal(mode == GodotLaunchMode.Attached, startInfo.RedirectStandardOutput);
+        Assert.Equal(mode == GodotLaunchMode.Attached, startInfo.RedirectStandardError);
+        if (mode == GodotLaunchMode.Detached)
+        {
+            Assert.Empty(startInfo.InheritedHandles!);
+        }
+        else
+        {
+            Assert.Null(startInfo.InheritedHandles);
+        }
+    }
+
     [Fact]
     public async Task LaunchAsync_AttachedCancellation_ThrowsOperationCanceledException()
     {
@@ -108,6 +147,84 @@ public sealed class GodotLauncherTests
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => launcher.LaunchAsync(request, cancellationToken: cancellation.Token));
+    }
+
+    [Fact]
+    public async Task LaunchAsync_AttachedSignalExit_ReturnsShellConventionExitCode()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var launcher = new GodotLauncher();
+        var request = CreateRequest("/bin/sh", "-c \"kill -TERM $$\"", GodotLaunchMode.Attached);
+
+        var result = await launcher.LaunchAsync(request);
+
+        var success = Assert.IsType<Result<GodotLaunchOutcome, GodotLaunchError>.Success>(result);
+        var exited = Assert.IsType<GodotLaunchOutcome.Exited>(success.Value);
+        Assert.Equal(128 + 15, exited.ExitCode);
+    }
+
+    [Fact]
+    public async Task LaunchAsync_AttachedCancellation_KillsProcessTree()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var launcher = new GodotLauncher();
+        var childProcessId = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var request = CreateRequest(
+            "/bin/sh",
+            "-c \"sleep 30 & child=$!; printf '%s\\n' $child; wait\"",
+            GodotLaunchMode.Attached);
+        using var cancellation = new CancellationTokenSource();
+
+        var launch = launcher.LaunchAsync(request, output =>
+        {
+            if (output is GodotLaunchOutput.StandardOutput(var line) && int.TryParse(line, out var processId))
+            {
+                childProcessId.TrySetResult(processId);
+            }
+        }, cancellation.Token);
+
+        try
+        {
+            var child = await childProcessId.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => launch);
+            await AssertProcessExited(child);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+        }
+    }
+
+    private static async Task AssertProcessExited(int processId)
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(processId);
+                if (process.HasExited)
+                {
+                    return;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        Assert.Fail($"Child process {processId} was still running after launcher cancellation.");
     }
 
     private static GodotLaunchRequest CreateRequest(string executable, string arguments, GodotLaunchMode mode) =>

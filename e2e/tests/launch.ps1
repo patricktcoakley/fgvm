@@ -99,6 +99,18 @@ Suite "godot launch" {
         }
     }
 
+    Test "forwards quoted arguments to a detached godot process" {
+        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
+
+        $godot = Run -Arguments @("godot", "--args", '"two words" plain')
+
+        Assert.ExitCode 0 $godot "fgvm detached Godot argument forwarding"
+        File.WaitFor $seeded.MockInvocationPath
+        $invocation = Read-MockInvocation $seeded.MockInvocationPath
+        Assert.Equal @("two words", "plain") @($invocation.Arguments)
+        Process.WaitForExit $invocation.ProcessId
+    }
+
     Test "reports an immediately exiting detached process as launched" {
         $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
 
@@ -109,6 +121,21 @@ Suite "godot launch" {
 
         Assert.ExitCode 0 $godot "fgvm detached Godot launch"
         Assert.Contains "PID" $godot.Stdout
+    }
+
+    Test "detached replacement outlives fgvm and its original process" {
+        $seeded = Add-FixtureInstallation "4.6.2-stable" -Default
+        $markerRoot = Join-Path $Context.WorkPath "detached-relaunch"
+
+        $godotArguments = "--fgvm-mock-relaunch `"$markerRoot`""
+        $godot = Run -Arguments @("godot", "--args", $godotArguments)
+
+        Assert.ExitCode 0 $godot "fgvm detached Godot relaunch"
+        File.WaitFor "$markerRoot.survived.json"
+        $initial = Read-MockInvocation $seeded.MockInvocationPath
+        $replacement = Json (File.Read "$markerRoot.survived.json")
+        Process.WaitForExit $initial.ProcessId
+        Assert.NotEqual $initial.ProcessId $replacement.ProcessId "Godot should have replaced its original process."
     }
 
     Test "does not record a launch when godot fails to start" {

@@ -1,9 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 using Fgvm.Types;
-using Microsoft.Win32.SafeHandles;
 
 namespace Fgvm.Cli.Services;
 
@@ -75,39 +73,35 @@ public interface IGodotLauncher
 
 public sealed class GodotLauncher : IGodotLauncher
 {
-    private const int StandardErrorDescriptor = 2;
-    private const int StandardInputHandle = -10;
-    private const int StandardOutputHandle = -11;
-    private const int StandardErrorHandle = -12;
-    private const int FileDescriptorCloseOnExec = 1;
-    private const int GetFileDescriptorFlags = 1;
-    private const int SetFileDescriptorFlags = 2;
-    private const uint HandleFlagInherit = 1;
-    private static readonly Lock DetachedStartLock = new();
-
     public async Task<Result<GodotLaunchOutcome, GodotLaunchError>> LaunchAsync(GodotLaunchRequest request,
         Action<GodotLaunchOutput>? onOutput = null,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var startInfo = CreateStartInfo(request);
 
-        if (request.Mode == GodotLaunchMode.Detached &&
-            !OperatingSystem.IsWindows() &&
-            Access(request.Target.ExecutablePath, 1) != 0)
+        if (request.Mode == GodotLaunchMode.Detached)
         {
-            return new Result<GodotLaunchOutcome, GodotLaunchError>.Failure(
-                new GodotLaunchError.StartFailed(
-                    request.Target.ExecutablePath,
-                    new Win32Exception(Marshal.GetLastPInvokeError()).Message));
+            try
+            {
+                var processId = Process.StartAndForget(startInfo);
+                return new Result<GodotLaunchOutcome, GodotLaunchError>.Success(
+                    new GodotLaunchOutcome.Detached(processId));
+            }
+            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or FileNotFoundException)
+            {
+                return new Result<GodotLaunchOutcome, GodotLaunchError>.Failure(
+                    new GodotLaunchError.StartFailed(request.Target.ExecutablePath, ex.Message));
+            }
         }
 
         using var process = new Process();
-        process.StartInfo = CreateStartInfo(request);
+        process.StartInfo = startInfo;
 
         try
         {
-            if (!StartProcess(process, request.Mode))
+            if (!process.Start())
             {
                 return new Result<GodotLaunchOutcome, GodotLaunchError>.Failure(
                     new GodotLaunchError.StartFailed(request.Target.ExecutablePath, "The process did not start."));
@@ -119,37 +113,22 @@ public sealed class GodotLauncher : IGodotLauncher
                 new GodotLaunchError.StartFailed(request.Target.ExecutablePath, ex.Message));
         }
 
-        if (request.Mode == GodotLaunchMode.Detached)
-        {
-            if (process.StartInfo.RedirectStandardInput)
-            {
-                process.StandardInput.Close();
-            }
-
-            return new Result<GodotLaunchOutcome, GodotLaunchError>.Success(
-                new GodotLaunchOutcome.Detached(process.Id));
-        }
-
-        var standardOutput = ForwardLines(
-            process.StandardOutput,
-            line => onOutput?.Invoke(new GodotLaunchOutput.StandardOutput(line)),
-            cancellationToken);
-        var standardError = ForwardLines(
-            process.StandardError,
-            line => onOutput?.Invoke(new GodotLaunchOutput.StandardError(line)),
-            cancellationToken);
-
         try
         {
-            await process.WaitForExitAsync(cancellationToken);
-            await Task.WhenAll(standardOutput, standardError);
+            await foreach (var line in process.ReadAllLinesAsync(cancellationToken))
+            {
+                onOutput?.Invoke(line.StandardError
+                    ? new GodotLaunchOutput.StandardError(line.Content)
+                    : new GodotLaunchOutput.StandardOutput(line.Content));
+            }
+
+            var exitStatus = await process.WaitForExitStatusAsync(cancellationToken);
             return new Result<GodotLaunchOutcome, GodotLaunchError>.Success(
-                new GodotLaunchOutcome.Exited(process.ExitCode));
+                new GodotLaunchOutcome.Exited(exitStatus.ExitCode));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             TryKill(process);
-            await ObserveOutputTasks(standardOutput, standardError);
             throw;
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException)
@@ -160,178 +139,20 @@ public sealed class GodotLauncher : IGodotLauncher
         }
     }
 
-    private static ProcessStartInfo CreateStartInfo(GodotLaunchRequest request)
+    internal static ProcessStartInfo CreateStartInfo(GodotLaunchRequest request)
     {
         var attached = request.Mode == GodotLaunchMode.Attached;
-        if (!attached && !OperatingSystem.IsWindows())
+        return new ProcessStartInfo(request.Target.ExecutablePath, request.Arguments)
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "/bin/sh",
-                UseShellExecute = false,
-                WorkingDirectory = request.Target.WorkingDirectory
-            };
-            startInfo.ArgumentList.Add("-c");
-            startInfo.ArgumentList.Add("exec \"$@\" </dev/null >/dev/null 2>&1");
-            startInfo.ArgumentList.Add("fgvm-godot-launch");
-            startInfo.ArgumentList.Add(request.Target.ExecutablePath);
-
-            foreach (var argument in request.Arguments)
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            return startInfo;
-        }
-
-        var attachedStartInfo = new ProcessStartInfo
-        {
-            FileName = request.Target.ExecutablePath,
             UseShellExecute = false,
             CreateNoWindow = attached,
-            RedirectStandardInput = !attached && OperatingSystem.IsWindows(),
             RedirectStandardOutput = attached,
             RedirectStandardError = attached,
+            StartDetached = !attached,
+            // Detached processes must not retain the launcher's redirected pipes.
+            InheritedHandles = attached ? null : [],
             WorkingDirectory = request.Target.WorkingDirectory
         };
-
-        foreach (var argument in request.Arguments)
-        {
-            attachedStartInfo.ArgumentList.Add(argument);
-        }
-
-        return attachedStartInfo;
-    }
-
-    private static bool StartProcess(Process process, GodotLaunchMode mode)
-    {
-        if (mode == GodotLaunchMode.Attached)
-        {
-            return process.Start();
-        }
-
-        lock (DetachedStartLock)
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                using var nullDevice = File.OpenHandle(
-                    "NUL",
-                    FileMode.Open,
-                    FileAccess.ReadWrite,
-                    FileShare.ReadWrite);
-                return StartWithWindowsNullHandles(process, nullDevice);
-            }
-
-            var inheritedDescriptors = SetCloseOnExecForOpenDescriptors();
-            try
-            {
-                return process.Start();
-            }
-            finally
-            {
-                RestoreFileDescriptorFlags(inheritedDescriptors);
-            }
-        }
-    }
-
-    private static bool StartWithWindowsNullHandles(Process process, SafeFileHandle nullDevice)
-    {
-        var originalInput = GetStdHandle(StandardInputHandle);
-        var originalOutput = GetStdHandle(StandardOutputHandle);
-        var originalError = GetStdHandle(StandardErrorHandle);
-        var nullHandle = nullDevice.DangerousGetHandle();
-        var originalHandleFlags = ClearHandleInheritance(originalInput, originalOutput, originalError);
-
-        try
-        {
-            SetHandleInformationOrThrow(nullHandle, HandleFlagInherit, HandleFlagInherit);
-            SetStdHandleOrThrow(StandardInputHandle, nullHandle);
-            SetStdHandleOrThrow(StandardOutputHandle, nullHandle);
-            SetStdHandleOrThrow(StandardErrorHandle, nullHandle);
-            return process.Start();
-        }
-        finally
-        {
-            SetStdHandle(StandardInputHandle, originalInput);
-            SetStdHandle(StandardOutputHandle, originalOutput);
-            SetStdHandle(StandardErrorHandle, originalError);
-            RestoreHandleInheritance(originalHandleFlags);
-        }
-    }
-
-    private static List<(IntPtr Handle, uint Flags)> ClearHandleInheritance(params IntPtr[] handles)
-    {
-        var originalFlags = new List<(IntPtr Handle, uint Flags)>();
-        var visited = new HashSet<IntPtr>();
-
-        try
-        {
-            foreach (var handle in handles)
-            {
-                if (handle == IntPtr.Zero ||
-                    handle == new IntPtr(-1) ||
-                    !visited.Add(handle) ||
-                    !GetHandleInformation(handle, out var flags))
-                {
-                    continue;
-                }
-
-                SetHandleInformationOrThrow(handle, HandleFlagInherit, 0);
-                originalFlags.Add((handle, flags));
-            }
-        }
-        catch
-        {
-            RestoreHandleInheritance(originalFlags);
-            throw;
-        }
-
-        return originalFlags;
-    }
-
-    private static void RestoreHandleInheritance(IEnumerable<(IntPtr Handle, uint Flags)> handles)
-    {
-        foreach (var (handle, flags) in handles)
-        {
-            SetHandleInformation(handle, HandleFlagInherit, flags & HandleFlagInherit);
-        }
-    }
-
-    private static List<(int Descriptor, int Flags)> SetCloseOnExecForOpenDescriptors()
-    {
-        var descriptorDirectory = OperatingSystem.IsLinux() ? "/proc/self/fd" : "/dev/fd";
-        var changedDescriptors = new List<(int Descriptor, int Flags)>();
-
-        foreach (var path in Directory.EnumerateFileSystemEntries(descriptorDirectory).ToArray())
-        {
-            if (!int.TryParse(Path.GetFileName(path), out var descriptor) || descriptor <= StandardErrorDescriptor)
-            {
-                continue;
-            }
-
-            var flags = Fcntl(descriptor, GetFileDescriptorFlags, 0);
-            if (flags < 0 || (flags & FileDescriptorCloseOnExec) != 0)
-            {
-                continue;
-            }
-
-            if (Fcntl(descriptor, SetFileDescriptorFlags, flags | FileDescriptorCloseOnExec) < 0)
-            {
-                continue;
-            }
-
-            changedDescriptors.Add((descriptor, flags));
-        }
-
-        return changedDescriptors;
-    }
-
-    private static void RestoreFileDescriptorFlags(IEnumerable<(int Descriptor, int Flags)> descriptors)
-    {
-        foreach (var (descriptor, flags) in descriptors)
-        {
-            Fcntl(descriptor, SetFileDescriptorFlags, flags);
-        }
     }
 
     internal static IReadOnlyList<string> ParseArguments(string arguments)
@@ -418,33 +239,6 @@ public sealed class GodotLauncher : IGodotLauncher
         return argument.ToString();
     }
 
-    private static void SetStdHandleOrThrow(int standardHandle, IntPtr handle)
-    {
-        if (!SetStdHandle(standardHandle, handle))
-        {
-            throw new Win32Exception(Marshal.GetLastPInvokeError());
-        }
-    }
-
-    private static void SetHandleInformationOrThrow(IntPtr handle, uint mask, uint flags)
-    {
-        if (!SetHandleInformation(handle, mask, flags))
-        {
-            throw new Win32Exception(Marshal.GetLastPInvokeError());
-        }
-    }
-
-    private static async Task ForwardLines(StreamReader reader,
-        Action<string> forward,
-        CancellationToken cancellationToken
-    )
-    {
-        while (await reader.ReadLineAsync(cancellationToken) is { } line)
-        {
-            forward(line);
-        }
-    }
-
     private static void TryKill(Process process)
     {
         try
@@ -456,43 +250,7 @@ public sealed class GodotLauncher : IGodotLauncher
         }
         catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException)
         {
-            // Best-effort cleanup after cancellation or process-management failure.
+            // The process may exit before cleanup reaches it.
         }
     }
-
-    private static async Task ObserveOutputTasks(params Task[] tasks)
-    {
-        try
-        {
-            await Task.WhenAll(tasks);
-        }
-        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
-        {
-            // The streams are expected to close while terminating the process.
-        }
-    }
-
-    // Detached launches use native descriptor/handle APIs so Godot cannot retain fgvm's console or redirected pipes.
-#pragma warning disable SYSLIB1054 // LibraryImport would require enabling unsafe generated code for these six calls.
-    [DllImport("libc", EntryPoint = "fcntl", SetLastError = true)]
-    private static extern int Fcntl(int descriptor, int command, int argument);
-
-    [DllImport("libc", EntryPoint = "access", SetLastError = true)]
-    private static extern int Access(string path, int mode);
-
-    [DllImport("kernel32.dll", EntryPoint = "GetStdHandle", SetLastError = true)]
-    private static extern IntPtr GetStdHandle(int standardHandle);
-
-    [DllImport("kernel32.dll", EntryPoint = "SetStdHandle", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetStdHandle(int standardHandle, IntPtr handle);
-
-    [DllImport("kernel32.dll", EntryPoint = "GetHandleInformation", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetHandleInformation(IntPtr handle, out uint flags);
-
-    [DllImport("kernel32.dll", EntryPoint = "SetHandleInformation", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
-#pragma warning restore SYSLIB1054
 }

@@ -262,7 +262,22 @@ function RemoveContext {
         [E2EContext] $Context
     )
 
-    if (Test-Path -LiteralPath $Context.RootPath) {
-        Remove-Item -LiteralPath $Context.RootPath -Recurse -Force
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        if (-not (Test-Path -LiteralPath $Context.RootPath)) {
+            return
+        }
+
+        try {
+            Remove-Item -LiteralPath $Context.RootPath -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            if ($attempt -eq 19) {
+                throw
+            }
+
+            # Windows can retain a process's executable briefly after it exits.
+            Start-Sleep -Milliseconds 50
+        }
     }
 }
