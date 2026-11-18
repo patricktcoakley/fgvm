@@ -3,28 +3,28 @@
   "isRoot": true,
   "tools": {
     "versionize": {
-      "version": "2.5.0",
+      "version": "2.7.0",
       "commands": [
         "versionize"
       ],
       "rollForward": false
     },
     "coverlet.console": {
-      "version": "6.0.4",
+      "version": "10.1.1",
       "commands": [
         "coverlet"
       ],
       "rollForward": false
     },
     "dotnet-reportgenerator-globaltool": {
-      "version": "5.4.17",
+      "version": "5.6.0",
       "commands": [
         "reportgenerator"
       ],
       "rollForward": false
     },
     "jetbrains.resharper.globaltools": {
-      "version": "2026.1.2",
+      "version": "2026.3.0",
       "commands": [
         "jb"
       ],
